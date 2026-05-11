@@ -13,6 +13,7 @@ class FactCheckResult(BaseModel):
     importance_score: int = Field(description="Score from 1 to 5, where 5 is highly important/breaking news.")
     llm_summary: str = Field(description="A concise, factual summary of the core news/update. Remove marketing fluff.")
     key_entities: list[str] = Field(default=[], description="List of core entities (people, products, companies) mentioned, max 5.")
+    event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
 
 def process_article(content: str, radar_section: str, api_key: str = None) -> FactCheckResult:
     """

@@ -54,8 +54,12 @@ def run_scraping_job():
                 
                 # Take top 3 to avoid spamming the LLM
                 for item in items[:3]:
-                    existing = session.exec(select(RawArticle).where(RawArticle.url == item["url"])).first()
-                    if not existing:
+                    # Check URL exactly
+                    existing_url = session.exec(select(RawArticle).where(RawArticle.url == item["url"])).first()
+                    # Check Title exactly (to prevent same article with different tracking parameters in URL)
+                    existing_title = session.exec(select(RawArticle).where(RawArticle.title == item["title"]).where(RawArticle.source_id == source.id)).first()
+                    
+                    if not existing_url and not existing_title:
                         raw = RawArticle(
                             source_id=source.id,
                             title=item["title"],
@@ -71,9 +75,22 @@ def run_scraping_job():
                 text = scraper.fetch_text_snapshot()
                 if text:
                     content_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
-                    existing = session.exec(select(RawArticle).where(RawArticle.url == source.url).order_by(RawArticle.created_at.desc())).first()
+                    existing = session.exec(select(RawArticle).where(RawArticle.url.like(f"{source.url}#%")).order_by(RawArticle.created_at.desc())).first()
                     
-                    if not existing or existing.content != text:
+                    is_duplicate = False
+                    if existing:
+                        if existing.content == text:
+                            is_duplicate = True
+                        else:
+                            # Use difflib to check if the new text is >95% identical to the last snapshot
+                            # This ignores dynamic ad rotations, timestamps, and minor noise
+                            import difflib
+                            similarity = difflib.SequenceMatcher(None, existing.content, text).quick_ratio()
+                            if similarity > 0.95:
+                                print(f"Skipping {source.name}: 相似度 {similarity:.2f} > 0.95, 仅存在动态噪音。")
+                                is_duplicate = True
+                    
+                    if not is_duplicate:
                         raw = RawArticle(
                             source_id=source.id,
                             title=f"Snapshot: {source.name}",
@@ -108,7 +125,8 @@ def run_processing_job():
                 llm_summary=result.llm_summary,
                 importance_score=result.importance_score,
                 original_content_hash=hashlib.sha256(raw.content.encode('utf-8')).hexdigest(),
-                key_entities=json.dumps(result.key_entities)
+                key_entities=json.dumps(result.key_entities),
+                event_timestamp=result.event_timestamp
             )
             session.add(report)
             raw.processed = True

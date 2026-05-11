@@ -34,6 +34,7 @@ class IntelReport(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     shared: bool = Field(default=False, description="Whether it has been pushed to the central server")
     key_entities: str = Field(default="[]", description="JSON list of extracted entities")
+    event_timestamp: Optional[str] = Field(default=None, description="ISO8601 string of the actual event/publish time extracted by LLM")
 
 class TrendAlert(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

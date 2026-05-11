@@ -153,16 +153,17 @@ def page_dashboard():
                 select(IntelReport)
                 .where(IntelReport.radar_section == section_name)
                 .where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
-                .order_by(IntelReport.created_at.desc())
+                .order_by(IntelReport.event_timestamp.desc(), IntelReport.created_at.desc())
                 .limit(15)
             ).all()
             
             if not reports:
                 st.info(f"[{section_name}] {t('dash_no_intel')}")
             for report in reports:
+                time_str = report.event_timestamp if report.event_timestamp else report.created_at.strftime('%Y-%m-%d %H:%M:%S')
                 with st.expander(f"[{report.importance_score}★] {report.source_url[:80]}..."):
                     st.markdown(report.llm_summary)
-                    st.caption(f"{t('dash_scraped_at')}: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:10]}...")
+                    st.caption(f"🕒 {t('dash_published_at')}: {time_str} | {t('dash_scraped_at')}: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:10]}...")
 
 def page_briefing():
     st.title(f":material/article: {t('brief_title')}")

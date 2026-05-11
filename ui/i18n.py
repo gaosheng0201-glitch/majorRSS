@@ -16,6 +16,7 @@ TRANSLATIONS = {
         "dash_refresh": "Refresh Board",
         "dash_no_intel": "No intelligence available yet.",
         "dash_scraped_at": "Scraped at",
+        "dash_published_at": "Published at",
         
         "brief_title": "Daily Briefing",
         "brief_desc": "Global intelligence synthesis distilled by Gemini context.",
@@ -89,6 +90,7 @@ TRANSLATIONS = {
         "dash_refresh": "刷新大屏",
         "dash_no_intel": "尚无高价值情报",
         "dash_scraped_at": "抓取时间",
+        "dash_published_at": "发布时间",
         
         "brief_title": "每日深度简报",
         "brief_desc": "基于 Gemini 超大上下文提炼的全局资讯串联。",
@@ -162,6 +164,7 @@ TRANSLATIONS = {
         "dash_refresh": "새로고침",
         "dash_no_intel": "아직 유효한 정보가 없습니다.",
         "dash_scraped_at": "수집 시간",
+        "dash_published_at": "게시 시간",
         
         "brief_title": "일일 브리핑",
         "brief_desc": "Gemini 컨텍스트 기반 글로벌 정보 합성.",
@@ -235,6 +238,7 @@ TRANSLATIONS = {
         "dash_refresh": "更新",
         "dash_no_intel": "まだ有効な情報はありません。",
         "dash_scraped_at": "取得時間",
+        "dash_published_at": "公開時間",
         
         "brief_title": "デイリーブリーフィング",
         "brief_desc": "Geminiコンテキストによるグローバル情報の合成。",
@@ -308,6 +312,7 @@ TRANSLATIONS = {
         "dash_refresh": "Обновить",
         "dash_no_intel": "Пока нет информации.",
         "dash_scraped_at": "Собрано в",
+        "dash_published_at": "Опубликовано",
         
         "brief_title": "Ежедневный брифинг",
         "brief_desc": "Глобальный синтез информации с помощью Gemini.",
