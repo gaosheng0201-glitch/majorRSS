@@ -1,3 +1,18 @@
 /.env
 /.venv
 /ARCHITECTURE.md
+/DEVELOPMENT.md
+/MAINTENANCE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
