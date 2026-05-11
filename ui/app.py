@@ -9,9 +9,96 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db.database import get_session, create_db_and_tables
 from db.models import Source, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
 from sqlmodel import select
+from ui.i18n import t, TRANSLATIONS
+
+MAJOR_RSS_VERSION = "v1.0.0"
 
 # Must be the first Streamlit command
-st.set_page_config(page_title="MajorRSS Radar", page_icon="📡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title=f"MajorRSS Radar {MAJOR_RSS_VERSION}", page_icon="📡", layout="wide", initial_sidebar_state="expanded")
+
+# --- Language Sniffer ---
+if "lang" not in st.session_state:
+    detected = "en"
+    try:
+        # Native backend language sniffing via HTTP headers (Streamlit 1.37+)
+        # This completely avoids iframe sandbox SecurityErrors and page reloads.
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            accept_lang = st.context.headers.get("Accept-Language", "en")
+            if accept_lang:
+                detected = accept_lang.split(',')[0][:2].lower()
+    except Exception:
+        pass
+        
+    if detected in TRANSLATIONS:
+        st.session_state["lang"] = detected
+    else:
+        st.session_state["lang"] = "en"
+
+# Custom CSS for Native Supabase-Style Sidebar
+st.markdown("""
+<style>
+    /* Lock sidebar width to exactly 64px */
+    [data-testid="stSidebar"] {
+        min-width: 64px !important;
+        max-width: 64px !important;
+    }
+    
+    /* Hide the resizer handle to prevent dragging and breaking layout */
+    [data-testid="stSidebarResizer"] {
+        display: none !important;
+    }
+    
+    /* Remove default sidebar horizontal padding for edge-to-edge component rendering */
+    [data-testid="stSidebarUserContent"] {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        padding-top: 2rem !important;
+        overflow-x: hidden !important;
+    }
+    
+    /* Hide the text labels safely without breaking icons */
+    span[data-testid="stPageLink-label"] {
+        display: none !important;
+    }
+    
+    /* Center the anchor links */
+    [data-testid="stSidebarNavItems"] a {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 12px 0 !important;
+        border-radius: 10px !important;
+    }
+    
+    /* Ensure Material Icons are sized correctly */
+    [data-testid="stSidebarNavItems"] .material-symbols-rounded {
+        font-size: 24px !important;
+        margin: 0 !important;
+    }
+    
+    /* Hide the default collapse/expand controls */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapseButton"] {
+        display: none !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Inject JS to add native HTML 'title' attributes for tooltips
+import streamlit.components.v1 as components
+components.html("""
+<script>
+    setTimeout(() => {
+        const links = parent.document.querySelectorAll('[data-testid="stSidebarNavItems"] a');
+        links.forEach(link => {
+            const labelSpan = link.querySelector('span[data-testid="stPageLink-label"]');
+            if (labelSpan) {
+                link.title = labelSpan.textContent.trim();
+            }
+        });
+    }, 1000);
+</script>
+""", height=0)
 
 # Load environment variables
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
@@ -25,33 +112,30 @@ create_db_and_tables()
 # -------------------------------------------------------------
 
 def page_dashboard():
-    st.title("📊 情报大屏 (Dashboard)")
+    st.title(f":material/bar_chart: {t('dash_title')}")
     session = next(get_session())
     
-    # 1. Trend Alerts (Top priority)
     recent_alerts = session.exec(select(TrendAlert).order_by(TrendAlert.created_at.desc()).limit(3)).all()
     if recent_alerts:
         for alert in recent_alerts:
-            st.error(f"🚨 **异动预警 (Trend Alert) | 高频实体爆发: {alert.entity_name}**\n\n{alert.alert_summary}\n\n*检测时间: {alert.created_at.strftime('%Y-%m-%d %H:%M:%S')}*")
+            st.error(f":material/warning: **{t('dash_alert')} {alert.entity_name}**\n\n{alert.alert_summary}\n\n*{t('dash_detected')} {alert.created_at.strftime('%Y-%m-%d %H:%M:%S')}*")
         st.divider()
 
-    # 2. Pipeline Status Tracker
     logs = session.exec(select(PipelineStatus).order_by(PipelineStatus.updated_at.desc()).limit(8)).all()
-    with st.expander("⚙️ 后台引擎运行日志 (Engine Live Log)", expanded=False):
+    with st.expander(f":material/terminal: {t('dash_logs')}", expanded=False):
         if logs:
             for log in logs:
                 st.markdown(f"`[{log.updated_at.strftime('%H:%M:%S')}]` **{log.source_name}** - *{log.action_type}*: {log.detail}")
         else:
-            st.caption("暂无运行日志 (No recent activity).")
+            st.caption(t('dash_no_logs'))
 
     st.divider()
     
-    # 3. Main Dashboard Content
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.subheader("动态情报看板")
+        st.subheader(t('dash_board'))
     with col2:
-        if st.button("🔄 刷新大屏", use_container_width=True):
+        if st.button(f":material/refresh: {t('dash_refresh')}", use_container_width=True):
             st.rerun()
             
     sources = session.exec(select(Source)).all()
@@ -63,7 +147,7 @@ def page_dashboard():
     
     for i, section_name in enumerate(unique_sections):
         with section_tabs[i]:
-            st.header(f"🗂️ {section_name}")
+            st.header(f":material/folder: {section_name}")
             
             reports = session.exec(
                 select(IntelReport)
@@ -74,44 +158,44 @@ def page_dashboard():
             ).all()
             
             if not reports:
-                st.info(f"[{section_name}] 尚无高价值情报 (No intelligence available yet).")
+                st.info(f"[{section_name}] {t('dash_no_intel')}")
             for report in reports:
-                with st.expander(f"[{report.importance_score}⭐] {report.source_url[:80]}..."):
+                with st.expander(f"[{report.importance_score}★] {report.source_url[:80]}..."):
                     st.markdown(report.llm_summary)
-                    st.caption(f"Scraped at: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:10]}...")
+                    st.caption(f"{t('dash_scraped_at')}: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:10]}...")
 
 def page_briefing():
-    st.title("📻 每日深度简报 (Daily Briefing)")
-    st.markdown("基于 Gemini 超大上下文提炼的全局资讯串联。")
+    st.title(f":material/article: {t('brief_title')}")
+    st.markdown(t('brief_desc'))
     session = next(get_session())
     
     col_b1, col_b2 = st.columns([4, 1])
     with col_b2:
-        if st.button("✨ 立即生成简报", use_container_width=True):
+        if st.button(f":material/auto_awesome: {t('brief_generate')}", use_container_width=True):
             from llm.processor import generate_daily_briefing
-            with st.spinner("Gemini 正在通读过去 24 小时的情报并撰写简报..."):
+            with st.spinner(t('brief_generating')):
                 try:
                     res = generate_daily_briefing()
                     if "Not enough news" in res:
-                        st.warning("⚠️ 过去 24 小时内有效情报不足，无法生成。")
+                        st.warning(f":material/warning: {t('brief_not_enough')}")
                     else:
-                        st.success("🎉 简报生成成功！")
+                        st.success(f":material/celebration: {t('brief_success')}")
                         import time; time.sleep(1.5)
                         st.rerun()
                 except Exception as e:
-                    st.error(f"生成失败: {e}")
+                    st.error(f"{t('brief_fail')} {e}")
     
     briefings = session.exec(select(DailyBriefing).order_by(DailyBriefing.created_at.desc()).limit(5)).all()
     if not briefings:
-        st.info("尚无生成的每日简报。可以通过命令行或 Worker 自动生成。")
+        st.info(t('brief_empty'))
     
     for b in briefings:
-        with st.expander(f"📅 简报日期：{b.date_str}", expanded=(b == briefings[0])):
+        with st.expander(f":material/calendar_month: {t('brief_date')}：{b.date_str}", expanded=(b == briefings[0])):
             st.markdown(b.content)
 
 def page_billing():
-    st.title("💳 AI 计费与消耗审计 (Billing)")
-    st.markdown("本地追踪每次大模型调用的确切 Token 数量，杜绝未知账单。")
+    st.title(f":material/payments: {t('bill_title')}")
+    st.markdown(t('bill_desc'))
     session = next(get_session())
     
     all_usages = session.exec(select(TokenUsage)).all()
@@ -121,66 +205,84 @@ def page_billing():
     
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
-        st.metric("⚡ Gemini 3 Flash Tokens", f"{flash_tokens:,}", "日常网页分析高频调用", delta_color="off")
+        st.metric("Gemini 3 Flash Tokens", f"{flash_tokens:,}", t('bill_flash_desc'), delta_color="off")
     with col_b2:
-        st.metric("🧠 Gemini 3.1 Pro Tokens", f"{pro_tokens:,}", "深度简报生成低频调用", delta_color="off")
+        st.metric("Gemini 3.1 Pro Tokens", f"{pro_tokens:,}", t('bill_pro_desc'), delta_color="off")
     with col_b3:
-        st.metric("💰 预估总成本 (Est. Cost)", f"${est_cost:.4f}", "基于官方参考定价", delta_color="off")
+        st.metric(t('bill_est_cost'), f"${est_cost:.4f}", t('bill_cost_desc'), delta_color="off")
         
     st.divider()
-    st.subheader("📝 近期消耗明细 (Recent Transactions)")
+    st.subheader(f":material/receipt_long: {t('bill_recent')}")
     recent_usages = session.exec(select(TokenUsage).order_by(TokenUsage.created_at.desc()).limit(20)).all()
     if recent_usages:
-        usage_data = [{"时间": u.created_at.strftime('%Y-%m-%d %H:%M:%S'), "动作": u.action_type, "模型": u.model_name, "Prompt": u.prompt_tokens, "Completion": u.completion_tokens, "总计": u.total_tokens} for u in recent_usages]
+        usage_data = [{t('bill_col_time'): u.created_at.strftime('%Y-%m-%d %H:%M:%S'), t('bill_col_action'): u.action_type, t('bill_col_model'): u.model_name, t('bill_col_prompt'): u.prompt_tokens, t('bill_col_comp'): u.completion_tokens, t('bill_col_total'): u.total_tokens} for u in recent_usages]
         st.dataframe(usage_data, use_container_width=True)
     else:
-        st.info("尚无大模型调用记录。")
+        st.info(t('bill_no_logs'))
 
 def page_settings():
-    st.title("⚙️ 设置与数据源 (Settings & Sources)")
+    st.title(f":material/settings: {t('set_title')}")
     session = next(get_session())
     
-    st.header("🔑 API 密钥配置 (API Configuration)")
+    # Language Selector
+    lang_options = {"en": "English", "zh": "简体中文", "ko": "한국어", "ja": "日本語", "ru": "Русский"}
+    current_lang = st.session_state.get("lang", "en")
+    
+    def on_lang_change():
+        st.session_state["lang"] = st.session_state["lang_selector"]
+    
+    st.selectbox(
+        t('set_lang'), 
+        options=list(lang_options.keys()), 
+        format_func=lambda x: lang_options[x], 
+        index=list(lang_options.keys()).index(current_lang) if current_lang in lang_options else 0,
+        key="lang_selector",
+        on_change=on_lang_change
+    )
+    
+    st.divider()
+    
+    st.header(f":material/key: {t('set_api')}")
     current_key = os.environ.get("GEMINI_API_KEY", "")
-    new_key = st.text_input("Gemini API Key (用于启动 AI 审查与去噪)", value=current_key, type="password")
-    if st.button("保存密钥 (Save API Key)"):
+    new_key = st.text_input(t('set_api_ph'), value=current_key, type="password")
+    if st.button(t('set_save_api')):
         if not os.path.exists(dotenv_path):
             open(dotenv_path, 'a').close()
         set_key(dotenv_path, "GEMINI_API_KEY", new_key)
         os.environ["GEMINI_API_KEY"] = new_key
-        st.success("API Key 已保存至 .env 文件中。后台 Worker 进程将自动读取该配置。")
+        st.success(t('set_api_success'))
     
     st.divider()
     
-    st.header("📡 信息源管理 (Manage Sources)")
+    st.header(f":material/satellite_alt: {t('set_manage')}")
     
-    with st.expander("➕ 添加新信息源 (Add New Source)", expanded=True):
+    with st.expander(f":material/add: {t('set_add')}", expanded=True):
         with st.form("add_source_form"):
-            s_name = st.text_input("名称 (Name)", placeholder="e.g. OpenAI Release Notes")
-            s_url = st.text_input("目标网址 (URL)", placeholder="https://...")
-            s_tier = st.selectbox("抓取等级 (Scraper Tier)", [0, 1, 2, 3], format_func=lambda x: {0: "0 - 🤖 智能探测最佳路径 (Auto-Detect)", 1: "1 - 基础直连 (Basic RSS)", 2: "2 - 替代前端 (Mirror/API)", 3: "3 - 智能体无头浏览器 (Agentic Scraper)"}[x])
-            s_section = st.text_input("所属自定义板块 (Radar Section)", placeholder="例如：前沿哨所, 量化交易, AI绘画")
-            submit_source = st.form_submit_button("添加源 (Add Source)")
+            s_name = st.text_input(t('set_name'), placeholder="e.g. OpenAI Release Notes")
+            s_url = st.text_input(t('set_url'), placeholder="https://...")
+            s_tier = st.selectbox(t('set_tier'), [0, 1, 2, 3], format_func=lambda x: {0: t('set_tier_0'), 1: t('set_tier_1'), 2: t('set_tier_2'), 3: t('set_tier_3')}[x])
+            s_section = st.text_input(t('set_section'), placeholder="e.g. Geek Radar")
+            submit_source = st.form_submit_button(t('set_submit'))
             
             if submit_source and s_name and s_url and s_section:
                 final_tier = s_tier
                 final_url = s_url
                 
                 if s_tier == 0:
-                    with st.spinner("🤖 正在嗅探目标网站特征，为您寻找最优抓取路径..."):
+                    with st.spinner(t('set_sniffing')):
                         from scrapers.auto_detect import probe_url_for_tier
                         final_tier, final_url, probe_msg = probe_url_for_tier(s_url)
-                        st.info(f"探测报告：{probe_msg}")
+                        st.info(f"{t('set_report')} {probe_msg}")
                         import time; time.sleep(1)
 
                 new_source = Source(name=s_name, url=final_url, tier=final_tier, radar_section=s_section)
                 session.add(new_source)
                 session.commit()
-                st.success(f"已成功添加源: {s_name} 到板块 {s_section} (应用等级: Tier {final_tier})")
+                st.success(f"{t('set_add_success')} {s_name} {t('set_to_section')} {s_section} (Tier {final_tier})")
                 import time; time.sleep(1.5)
                 st.rerun()
 
-    st.subheader("当前活跃信息源列表 (Current Sources)")
+    st.subheader(t('set_current'))
     sources = session.exec(select(Source)).all()
     if sources:
         source_data = [{"ID": s.id, "Name": s.name, "URL": s.url, "Tier": s.tier, "Section": s.radar_section, "Active": s.is_active} for s in sources]
@@ -188,52 +290,53 @@ def page_settings():
         
         col_op1, col_op2 = st.columns([1, 1])
         with col_op1:
-            del_id = st.number_input("输入要删除的 Source ID", min_value=1, step=1)
-            if st.button("❌ 删除该源 (Delete)", type="secondary"):
+            del_id = st.number_input(t('set_del_id'), min_value=1, step=1)
+            if st.button(f":material/close: {t('set_del_btn')}", type="secondary"):
                 to_delete = session.get(Source, del_id)
                 if to_delete:
                     session.delete(to_delete)
                     session.commit()
-                    st.success(f"已删除 ID {del_id}")
+                    st.success(f"{t('set_del_success')} {del_id}")
                     st.rerun()
                 else:
-                    st.error("找不到对应的 ID。")
+                    st.error(t('set_del_fail'))
         
         with col_op2:
             st.write("")
             st.write("")
-            if st.button("🚀 强制立刻抓取所有源 (Force Scrape Now)", type="primary", use_container_width=True):
-                with st.spinner("系统正在紧急抓取并调用大模型分析，这可能需要 1-2 分钟，请不要关闭网页..."):
+            if st.button(f":material/bolt: {t('set_force')}", type="primary", use_container_width=True):
+                with st.spinner(t('set_forcing')):
                     import worker
                     try:
                         worker.run_scraping_job()
                         worker.run_processing_job()
-                        st.success("强制抓取完成！请切换回【情报大屏】查看结果。")
+                        st.success(t('set_force_success'))
                     except Exception as e:
-                        st.error(f"抓取过程发生错误: {e}")
+                        st.error(f"{t('set_force_fail')} {e}")
     else:
-        st.info("尚无配置的抓取源。请在上方添加。")
+        st.info(t('set_no_sources'))
+        
+    st.divider()
+    st.caption(f"MajorRSS Engine Version: **{MAJOR_RSS_VERSION}**")
 
 # -------------------------------------------------------------
-# NAVIGATION SETUP (Native SPA)
+# NAVIGATION SETUP (Native SPA with CSS Icon-Only Override)
 # -------------------------------------------------------------
 
-# Custom styling for the standard sidebar
-st.sidebar.markdown("### 📡 MajorRSS")
-st.sidebar.caption("Enterprise AI Information Radar")
-st.sidebar.divider()
+def dashboard_page():
+    page_dashboard()
+def briefing_page():
+    page_briefing()
+def billing_page():
+    page_billing()
+def settings_page():
+    page_settings()
 
-# Setup native routing
 pg = st.navigation([
-    st.Page(page_dashboard, title="情报大屏", icon="📊"),
-    st.Page(page_briefing, title="每日简报", icon="📻"),
-    st.Page(page_billing, title="计费看板", icon="💳"),
-    st.Page(page_settings, title="设置与数据源", icon="⚙️"),
+    st.Page(dashboard_page, title=t('nav_dashboard'), icon=":material/dashboard:"),
+    st.Page(briefing_page, title=t('nav_briefing'), icon=":material/article:"),
+    st.Page(billing_page, title=t('nav_billing'), icon=":material/payments:"),
+    st.Page(settings_page, title=t('nav_settings'), icon=":material/settings:"),
 ])
 
-# Sidebar Footer
-st.sidebar.divider()
-st.sidebar.caption("v1.0.1 | Core Engine Active")
-
-# Run the selected page
 pg.run()
