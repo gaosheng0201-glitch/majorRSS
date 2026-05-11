@@ -11,7 +11,7 @@ from db.models import Source, IntelReport, PipelineStatus, DailyBriefing, TrendA
 from sqlmodel import select
 from ui.i18n import t, TRANSLATIONS
 
-MAJOR_RSS_VERSION = "v1.0.0"
+MAJOR_RSS_VERSION = "v1.1.0"
 
 # Must be the first Streamlit command
 st.set_page_config(page_title=f"MajorRSS Radar {MAJOR_RSS_VERSION}", page_icon="📡", layout="wide", initial_sidebar_state="expanded")

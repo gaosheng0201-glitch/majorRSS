@@ -1,4 +1,4 @@
-# MajorRSS 📡 `v1.0.0`
+# MajorRSS 📡 `v1.1.0`
 
 MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising platform. It transforms raw, chaotic information streams (from RSS, web pages, to headless browser scraping) into a highly structured, high-value intelligence dashboard using Google's Gemini models.
 
