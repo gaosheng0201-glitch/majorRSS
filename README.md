@@ -1,18 +1,19 @@
-# MajorRSS 📡 `v1.1.0`
+# MajorRSS 📡 `v1.2.0`
 
 MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising platform. It transforms raw, chaotic information streams (from RSS, web pages, to headless browser scraping) into a highly structured, high-value intelligence dashboard using Google's Gemini models.
 
 ## Features ✨
+- **Interactive Cookie Auth**: Authenticate seamlessly via a real browser UI; state (including LocalStorage) is saved and injected into headless scrapers to bypass tough anti-bot checks (e.g., Twitter/X).
 - **Multi-Tier Scraping Architecture**: From simple RSS parsing to advanced headless browser (Playwright) agentic scraping, bypassing complex anti-bot measures.
-- **AI-Powered Denoising**: Uses Google Gemini 1.5 Flash for high-frequency text cleaning, translation, and entity extraction.
-- **Automated Daily Briefings**: Uses Gemini 1.5 Pro to synthesize massive amounts of daily intelligence into a concise, readable global briefing.
+- **AI-Powered Denoising**: Uses Google Gemini 3 Flash for high-frequency text cleaning, translation, and entity extraction.
+- **Automated Daily Briefings**: Uses Gemini 3.1 Pro to synthesize massive amounts of daily intelligence into a concise, readable global briefing.
 - **Supabase-Style Dashboard**: A beautiful, minimalist Streamlit frontend featuring an icon-centric persistent sidebar and real-time monitoring.
 - **Built-in Token Billing**: Locally tracks exact LLM token usage and estimated costs so you never face surprise bills.
 - **Multi-Language Support**: Fully localized in English, Simplified Chinese, Japanese, Korean, and Russian, with automatic browser language detection.
 
 ## Tech Stack 🛠️
 - **Frontend**: Streamlit
-- **Database**: SQLite with SQLModel
+- **Database**: PostgreSQL with SQLModel
 - **AI Engine**: Google Gemini API (`google-generativeai`)
 - **Scraping**: `feedparser`, `BeautifulSoup4`, `Playwright`
 - **Task Scheduling**: `schedule`

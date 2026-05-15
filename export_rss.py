@@ -12,7 +12,7 @@ from sqlmodel import select
 import markdown
 
 def generate_feed():
-    session = next(get_session())
+    session = get_session()
     reports = session.exec(
         select(IntelReport)
         .where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))

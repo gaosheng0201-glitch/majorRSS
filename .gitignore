@@ -16,3 +16,18 @@ __pycache__/
 
 # Logs
 *.log
+
+# Auth Cookies (SENSITIVE)
+*_cookies.json
+
+# Temporary & Test Scripts
+add_interval_i18n.py
+create_new_tables.py
+fix_*.py
+patch_*.py
+refactor_*.py
+remove_*.py
+replace_*.py
+test_*.py
+update_i18n*.py
+migrate_*.py

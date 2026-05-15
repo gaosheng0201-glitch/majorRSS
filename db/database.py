@@ -1,15 +1,32 @@
+import os
+from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
-from .models import Source, RawArticle, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
+from .models import Tracker, RawArticle, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
 
-sqlite_file_name = "major_rss.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
+# Load environment variables (to capture DATABASE_URL if present)
+load_dotenv()
 
-# echo=False prevents printing all SQL statements to the console
-engine = create_engine(sqlite_url, echo=False)
+database_url = os.environ.get("DATABASE_URL")
+
+if not database_url:
+    # Fallback to local SQLite if no external DB is configured
+    sqlite_file_name = "major_rss.db"
+    database_url = f"sqlite:///{sqlite_file_name}"
+
+from sqlalchemy.pool import NullPool
+
+connect_args = {}
+# Only apply SQLite-specific thread safety overrides
+if database_url.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+    from sqlalchemy.pool import NullPool
+    engine = create_engine(database_url, echo=False, connect_args=connect_args, poolclass=NullPool)
+else:
+    # For Postgres, use the default robust QueuePool
+    engine = create_engine(database_url, echo=False, connect_args=connect_args)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
 def get_session():
-    with Session(engine) as session:
-        yield session
+    return Session(engine)

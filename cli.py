@@ -12,7 +12,7 @@ from sqlmodel import select
 from datetime import datetime, timezone
 
 def get_news(section: str, format: str):
-    session = next(get_session())
+    session = get_session()
     query = select(IntelReport).where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
     if section:
         query = query.where(IntelReport.radar_section == section)
@@ -49,7 +49,7 @@ def get_news(section: str, format: str):
             print(f"Summary: {r.llm_summary}\n")
 
 def get_status():
-    session = next(get_session())
+    session = get_session()
     statuses = session.exec(select(PipelineStatus)).all()
     if not statuses:
         print(json.dumps({"status": "idle", "message": "No active tasks in the pipeline."}))
@@ -59,7 +59,7 @@ def get_status():
     print(json.dumps({"status": "active", "tasks": data}, indent=2, ensure_ascii=False))
 
 def get_briefing():
-    session = next(get_session())
+    session = get_session()
     briefing = session.exec(select(DailyBriefing).order_by(DailyBriefing.created_at.desc())).first()
     if not briefing:
         print(json.dumps({"error": "No daily briefing available."}))

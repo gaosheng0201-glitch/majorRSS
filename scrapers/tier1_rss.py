@@ -9,7 +9,17 @@ class BasicRSSScraper:
         
     def fetch(self) -> List[Dict[str, Any]]:
         print(f"Fetching RSS from {self.url}...")
-        parsed_feed = feedparser.parse(self.url)
+        # Set a custom user-agent to avoid getting blocked by Reddit/HackerNews
+        agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MajorRSS/1.1"
+        parsed_feed = feedparser.parse(self.url, agent=agent)
+        
+        # Explicit status check to avoid silent failures
+        if hasattr(parsed_feed, 'status') and parsed_feed.status >= 400:
+            raise Exception(f"HTTP Error {parsed_feed.status}")
+        
+        if getattr(parsed_feed, 'bozo', 0) and len(parsed_feed.entries) == 0:
+            raise Exception(f"RSS Parse Error: {getattr(parsed_feed, 'bozo_exception', 'Unknown')}")
+            
         results = []
         for entry in parsed_feed.entries:
             published_time = None

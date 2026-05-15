@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from db.database import get_session
 from db.models import IntelReport, DailyBriefing, TokenUsage
 from sqlmodel import select
+from typing import Optional
 
 class FactCheckResult(BaseModel):
     validity_category: str = Field(description="Must be one of: [VALID_NEWS], [SPAM], [MALICIOUS_LINK], [NOISE]")
@@ -15,7 +16,7 @@ class FactCheckResult(BaseModel):
     key_entities: list[str] = Field(default=[], description="List of core entities (people, products, companies) mentioned, max 5.")
     event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
 
-def process_article(content: str, radar_section: str, api_key: str = None) -> FactCheckResult:
+def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None) -> FactCheckResult:
     """
     Passes the scraped content through Gemini to fact-check, categorize, and summarize.
     """
@@ -25,9 +26,49 @@ def process_article(content: str, radar_section: str, api_key: str = None) -> Fa
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
     
     client = genai.Client(api_key=api_key)
+
+def summarize_diff(diff_text: str, api_key: str = None) -> str:
+    """Provides a concise summary of what changed in a text diff."""
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set.")
     
-    # Select prompt based on section
-    if radar_section == "Frontier Outpost":
+    client = genai.Client(api_key=api_key)
+    prompt = f"You are an assistant tracking webpage changes. The following is a diff showing what changed on a tracked page. Provide a very concise, 1-2 sentence summary of what was added, removed, or changed. Ignore minor whitespace or formatting changes.\n\nDIFF:\n{diff_text}"
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        # Log token usage
+        session = get_session()
+        try:
+            tu = TokenUsage(
+                model_name="gemini-2.5-flash",
+                action_type="Diff Summary",
+                prompt_tokens=response.usage_metadata.prompt_token_count,
+                completion_tokens=response.usage_metadata.candidates_token_count,
+                total_tokens=response.usage_metadata.total_token_count
+            )
+            session.add(tu)
+            session.commit()
+        except:
+            pass
+            
+        return response.text
+    except Exception as e:
+        return f"Failed to summarize: {e}"
+    
+    if prompt_override:
+        system_instruction = (
+            f"You are an OSINT AI Analyst for the '{radar_section}' radar. "
+            f"USER DIRECTIVE: {prompt_override}\n"
+            "Analyze the content exactly as requested by the user directive. "
+            "Determine if the content is valid news, spam, a malicious link, or just noise."
+        )
+    elif radar_section == "Frontier Outpost":
         system_instruction = (
             "You are an AI Fact-Checker for the 'Frontier Outpost' radar. "
             "Your job is to read the latest updates from AI model vendors (OpenAI, Anthropic, etc). "
@@ -42,23 +83,39 @@ def process_article(content: str, radar_section: str, api_key: str = None) -> Fa
             "Determine if the content is valid news, spam, a malicious link, or just noise."
         )
 
-    response = client.models.generate_content(
-        model='gemini-3-flash-preview',
-        contents=f"Analyze the following content:\n\n{content}",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=FactCheckResult,
-            temperature=0.2,
-        ),
-    )
+    import time
+    max_retries = 4
+    base_sleep = 2
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3-flash-preview',
+                contents=f"Analyze the following content:\n\n{content}",
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=FactCheckResult,
+                    temperature=0.2,
+                ),
+            )
+            break
+        except Exception as e:
+            if "429" in str(e) or "Too Many Requests" in str(e) or "Resource exhausted" in str(e):
+                if attempt == max_retries - 1:
+                    raise e
+                sleep_time = base_sleep * (2 ** attempt)
+                print(f"Rate limited by Gemini API. Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(sleep_time)
+            else:
+                raise e
     
     if hasattr(response, 'usage_metadata') and response.usage_metadata:
         try:
-            session = next(get_session())
+            session = get_session()
             usage = TokenUsage(
                 model_name='gemini-3-flash-preview',
-                action_type='FactCheck',
+                action_type=f"FactCheck: {tracker_name}" if tracker_name else "FactCheck",
                 prompt_tokens=response.usage_metadata.prompt_token_count or 0,
                 completion_tokens=response.usage_metadata.candidates_token_count or 0,
                 total_tokens=response.usage_metadata.total_token_count or 0
@@ -71,19 +128,19 @@ def process_article(content: str, radar_section: str, api_key: str = None) -> Fa
     result_dict = json.loads(response.text)
     return FactCheckResult(**result_dict)
 
-def generate_daily_briefing(api_key: str = None) -> str:
+def generate_daily_briefing(target_sections: list[str] = None, api_key: str = None) -> str:
     """
     Fetches all VALID_NEWS from the past 24 hours and uses Gemini
     to generate a cohesive daily briefing / podcast script.
     """
-    session = next(get_session())
+    session = get_session()
     yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     
-    reports = session.exec(
-        select(IntelReport)
-        .where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
-        .where(IntelReport.created_at >= yesterday)
-    ).all()
+    query = select(IntelReport).where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"])).where(IntelReport.created_at >= yesterday)
+    if target_sections:
+        query = query.where(IntelReport.radar_section.in_(target_sections))
+        
+    reports = session.exec(query).all()
     
     if not reports:
         return "Not enough news in the past 24 hours to generate a briefing."
@@ -133,13 +190,16 @@ def generate_daily_briefing(api_key: str = None) -> str:
     
     briefing_text = response.text
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
-    existing = session.exec(select(DailyBriefing).where(DailyBriefing.date_str == date_str)).first()
+    section_name_val = "ALL"
+    if target_sections:
+        section_name_val = ",".join(target_sections)
+        
+    existing = session.exec(select(DailyBriefing).where(DailyBriefing.date_str == date_str).where(DailyBriefing.section_name == section_name_val)).first()
     if existing:
         existing.content = briefing_text
         session.add(existing)
     else:
-        db_briefing = DailyBriefing(date_str=date_str, content=briefing_text)
+        db_briefing = DailyBriefing(date_str=date_str, section_name=section_name_val, content=briefing_text)
         session.add(db_briefing)
     session.commit()
     
@@ -151,7 +211,7 @@ def scan_trends(api_key: str = None):
     Scans recent IntelReports for entity spikes and generates alerts.
     """
     from db.models import TrendAlert
-    session = next(get_session())
+    session = get_session()
     recent_time = datetime.now(timezone.utc) - timedelta(hours=12)
     
     reports = session.exec(

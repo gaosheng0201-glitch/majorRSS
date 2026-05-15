@@ -7,14 +7,14 @@ from dotenv import load_dotenv, set_key
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db.database import get_session, create_db_and_tables
-from db.models import Source, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
+from db.models import Tracker, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
 from sqlmodel import select
 from ui.i18n import t, TRANSLATIONS
 
-MAJOR_RSS_VERSION = "v1.1.0"
+MAJOR_RSS_VERSION = "v1.2.0"
 
 # Must be the first Streamlit command
-st.set_page_config(page_title=f"MajorRSS Radar {MAJOR_RSS_VERSION}", page_icon="📡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title=f"MajorRSS Radar {MAJOR_RSS_VERSION}", page_icon=":material/satellite_alt: ", layout="wide", initial_sidebar_state="expanded")
 
 # --- Language Sniffer ---
 if "lang" not in st.session_state:
@@ -113,7 +113,7 @@ create_db_and_tables()
 
 def page_dashboard():
     st.title(f":material/bar_chart: {t('dash_title')}")
-    session = next(get_session())
+    session = get_session()
     
     recent_alerts = session.exec(select(TrendAlert).order_by(TrendAlert.created_at.desc()).limit(3)).all()
     if recent_alerts:
@@ -125,9 +125,15 @@ def page_dashboard():
     with st.expander(f":material/terminal: {t('dash_logs')}", expanded=False):
         if logs:
             for log in logs:
-                st.markdown(f"`[{log.updated_at.strftime('%H:%M:%S')}]` **{log.source_name}** - *{log.action_type}*: {log.detail}")
+                st.markdown(f"`[{log.updated_at.strftime('%H:%M:%S')}]` **{log.tracker_name}** - *{log.action_type}*: {log.detail}")
         else:
             st.caption(t('dash_no_logs'))
+
+    # Added Pending AI Processing Metric
+    from db.models import RawArticle
+    from sqlmodel import func
+    pending_count = session.exec(select(func.count()).where(RawArticle.processed == False)).one()
+    st.metric(t('dashboard_pending_ai'), pending_count)
 
     st.divider()
     
@@ -138,8 +144,8 @@ def page_dashboard():
         if st.button(f":material/refresh: {t('dash_refresh')}", use_container_width=True):
             st.rerun()
             
-    sources = session.exec(select(Source)).all()
-    unique_sections = list(set([s.radar_section for s in sources if s.radar_section]))
+    trackers = session.exec(select(Tracker)).all()
+    unique_sections = list(set([t.radar_section for t in trackers if t.radar_section]))
     if not unique_sections:
         unique_sections = ["Frontier Outpost", "Geek Radar"]
     
@@ -147,8 +153,6 @@ def page_dashboard():
     
     for i, section_name in enumerate(unique_sections):
         with section_tabs[i]:
-            st.header(f":material/folder: {section_name}")
-            
             reports = session.exec(
                 select(IntelReport)
                 .where(IntelReport.radar_section == section_name)
@@ -161,14 +165,37 @@ def page_dashboard():
                 st.info(f"[{section_name}] {t('dash_no_intel')}")
             for report in reports:
                 time_str = report.event_timestamp if report.event_timestamp else report.created_at.strftime('%Y-%m-%d %H:%M:%S')
-                with st.expander(f"[{report.importance_score}★] {report.source_url[:80]}..."):
-                    st.markdown(report.llm_summary)
-                    st.caption(f"🕒 {t('dash_published_at')}: {time_str} | {t('dash_scraped_at')}: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:10]}...")
+                raw_article = session.get(RawArticle, report.raw_article_id)
+                title = raw_article.title if raw_article else "Untitled Intelligence"
+                
+                with st.container(border=True):
+                    st.markdown(f"#### {title}")
+                    st.caption(f"⭐ **{report.importance_score}★** · 🕒 {t('dash_published_at')}: {time_str}")
+                    
+                    summary_text = report.llm_summary
+                    evidence_text = ""
+                    if "**:material/menu_book: Source Evidence:**" in summary_text:
+                        parts = summary_text.split("**:material/menu_book: Source Evidence:**")
+                        summary_text = parts[0].replace("---\n", "").strip()
+                        evidence_text = parts[1].strip()
+                        
+                    st.markdown(summary_text)
+                    
+                    with st.expander("来源与详情 (Sources & Details)"):
+                        if evidence_text:
+                            st.markdown("**:material/menu_book: 融合来源追踪 (Fused Sources):**")
+                            st.markdown(evidence_text)
+                        st.markdown(f"**原始 URL**: {report.source_url}")
+                        st.caption(f"{t('dash_scraped_at')}: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')} | Hash: {report.original_content_hash[:15]}")
 
 def page_briefing():
     st.title(f":material/article: {t('brief_title')}")
     st.markdown(t('brief_desc'))
-    session = next(get_session())
+    session = get_session()
+    
+    trackers = session.exec(select(Tracker)).all()
+    all_sections = list(set([t.radar_section for t in trackers if t.radar_section]))
+    selected_sections = st.multiselect(t('brief_select_sections'), all_sections, default=[])
     
     col_b1, col_b2 = st.columns([4, 1])
     with col_b2:
@@ -176,7 +203,7 @@ def page_briefing():
             from llm.processor import generate_daily_briefing
             with st.spinner(t('brief_generating')):
                 try:
-                    res = generate_daily_briefing()
+                    res = generate_daily_briefing(target_sections=selected_sections if selected_sections else None)
                     if "Not enough news" in res:
                         st.warning(f":material/warning: {t('brief_not_enough')}")
                     else:
@@ -191,13 +218,13 @@ def page_briefing():
         st.info(t('brief_empty'))
     
     for b in briefings:
-        with st.expander(f":material/calendar_month: {t('brief_date')}：{b.date_str}", expanded=(b == briefings[0])):
+        with st.expander(f":material/calendar_month: {t('brief_date')}：{b.date_str} [{b.section_name}]", expanded=(b == briefings[0])):
             st.markdown(b.content)
 
 def page_billing():
     st.title(f":material/payments: {t('bill_title')}")
     st.markdown(t('bill_desc'))
-    session = next(get_session())
+    session = get_session()
     
     all_usages = session.exec(select(TokenUsage)).all()
     flash_tokens = sum(u.total_tokens for u in all_usages if "flash" in u.model_name)
@@ -213,6 +240,18 @@ def page_billing():
         st.metric(t('bill_est_cost'), f"${est_cost:.4f}", t('bill_cost_desc'), delta_color="off")
         
     st.divider()
+    
+    # --- Daily Consumption Bar Chart ---
+    st.subheader(f":material/bar_chart: {t('bill_daily_trend')}")
+    import pandas as pd
+    if all_usages:
+        df = pd.DataFrame([{"date": u.created_at.strftime('%Y-%m-%d'), "tokens": u.total_tokens} for u in all_usages])
+        daily_tokens = df.groupby("date").sum().reset_index()
+        st.bar_chart(daily_tokens.set_index("date"))
+    else:
+        st.info(t('bill_daily_empty'))
+        
+    st.divider()
     st.subheader(f":material/receipt_long: {t('bill_recent')}")
     recent_usages = session.exec(select(TokenUsage).order_by(TokenUsage.created_at.desc()).limit(20)).all()
     if recent_usages:
@@ -223,7 +262,7 @@ def page_billing():
 
 def page_settings():
     st.title(f":material/settings: {t('set_title')}")
-    session = next(get_session())
+    session = get_session()
     
     # Language Selector
     lang_options = {"en": "English", "zh": "简体中文", "ko": "한국어", "ja": "日本語", "ru": "Русский"}
@@ -255,57 +294,220 @@ def page_settings():
     
     st.divider()
     
-    st.header(f":material/satellite_alt: {t('set_manage')}")
+    st.header(f":material/key: {t('set_auth_title')}")
+    st.markdown(t('set_auth_desc'))
     
-    with st.expander(f":material/add: {t('set_add')}", expanded=True):
-        with st.form("add_source_form"):
-            s_name = st.text_input(t('set_name'), placeholder="e.g. OpenAI Release Notes")
-            s_url = st.text_input(t('set_url'), placeholder="https://...")
-            s_tier = st.selectbox(t('set_tier'), [0, 1, 2, 3], format_func=lambda x: {0: t('set_tier_0'), 1: t('set_tier_1'), 2: t('set_tier_2'), 3: t('set_tier_3')}[x])
-            s_section = st.text_input(t('set_section'), placeholder="e.g. Geek Radar")
-            submit_source = st.form_submit_button(t('set_submit'))
-            
-            if submit_source and s_name and s_url and s_section:
-                final_tier = s_tier
-                final_url = s_url
-                
-                if s_tier == 0:
-                    with st.spinner(t('set_sniffing')):
-                        from scrapers.auto_detect import probe_url_for_tier
-                        final_tier, final_url, probe_msg = probe_url_for_tier(s_url)
-                        st.info(f"{t('set_report')} {probe_msg}")
-                        import time; time.sleep(1)
-
-                new_source = Source(name=s_name, url=final_url, tier=final_tier, radar_section=s_section)
-                session.add(new_source)
-                session.commit()
-                st.success(f"{t('set_add_success')} {s_name} {t('set_to_section')} {s_section} (Tier {final_tier})")
-                import time; time.sleep(1.5)
-                st.rerun()
-
-    st.subheader(t('set_current'))
-    sources = session.exec(select(Source)).all()
-    if sources:
-        source_data = [{"ID": s.id, "Name": s.name, "URL": s.url, "Tier": s.tier, "Section": s.radar_section, "Active": s.is_active} for s in sources]
-        st.dataframe(source_data, use_container_width=True)
+    from scrapers.auth_helper import AUTH_PLATFORMS, interactive_login, check_cookie_health
+    import time
+    
+    cols = st.columns(4)
+    for idx, (platform_key, platform_info) in enumerate(AUTH_PLATFORMS.items()):
+        cookie_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", platform_info["cookie_file"])
+        has_cookie = os.path.exists(cookie_path)
+        is_healthy = check_cookie_health(platform_key, cookie_path) if has_cookie else False
         
-        col_op1, col_op2 = st.columns([1, 1])
+        with cols[idx % 4]:
+            with st.container(border=True):
+                st.markdown(f"**{platform_info['name']}**")
+                if has_cookie and is_healthy:
+                    mtime = os.path.getmtime(cookie_path)
+                    st.caption(f":material/check_circle: {t('set_auth_status_ok')}\n({time.strftime('%m-%d %H:%M', time.localtime(mtime))})")
+                    btn_text = t('set_auth_relogin')
+                    btn_type = "secondary"
+                elif has_cookie and not is_healthy:
+                    mtime = os.path.getmtime(cookie_path)
+                    st.caption(f":material/warning: {t('set_auth_status_expired', '凭证已失效')}\n({time.strftime('%m-%d %H:%M', time.localtime(mtime))})")
+                    btn_text = t('set_auth_relogin')
+                    btn_type = "primary"
+                else:
+                    st.caption(f":material/cancel: {t('set_auth_status_none')}")
+                    btn_text = t('set_auth_login')
+                    btn_type = "primary"
+                
+                if st.button(btn_text, key=f"auth_btn_{platform_key}", type=btn_type, use_container_width=True):
+                    with st.spinner(f"{t('set_auth_waiting')} {platform_info['name']} ..."):
+                        success, msg = interactive_login(platform_key)
+                        if success:
+                            st.success(msg)
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+    
+    st.divider()
+    st.caption(f"MajorRSS Engine Version: **{MAJOR_RSS_VERSION}**")
+
+def page_trackers():
+    st.title(f":material/satellite_alt: {t('nav_trackers')}")
+    session = get_session()
+    
+    with st.expander(f":material/add: {t('set_add_tracker')}", expanded=True):
+        with st.form("add_tracker_form"):
+            t_name = st.text_input(f"{t('set_tracker_name')} *", placeholder=t('set_tracker_name_ph'))
+            t_section = st.text_input(f"{t('set_section')} *", placeholder="e.g. Geek Radar")
+            
+            # --- HYBRID Mixed Target Panel ---
+            col_t1, col_t2, col_t3 = st.columns(3)
+            with col_t1:
+                t_urls = st.text_area(t('set_tracker_urls'), placeholder=t('set_tracker_urls_ph'), height=100)
+            with col_t2:
+                t_keywords = st.text_area(t('set_tracker_keywords'), placeholder=t('set_tracker_keywords_ph'), height=100)
+            with col_t3:
+                t_accounts = st.text_area(t('set_tracker_accounts'), placeholder=t('set_tracker_accounts_ph'), height=100)
+                
+            col_o1, col_o2, col_o3 = st.columns(3)
+            with col_o1:
+                t_use_osint = st.checkbox(t('set_tracker_use_osint'), value=True)
+            with col_o2:
+                t_max_days = st.number_input(t('set_tracker_max_days'), min_value=0, value=7, help=t('set_tracker_max_days_help'))
+            with col_o3:
+                t_interval = st.number_input(t('set_tracker_interval'), min_value=1, value=30, help=t('set_tracker_interval_help'))
+            # ---------------------------------
+            
+            with st.expander(t('set_tracker_adv')):
+                t_prompt = st.text_area(t('set_tracker_prompt'), placeholder=t('set_tracker_prompt_ph'))
+                t_cookie = st.text_input(t('set_tracker_cookie'), placeholder=t('set_tracker_cookie_ph'), type="password")
+            
+            submit_tracker = st.form_submit_button(t('set_tracker_deploy'))
+            
+            if submit_tracker:
+                if not t_name:
+                    st.error(":material/warning: 请填写探测器名称 (Tracker Name is required).")
+                elif not t_section:
+                    st.error(":material/warning: 请填写所属板块 (Section is required).")
+                else:
+                    import json
+                    urls_list = [u.strip() for u in t_urls.split('\n') if u.strip()]
+                    keywords_list = [k.strip() for k in t_keywords.split('\n') if k.strip()]
+                    accounts_list = [a.strip().replace('@', '') for a in t_accounts.split('\n') if a.strip()]
+                    
+                    if not (urls_list or keywords_list or accounts_list):
+                        st.error("⚠️ 请至少提供一种探测目标 (Please provide at least one URL, Keyword, or Account).")
+                    else:
+                        hybrid_target = {
+                            "urls": urls_list,
+                            "keywords": keywords_list,
+                            "accounts": accounts_list,
+                            "use_default_osint": t_use_osint,
+                            "max_days": t_max_days
+                        }
+                        new_tracker = Tracker(
+                            name=t_name,
+                            tracker_type="HYBRID",
+                            target=json.dumps(hybrid_target),
+                            tier=1 if urls_list and not (keywords_list or accounts_list) else 0,
+                            radar_section=t_section,
+                            fetch_interval_minutes=t_interval,
+                            prompt_override=t_prompt if t_prompt else None,
+                            cookie_string=t_cookie if t_cookie else None
+                        )
+                        session.add(new_tracker)
+                        session.commit()
+                        st.success(f"{t('set_tracker_deploy_success')} {t_name}")
+                        import time; time.sleep(1.5)
+                        st.rerun()
+
+    st.subheader(t('set_tracker_active'))
+    trackers = session.exec(select(Tracker)).all()
+    if trackers:
+        def format_target(target_json):
+            try:
+                import json
+                d = json.loads(target_json)
+                parts = []
+                if d.get("urls"): parts.append(f"{len(d['urls'])} URLs")
+                if d.get("keywords"): parts.append(f"{len(d['keywords'])} KWs")
+                if d.get("accounts"): parts.append(f"{len(d['accounts'])} Accs")
+                return ", ".join(parts) if parts else "Empty"
+            except:
+                return target_json[:30] + "..."
+                
+        def get_pending_count(tracker_id):
+            from db.models import RawArticle
+            from sqlmodel import func
+            return session.exec(select(func.count()).where(RawArticle.tracker_id == tracker_id, RawArticle.processed == False)).one()
+            
+        import pandas as pd
+        tracker_data = [{"Select": False, "ID": t.id, "Name": t.name, "Targets": format_target(t.target), "Interval": t.fetch_interval_minutes, "Pending": get_pending_count(t.id), "Section": t.radar_section, "Active": t.is_active} for t in trackers]
+        df_trackers = pd.DataFrame(tracker_data)
+        edited_trackers = st.data_editor(
+            df_trackers, 
+            hide_index=True, 
+            use_container_width=True, 
+            column_config={
+                "Select": st.column_config.CheckboxColumn(required=True),
+                "ID": st.column_config.NumberColumn(disabled=True),
+                "Targets": st.column_config.TextColumn(disabled=True),
+                "Pending": st.column_config.NumberColumn(disabled=True)
+            }
+        )
+        
+        selected_tracker_ids = edited_trackers[edited_trackers["Select"] == True]["ID"].tolist()
+        
+        col_op1, col_op2, col_op3, col_op4 = st.columns([1, 1, 1, 1])
         with col_op1:
-            del_id = st.number_input(t('set_del_id'), min_value=1, step=1)
-            if st.button(f":material/close: {t('set_del_btn')}", type="secondary"):
-                to_delete = session.get(Source, del_id)
-                if to_delete:
-                    session.delete(to_delete)
+            st.write("")
+            if st.button("💾 保存修改", type="primary", use_container_width=True):
+                changes = 0
+                for index, row in edited_trackers.iterrows():
+                    db_t = session.get(Tracker, row["ID"])
+                    if db_t:
+                        # Check if anything changed
+                        if (db_t.name != row["Name"] or 
+                            db_t.fetch_interval_minutes != row["Interval"] or 
+                            db_t.radar_section != row["Section"] or 
+                            db_t.is_active != row["Active"]):
+                            
+                            db_t.name = row["Name"]
+                            db_t.fetch_interval_minutes = int(row["Interval"])
+                            db_t.radar_section = row["Section"]
+                            db_t.is_active = bool(row["Active"])
+                            session.add(db_t)
+                            changes += 1
+                if changes > 0:
                     session.commit()
-                    st.success(f"{t('set_del_success')} {del_id}")
+                    st.success(f"已成功保存 {changes} 个修改的追踪器。")
+                    import time; time.sleep(1.0)
                     st.rerun()
                 else:
-                    st.error(t('set_del_fail'))
-        
+                    st.info("没有检测到任何修改。")
+
         with col_op2:
+            st.write("") # Alignment
+            if st.button(t('set_tracker_del_btn'), type="secondary", use_container_width=True):
+                if selected_tracker_ids:
+                    for tid in selected_tracker_ids:
+                        to_delete = session.get(Tracker, tid)
+                        if to_delete:
+                            session.delete(to_delete)
+                    session.commit()
+                    st.success(f"Deleted {len(selected_tracker_ids)} trackers.")
+                    import time; time.sleep(1.0)
+                    st.rerun()
+                else:
+                    st.warning("Please check at least one tracker to delete.")
+        
+        with col_op3:
             st.write("")
+            if st.button("单独执行选中项", type="secondary", use_container_width=True):
+                if selected_tracker_ids:
+                    with st.spinner("Executing selected trackers..."):
+                        import worker
+                        try:
+                            for tid in selected_tracker_ids:
+                                worker._scrape_single_tracker(tid)
+                                worker._process_tracker_fusion(tid)
+                            st.success(f"Successfully executed {len(selected_tracker_ids)} trackers.")
+                            import time; time.sleep(1.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Execution failed: {e}")
+                else:
+                    st.warning("Please check at least one tracker to run.")
+
+        with col_op4:
             st.write("")
-            if st.button(f":material/bolt: {t('set_force')}", type="primary", use_container_width=True):
+            if st.button(t('set_force'), type="primary", use_container_width=True):
                 with st.spinner(t('set_forcing')):
                     import worker
                     try:
@@ -314,11 +516,188 @@ def page_settings():
                         st.success(t('set_force_success'))
                     except Exception as e:
                         st.error(f"{t('set_force_fail')} {e}")
-    else:
-        st.info(t('set_no_sources'))
+                        
+        st.divider()
+        st.subheader(f":material/inbox: {t('manage_queue')}")
+        from db.models import RawArticle
+        import pandas as pd
+        import urllib.parse
+        import json
+        import hashlib
         
-    st.divider()
-    st.caption(f"MajorRSS Engine Version: **{MAJOR_RSS_VERSION}**")
+        q_trackers = {t.id: f"[{t.id}] {t.name}" for t in trackers if get_pending_count(t.id) > 0}
+        if q_trackers:
+            q_sel = st.selectbox("Select Tracker to Manage Queue", options=list(q_trackers.keys()), format_func=lambda x: q_trackers[x])
+            if q_sel:
+                raws = session.exec(select(RawArticle).where(RawArticle.tracker_id == q_sel, RawArticle.processed == False).order_by(RawArticle.created_at.desc())).all()
+                if raws:
+                    df_raw = pd.DataFrame([{"Select": False, "ID": r.id, "Title": r.title, "URL": r.url, "Date": r.published_at or r.created_at} for r in raws])
+                    edited_df = st.data_editor(df_raw, hide_index=True, use_container_width=True, column_config={
+                        "Select": st.column_config.CheckboxColumn(required=True),
+                        "URL": st.column_config.LinkColumn("Source Link", display_text="Open Original")
+                    })
+                    
+                    selected_ids = edited_df[edited_df["Select"] == True]["ID"].tolist()
+                    
+                    col_q1, col_q2 = st.columns(2)
+                    with col_q1:
+                        if st.button(t('discard_selected'), type="secondary", use_container_width=True) and selected_ids:
+                            for rid in selected_ids:
+                                r = session.get(RawArticle, rid)
+                                if r:
+                                    r.processed = True
+                                    session.add(r)
+                            session.commit()
+                            st.success(f"Discarded {len(selected_ids)} articles.")
+                            import time; time.sleep(1.0)
+                            st.rerun()
+                    with col_q2:
+                        if st.button(t('fuse_selected'), type="primary", use_container_width=True) and selected_ids:
+                            bundled_text = f"=== FORCED MANUAL FUSION ===\n\n"
+                            tracker_obj = session.get(Tracker, q_sel)
+                            for idx, rid in enumerate(selected_ids):
+                                r = session.get(RawArticle, rid)
+                                if r:
+                                    bundled_text += f"Source {idx+1}: {r.url}\nTitle: {r.title}\nContent:\n{r.content}\n\n"
+                                    r.processed = True
+                                    session.add(r)
+                            
+                            from llm.processor import process_article
+                            with st.spinner("Fusing selected..."):
+                                result = process_article(bundled_text, tracker_obj.radar_section, prompt_override=tracker_obj.prompt_override, tracker_name=tracker_obj.name)
+                                source_links = "\n".join([f"- [{session.get(RawArticle, rid).title}]({session.get(RawArticle, rid).url})" for rid in selected_ids if session.get(RawArticle, rid)])
+                                final_summary = f"{result.llm_summary}\n\n---\n**:material/menu_book: Source Evidence:**\n{source_links}"
+                                
+                                report = IntelReport(
+                                    raw_article_id=selected_ids[0],
+                                    source_url=f"Manually fused from {len(selected_ids)} sources",
+                                    validity_category=result.validity_category,
+                                    radar_section=tracker_obj.radar_section,
+                                    llm_summary=final_summary,
+                                    importance_score=result.importance_score,
+                                    original_content_hash=hashlib.sha256(bundled_text.encode('utf-8')).hexdigest(),
+                                    key_entities=json.dumps(result.key_entities),
+                                    event_timestamp=result.event_timestamp
+                                )
+                                session.add(report)
+                                session.commit()
+                                st.success("Fusion complete! Check the Dashboard.")
+                                import time; time.sleep(1.5)
+                                st.rerun()
+        else:
+            st.info("No pending queues. All caught up!")
+            
+    else:
+        st.info(t('set_tracker_no'))
+        
+
+# -------------------------------------------------------------
+# MONITORS & SUBSCRIPTIONS PAGE
+# -------------------------------------------------------------
+
+@st.dialog(t('monitors_dialog_title') if 'monitors_dialog_title' in t.__globals__.get('LANG_DICT', {}).get(st.session_state.lang, {}) else "Update Details", width="large")
+def show_update_dialog(update_id: int):
+    session = get_session()
+    from db.models import SubscriptionUpdate
+    update = session.get(SubscriptionUpdate, update_id)
+    if not update:
+        return
+        
+    st.markdown(f"### {t('monitors_diff_title')}")
+    st.code(update.diff_text, language="diff")
+    
+    if update.llm_summary:
+        st.info(f"**{t('monitors_ai_summary_title')}**\n\n{update.llm_summary}")
+    else:
+        if st.button(t('monitors_ai_summarize'), type="primary"):
+            with st.spinner(t('monitors_summarizing')):
+                from llm.processor import summarize_diff
+                try:
+                    summary = summarize_diff(update.diff_text)
+                    update.llm_summary = summary
+                    session.add(update)
+                    session.commit()
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+                    
+    if st.button("Mark as Read"):
+        update.is_read = True
+        session.add(update)
+        session.commit()
+        st.rerun()
+
+def page_monitors():
+    st.title(t('monitors_title'))
+    st.markdown(t('monitors_desc'))
+    
+    session = get_session()
+    
+    with st.expander(t('monitors_add'), expanded=True):
+        col1, col2, col3, col4 = st.columns([2, 3, 1, 1])
+        with col1:
+            new_name = st.text_input(t('monitors_add_name'))
+        with col2:
+            new_url = st.text_input(t('monitors_add_url'))
+        with col3:
+            new_interval = st.number_input(t('monitors_add_interval'), min_value=1, value=60, step=10)
+        with col4:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(t('monitors_add_btn'), type="primary", use_container_width=True):
+                if new_name and new_url:
+                    from db.models import Subscription
+                    sub = Subscription(name=new_name, target_url=new_url, fetch_interval_minutes=new_interval)
+                    session.add(sub)
+                    session.commit()
+                    st.success(f"{t('monitors_add_success')} {new_name}")
+                    import time; time.sleep(1)
+                    st.rerun()
+                    
+    st.header(t('monitors_feed'))
+    from db.models import Subscription, SubscriptionUpdate
+    subs = session.exec(select(Subscription).where(Subscription.is_active == True).order_by(Subscription.created_at.desc())).all()
+    
+    if not subs:
+        st.info(t('monitors_no_feed'))
+    else:
+        cols = st.columns(3)
+        for idx, sub in enumerate(subs):
+            latest_update = session.exec(select(SubscriptionUpdate).where(SubscriptionUpdate.subscription_id == sub.id).order_by(SubscriptionUpdate.created_at.desc())).first()
+            has_update = latest_update and not latest_update.is_read
+            
+            with cols[idx % 3]:
+                container = st.container(border=True)
+                container.markdown(f"### {sub.name}")
+                container.caption(f"{sub.target_url[:40]}...")
+                
+                if has_update:
+                    container.error(f"🔴 {sub.last_status}")
+                else:
+                    container.success(f"🟢 {sub.last_status}")
+                    
+                checked_time = sub.last_scraped_at.strftime('%Y-%m-%d %H:%M') if sub.last_scraped_at else "Never"
+                container.caption(f"{t('monitors_last_check')} {checked_time}")
+                container.caption(t('monitors_interval_display').format(sub.fetch_interval_minutes))
+                
+                # Bottom action row
+                act_col1, act_col2 = container.columns([3, 1])
+                with act_col1:
+                    if has_update:
+                        if st.button(t('monitors_view_update'), key=f"btn_update_{sub.id}", type="primary", use_container_width=True):
+                            show_update_dialog(latest_update.id)
+                with act_col2:
+                    with st.popover("⚙️"):
+                        edit_int = st.number_input("频率(分钟)", min_value=1, value=sub.fetch_interval_minutes, key=f"edit_int_{sub.id}", step=10)
+                        if st.button("💾 保存", key=f"save_int_{sub.id}", use_container_width=True):
+                            sub.fetch_interval_minutes = edit_int
+                            session.add(sub)
+                            session.commit()
+                            st.rerun()
+                        if st.button("🗑️ 删除", key=f"del_{sub.id}", use_container_width=True):
+                            sub.is_active = False
+                            session.add(sub)
+                            session.commit()
+                            st.rerun()
 
 # -------------------------------------------------------------
 # NAVIGATION SETUP (Native SPA with CSS Icon-Only Override)
@@ -330,6 +709,10 @@ def briefing_page():
     page_briefing()
 def billing_page():
     page_billing()
+def trackers_page():
+    page_trackers()
+def monitors_page():
+    page_monitors()
 def settings_page():
     page_settings()
 
@@ -337,6 +720,8 @@ pg = st.navigation([
     st.Page(dashboard_page, title=t('nav_dashboard'), icon=":material/dashboard:"),
     st.Page(briefing_page, title=t('nav_briefing'), icon=":material/article:"),
     st.Page(billing_page, title=t('nav_billing'), icon=":material/payments:"),
+    st.Page(trackers_page, title=t('nav_trackers'), icon=":material/satellite_alt:"),
+    st.Page(monitors_page, title=t('nav_monitors'), icon=":material/rss_feed:"),
     st.Page(settings_page, title=t('nav_settings'), icon=":material/settings:"),
 ])
 

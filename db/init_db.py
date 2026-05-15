@@ -14,7 +14,7 @@ def initialize():
     print("Database initialized successfully.")
     
     # Add a default basic RSS source for testing
-    session = next(get_session())
+    session = get_session()
     statement = select(Source).where(Source.name == "HuggingFace Daily Papers")
     existing = session.exec(statement).first()
     
