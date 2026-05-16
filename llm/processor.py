@@ -14,6 +14,7 @@ class FactCheckResult(BaseModel):
     importance_score: int = Field(description="Score from 1 to 5, where 5 is highly important/breaking news.")
     llm_summary: str = Field(description="A concise, factual summary of the core news/update. Remove marketing fluff.")
     key_entities: list[str] = Field(default=[], description="List of core entities (people, products, companies) mentioned, max 5.")
+    relevant_source_indices: list[int] = Field(default=[], description="List of Source indices (e.g. [1, 3]) that were actually relevant to the news and used for the summary. Exclude indices of noise or irrelevant sources.")
     event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
 
 def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None) -> FactCheckResult:
@@ -27,40 +28,6 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
     
     client = genai.Client(api_key=api_key)
 
-def summarize_diff(diff_text: str, api_key: str = None) -> str:
-    """Provides a concise summary of what changed in a text diff."""
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
-    
-    client = genai.Client(api_key=api_key)
-    prompt = f"You are an assistant tracking webpage changes. The following is a diff showing what changed on a tracked page. Provide a very concise, 1-2 sentence summary of what was added, removed, or changed. Ignore minor whitespace or formatting changes.\n\nDIFF:\n{diff_text}"
-    
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        # Log token usage
-        session = get_session()
-        try:
-            tu = TokenUsage(
-                model_name="gemini-2.5-flash",
-                action_type="Diff Summary",
-                prompt_tokens=response.usage_metadata.prompt_token_count,
-                completion_tokens=response.usage_metadata.candidates_token_count,
-                total_tokens=response.usage_metadata.total_token_count
-            )
-            session.add(tu)
-            session.commit()
-        except:
-            pass
-            
-        return response.text
-    except Exception as e:
-        return f"Failed to summarize: {e}"
-    
     if prompt_override:
         system_instruction = (
             f"You are an OSINT AI Analyst for the '{radar_section}' radar. "
@@ -287,3 +254,38 @@ def scan_trends(api_key: str = None):
                 session.add(alert)
                 session.commit()
                 print(f"Generated Trend Alert for: {data['name']}")
+
+def summarize_diff(diff_text: str, api_key: str = None) -> str:
+    """Provides a concise summary of what changed in a text diff."""
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set.")
+    
+    client = genai.Client(api_key=api_key)
+    prompt = f"You are an assistant tracking webpage changes. The following is a diff showing what changed on a tracked page. Provide a very concise, 1-2 sentence summary of what was added, removed, or changed. Ignore minor whitespace or formatting changes.\n\nDIFF:\n{diff_text}"
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        # Log token usage
+        session = get_session()
+        try:
+            tu = TokenUsage(
+                model_name="gemini-2.5-flash",
+                action_type="Diff Summary",
+                prompt_tokens=response.usage_metadata.prompt_token_count,
+                completion_tokens=response.usage_metadata.candidates_token_count,
+                total_tokens=response.usage_metadata.total_token_count
+            )
+            session.add(tu)
+            session.commit()
+        except:
+            pass
+            
+        return response.text
+    except Exception as e:
+        return f"Failed to summarize: {e}"
+    

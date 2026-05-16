@@ -5,8 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-05-15
+## [1.3.1] - 2026-05-16
 
+### Fixed
+- **Source Evidence Hallucination Fix**: Resolved a critical UX issue where the AI's "Source Evidence" block would display completely irrelevant URLs (e.g., noisy fallback posts from Reddit's search API). Upgraded the `FactCheckResult` JSON schema with a `relevant_source_indices` array, forcing Gemini to explicitly cite the exact sources it utilized and dynamically filtering out all unmentioned noise from the frontend display.
+- **High-Concurrency PostgreSQL Bottlenecks**: Fixed recurring `QueuePool limit of size 5 overflow 10 reached` TimeoutErrors during heavy scraping and intelligence fusion loads. Upgraded the SQLAlchemy engine initialization for PostgreSQL with enterprise-grade pooling limits (`pool_size=30`, `max_overflow=50`) and enabled `pool_pre_ping` to ensure connection health and eliminate threading deadlocks.
+
+## [1.3.0] - 2026-05-15
 ### Added
 - **Webpage Subscription & Diff Monitoring**: Architected a new top-level parallel business line specifically for tracking non-RSS entities (API documentation, Bilibili/YouTube dynamic homepages, personal blogs).
 - **Smart Diff Filter**: A specialized `BeautifulSoup` engine that intelligently strips out volatile DOM noise (e.g., dynamic view counts, follower numbers, `<time>` tags) and anchors on structural skeleton changes (`<a>` links and long paragraphs) to eliminate false-positive alerts.

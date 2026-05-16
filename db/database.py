@@ -22,8 +22,8 @@ if database_url.startswith("sqlite"):
     from sqlalchemy.pool import NullPool
     engine = create_engine(database_url, echo=False, connect_args=connect_args, poolclass=NullPool)
 else:
-    # For Postgres, use the default robust QueuePool
-    engine = create_engine(database_url, echo=False, connect_args=connect_args)
+    # For Postgres, use robust QueuePool with higher limits to prevent timeouts
+    engine = create_engine(database_url, echo=False, connect_args=connect_args, pool_size=30, max_overflow=50, pool_pre_ping=True)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)

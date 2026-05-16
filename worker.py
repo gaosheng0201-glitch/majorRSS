@@ -239,8 +239,14 @@ def _process_tracker_fusion(tracker_id: int):
         if len(composite_urls) > 80:
             composite_urls = composite_urls[:77] + "..."
             
+        # Filter sources based on LLM's relevance array
+        if hasattr(result, 'relevant_source_indices') and result.relevant_source_indices:
+            valid_sources = [unprocessed[i-1] for i in result.relevant_source_indices if 1 <= i <= len(unprocessed)]
+        else:
+            valid_sources = unprocessed
+            
         # Append clickable source links to the summary
-        source_links = "\n".join([f"- [{u.title}]({u.url})" for u in unprocessed])
+        source_links = "\n".join([f"- [{u.title}]({u.url})" for u in valid_sources])
         final_summary = f"{result.llm_summary}\n\n---\n**📚 Source Evidence:**\n{source_links}"
         
         report = IntelReport(
