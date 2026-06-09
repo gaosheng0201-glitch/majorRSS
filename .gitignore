@@ -17,8 +17,10 @@ __pycache__/
 # Logs
 *.log
 
-# Auth Cookies (SENSITIVE)
+# Auth Cookies & Config (SENSITIVE)
 *_cookies.json
+*_cookies.dat
+config.dat
 
 # Temporary & Test Scripts
 add_interval_i18n.py

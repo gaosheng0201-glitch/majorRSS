@@ -96,14 +96,24 @@ AUTH_PLATFORMS = {
 def check_cookie_health(platform_key: str, cookie_path: str) -> bool:
     """
     Statically checks if the saved cookie JSON contains the required success_cookies.
+    Supports both DPAPI encrypted and plaintext cookie files.
     """
     if not os.path.exists(cookie_path):
         return False
     try:
         platform = AUTH_PLATFORMS.get(platform_key)
         if not platform: return False
-        with open(cookie_path, 'r', encoding='utf-8') as f:
-            state = json.load(f)
+        
+        with open(cookie_path, 'rb') as f:
+            content = f.read()
+            
+        try:
+            from services.crypto_service import decrypt_data
+            decrypted = decrypt_data(content)
+            state = json.loads(decrypted)
+        except Exception:
+            state = json.loads(content.decode('utf-8'))
+            
         for c in state.get("cookies", []):
             if c.get("name") in platform["success_cookies"]:
                 return True
@@ -115,7 +125,7 @@ def check_cookie_health(platform_key: str, cookie_path: str) -> bool:
 def interactive_login(platform_key: str):
     """
     Launches a headful browser to allow the user to log in manually to the specific platform.
-    Waits for the user to close the browser, then saves the storage state.
+    Waits for the user to close the browser, then saves the storage state securely.
     Returns:
         tuple (bool, str): (Success, Message)
     """
@@ -123,7 +133,8 @@ def interactive_login(platform_key: str):
         return False, f"❌ 未知的平台标识符: {platform_key}"
         
     platform = AUTH_PLATFORMS[platform_key]
-    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", platform["cookie_file"])
+    from db.config import get_cookie_path
+    output_file = get_cookie_path(platform["cookie_file"])
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
@@ -139,13 +150,10 @@ def interactive_login(platform_key: str):
             # Wait for the user to close the page
             page.wait_for_event("close", timeout=0)
             
-            # Save storage state
-            context.storage_state(path=output_file)
+            # Save storage state in memory
+            state = context.storage_state()
+            state_str = json.dumps(state)
             
-            # Health Check
-            with open(output_file, 'r', encoding='utf-8') as f:
-                state = json.load(f)
-                
             has_auth = False
             for c in state.get("cookies", []):
                 if c.get("name") in platform["success_cookies"]:
@@ -153,6 +161,11 @@ def interactive_login(platform_key: str):
                     break
             
             if has_auth:
+                # Encrypt and save
+                from services.crypto_service import encrypt_data
+                encrypted_bytes = encrypt_data(state_str)
+                with open(output_file, 'wb') as f:
+                    f.write(encrypted_bytes)
                 return True, f"✅ 授权成功！已保存 {platform['name']} 的核心登录凭证。"
             else:
                 if os.path.exists(output_file):

@@ -31,15 +31,32 @@ class AgenticScraper:
                 
         cookie_file = None
         if detected_platform:
-            cookie_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", detected_platform["cookie_file"])
+            from db.config import get_cookie_path
+            cookie_file = get_cookie_path(detected_platform["cookie_file"])
         
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             
-            # Load specific platform cookie file if exists and no manual override
+            # Load specific platform cookie state if exists and no manual override
+            storage_state = None
             if detected_platform and cookie_file and os.path.exists(cookie_file) and not self.cookie_string:
+                try:
+                    with open(cookie_file, 'rb') as f:
+                        content = f.read()
+                    try:
+                        from services.crypto_service import decrypt_data
+                        import json
+                        decrypted_str = decrypt_data(content)
+                        storage_state = json.loads(decrypted_str)
+                    except Exception:
+                        import json
+                        storage_state = json.loads(content.decode('utf-8'))
+                except Exception as e:
+                    print(f"[ERROR] Failed to load secure cookie: {e}")
+            
+            if storage_state:
                 context = browser.new_context(
-                    storage_state=cookie_file,
+                    storage_state=storage_state,
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 )
             else:

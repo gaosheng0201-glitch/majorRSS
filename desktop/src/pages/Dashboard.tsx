@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { 
   Text, Paper, SimpleGrid, Group, Stack, Badge, 
-  Button, RingProgress, Loader, Card, ScrollArea, Divider, Collapse, Accordion, UnstyledButton, Modal, Tabs, Anchor
+  Button, RingProgress, Loader, Card, ScrollArea, Divider, Collapse, UnstyledButton, Modal, Tabs, Anchor
 } from '@mantine/core';
 import { 
   Activity, AlertTriangle, CheckCircle, RefreshCw, Sparkles, Link as LinkIcon, FileText
@@ -12,6 +12,7 @@ import { useLanguage } from '../i18n/translations';
 interface AlertSource {
   title: string;
   url: string;
+  description?: string;
 }
 
 interface Alert {
@@ -404,7 +405,7 @@ function IntelReportCard({ report }: { report: Report }) {
                                   }}
                                 >
                                   {src.title}
-                                  <span style={{ fontSize: '11px', c: '#748ffc' }}>↗</span>
+                                  <span style={{ fontSize: '11px', color: '#748ffc' }}>↗</span>
                                 </Anchor>
                                 {src.description && (
                                   <Text size="xs" c="gray.4" style={{ lineHeight: 1.5 }}>
@@ -469,7 +470,7 @@ function IntelReportCard({ report }: { report: Report }) {
                                   }}
                                 >
                                   {src.title}
-                                  <span style={{ fontSize: '11px', c: '#748ffc' }}>↗</span>
+                                  <span style={{ fontSize: '11px', color: '#748ffc' }}>↗</span>
                                 </Anchor>
                                 {src.description && src.description !== src.title && (
                                   <Text size="xs" c="gray.4" style={{ lineHeight: 1.5, wordBreak: 'break-all' }}>
@@ -794,53 +795,55 @@ export default function Dashboard() {
               />
             </Paper>
             
-            {selectedAlert.sources && selectedAlert.sources.length > 0 && (
-              <Stack gap="xs" mt="md">
-                <Group gap="xs" align="center">
-                  <Text size="sm" fw={700} c="white">
-                    {t('dash_adopted_sources')}
-                  </Text>
-                  <Badge 
-                    size="sm" 
-                    variant="filled"
+            {selectedAlert.sources && selectedAlert.sources.length > 0 && (() => {
+              const sources = selectedAlert.sources;
+              return (
+                <Stack gap="xs" mt="md">
+                  <Group gap="xs" align="center">
+                    <Text size="sm" fw={700} c="white">
+                      {t('dash_adopted_sources')}
+                    </Text>
+                    <Badge 
+                      size="sm" 
+                      variant="filled"
+                      style={{ 
+                        borderRadius: '9999px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        color: '#a5d8ff',
+                        fontWeight: 700
+                      }}
+                    >
+                      {sources.length}
+                    </Badge>
+                  </Group>
+                  <Paper 
+                    p="md" 
+                    radius="md" 
                     style={{ 
-                      borderRadius: '9999px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      color: '#a5d8ff',
-                      fontWeight: 700
+                      background: 'rgba(21, 23, 27, 0.6)', 
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
                     }}
                   >
-                    {selectedAlert.sources.length}
-                  </Badge>
-                </Group>
-                <Paper 
-                  p="md" 
-                  radius="md" 
-                  style={{ 
-                    background: 'rgba(21, 23, 27, 0.6)', 
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
-                  }}
-                >
-                  <ScrollArea.Autosize mah={220} offsetScrollbars>
-                    <Stack gap={0}>
-                      {selectedAlert.sources.map((src, index) => {
-                        let domain = "";
-                        try {
-                          domain = new URL(src.url).hostname;
-                        } catch (e) {}
-                        
-                        return (
-                          <Group 
-                            key={index} 
-                            gap="md" 
-                            wrap="nowrap" 
-                            align="flex-start" 
-                            py="sm" 
-                            style={{ 
-                              borderBottom: index === selectedAlert.sources.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.04)' 
-                            }}
-                          >
+                    <ScrollArea.Autosize mah={220} offsetScrollbars>
+                      <Stack gap={0}>
+                        {sources.map((src, index) => {
+                          let domain = "";
+                          try {
+                            domain = new URL(src.url).hostname;
+                          } catch (e) {}
+                          
+                          return (
+                            <Group 
+                              key={index} 
+                              gap="md" 
+                              wrap="nowrap" 
+                              align="flex-start" 
+                              py="sm" 
+                              style={{ 
+                                borderBottom: index === sources.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.04)' 
+                              }}
+                            >
                             <div style={{
                               width: 32,
                               height: 32,
@@ -879,14 +882,15 @@ export default function Dashboard() {
                                 </Text>
                               )}
                             </Stack>
-                          </Group>
-                        );
-                      })}
-                    </Stack>
-                  </ScrollArea.Autosize>
-                </Paper>
-              </Stack>
-            )}
+                            </Group>
+                          );
+                        })}
+                      </Stack>
+                    </ScrollArea.Autosize>
+                  </Paper>
+                </Stack>
+              );
+            })()}
 
             <Group justify="flex-end" mt="xs">
               <Button color="indigo" onClick={() => setSelectedAlert(null)}>

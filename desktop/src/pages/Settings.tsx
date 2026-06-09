@@ -26,6 +26,8 @@ export interface AuthStatus {
 export default function Settings() {
   const { lang, changeLanguage, t } = useLanguage();
   const [apiKey, setApiKey] = useState('');
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [maskedApiKey, setMaskedApiKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
   const [authStatuses, setAuthStatuses] = useState<AuthStatus[]>([]);
@@ -49,9 +51,20 @@ export default function Settings() {
     }
   };
 
+  const fetchApiKeyStatus = async () => {
+    try {
+      const res = await client.get<{ has_key: boolean; masked_key: string }>('/settings/api-key/status');
+      setHasApiKey(res.data.has_key);
+      setMaskedApiKey(res.data.masked_key);
+    } catch (err) {
+      console.error("Failed to fetch API key status:", err);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
     fetchAuthStatuses();
+    fetchApiKeyStatus();
     const interval = setInterval(() => {
       fetchLogs();
       fetchAuthStatuses();
@@ -68,6 +81,7 @@ export default function Settings() {
       await client.post('/settings/api-key', { api_key: apiKey });
       alert(t('set_api_success'));
       setApiKey('');
+      fetchApiKeyStatus(); // Refresh secure key status in UI
     } catch (err) {
       alert(t('set_api_fail'));
     } finally {
@@ -142,8 +156,8 @@ export default function Settings() {
             </Group>
             <Text size="xs" c="dimmed">{t('set_api_desc')}</Text>
             <TextInput
-              required
-              placeholder={t('set_api_ph')}
+              required={!hasApiKey}
+              placeholder={hasApiKey ? `${t('set_auth_status_ok')} (${maskedApiKey})` : t('set_api_ph')}
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}

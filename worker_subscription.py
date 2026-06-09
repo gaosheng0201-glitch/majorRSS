@@ -45,8 +45,8 @@ def clean_html_for_diff(html_content: str) -> str:
             if text:
                 extracted_lines.append(f"LINK: {text} ({href})")
         else:
-            # Only keep significant text blocks to avoid layout noise
-            if len(text) > 15:
+            # Keep headings and paragraph blocks (always significant), or longer texts from other blocks
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p'] or len(text) > 15:
                 extracted_lines.append(f"TEXT: {text}")
                 
     # Deduplicate while preserving order to avoid list spam

@@ -3,15 +3,18 @@ from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 from .models import Tracker, RawArticle, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
 
-# Load environment variables (to capture DATABASE_URL if present)
-load_dotenv()
+from dotenv import load_dotenv
+from db.config import get_env_path, get_db_url, load_secure_config
 
-database_url = os.environ.get("DATABASE_URL")
+# Load environment variables (from user data directory if packaged)
+load_dotenv(get_env_path())
 
-if not database_url:
-    # Fallback to local SQLite if no external DB is configured
-    sqlite_file_name = "major_rss.db"
-    database_url = f"sqlite:///{sqlite_file_name}"
+# Load secure API key from DPAPI config and inject into environment variables in memory
+secure_key = load_secure_config("GEMINI_API_KEY")
+if secure_key:
+    os.environ["GEMINI_API_KEY"] = secure_key
+
+database_url = get_db_url()
 
 from sqlalchemy.pool import NullPool
 

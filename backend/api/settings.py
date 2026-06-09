@@ -11,7 +11,8 @@ from llm.investigator import run_native_grounding, run_major_funnel
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 def update_env_variable(key: str, value: str):
-    env_path = ".env"
+    from db.config import get_env_path
+    env_path = get_env_path()
     lines = []
     found = False
     new_line = f"{key}='{value.strip()}'\n"
@@ -41,8 +42,23 @@ class ApiKeyUpdate(BaseModel):
 
 @router.post("/api-key")
 def save_api_key(req: ApiKeyUpdate):
-    update_env_variable("GEMINI_API_KEY", req.api_key)
-    return {"status": "ok", "message": "API Key saved successfully"}
+    from db.config import save_secure_config
+    save_secure_config("GEMINI_API_KEY", req.api_key)
+    # Inject into in-memory environment immediately for active session
+    os.environ["GEMINI_API_KEY"] = req.api_key.strip()
+    return {"status": "ok", "message": "API Key saved securely"}
+
+@router.get("/api-key/status")
+def get_api_key_status():
+    from db.config import load_secure_config
+    key = load_secure_config("GEMINI_API_KEY")
+    if key:
+        # Show first 6 and last 4 characters, mask the middle
+        masked_key = key
+        if len(key) > 10:
+            masked_key = f"{key[:6]}...{key[-4:]}"
+        return {"has_key": True, "masked_key": masked_key}
+    return {"has_key": False, "masked_key": ""}
 
 class SystemLanguageUpdate(BaseModel):
     language: str
@@ -139,13 +155,12 @@ class AuthLoginRequest(BaseModel):
 @router.get("/auth/status")
 def get_auth_status():
     from scrapers.auth_helper import AUTH_PLATFORMS, check_cookie_health
-    import os
+    from db.config import get_cookie_path
     
     results = []
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     for key, val in AUTH_PLATFORMS.items():
         cookie_file = val["cookie_file"]
-        cookie_path = os.path.join(root_dir, cookie_file)
+        cookie_path = get_cookie_path(cookie_file)
         has_cookie = os.path.exists(cookie_path)
         is_healthy = check_cookie_health(key, cookie_path) if has_cookie else False
         
