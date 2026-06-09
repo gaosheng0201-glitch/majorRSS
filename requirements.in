@@ -1,0 +1,15 @@
+duckduckgo-search
+google-genai
+playwright
+beautifulsoup4
+sqlmodel
+apscheduler
+python-dotenv
+pydantic
+streamlit
+flet==0.85.3
+flet-desktop==0.85.3
+flet-web==0.85.3
+feedparser
+pytest
+requests

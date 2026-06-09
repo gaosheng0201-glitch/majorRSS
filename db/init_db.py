@@ -6,7 +6,7 @@ from sqlmodel import select
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db.database import create_db_and_tables, get_session
-from db.models import Source
+from db.models import Tracker
 
 def initialize():
     print("Creating database and tables...")
@@ -15,13 +15,14 @@ def initialize():
     
     # Add a default basic RSS source for testing
     session = get_session()
-    statement = select(Source).where(Source.name == "HuggingFace Daily Papers")
+    statement = select(Tracker).where(Tracker.name == "HuggingFace Daily Papers")
     existing = session.exec(statement).first()
     
     if not existing:
-        hf_source = Source(
+        hf_source = Tracker(
             name="HuggingFace Daily Papers",
-            url="https://rsshub.app/huggingface/daily-papers",
+            tracker_type="URL",
+            target="https://rsshub.app/huggingface/daily-papers",
             tier=1,
             radar_section="Geek Radar"
         )

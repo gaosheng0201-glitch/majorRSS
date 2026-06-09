@@ -62,19 +62,42 @@ def clean_html_for_diff(html_content: str) -> str:
 def process_subscription(session, sub: Subscription, now: datetime):
     try:
         print(f"Monitoring Subscription: {sub.name} ({sub.target_url})")
-        scraper = AgenticScraper(sub.target_url)
-        # Fetch raw HTML using Tier 3 (handles React/Vue and bypasses basic anti-bot)
-        html_content = scraper.fetch_text_snapshot(return_html=True)
         
-        if not html_content:
-            sub.last_status = "Error: Failed to fetch HTML"
-            return
+        from scrapers.url_normalizer import is_rss_url
+        if is_rss_url(sub.target_url):
+            import feedparser
+            import requests
+            try:
+                headers = {'User-Agent': 'Mozilla/5.0 MajorRSS/1.0'}
+                res = requests.get(sub.target_url, headers=headers, timeout=30)
+                feed = feedparser.parse(res.content)
+                items = []
+                for entry in feed.entries[:10]:
+                    title = entry.get('title', '')
+                    link = entry.get('link', '')
+                    items.append(f"TEXT: {title}")
+                    if link:
+                        items.append(f"LINK: {title} ({link})")
+                clean_text = "\n".join(items)
+                if not clean_text.strip():
+                    clean_text = "TEXT: No items found in feed."
+            except Exception as e:
+                sub.last_status = f"Error: Failed to fetch RSS - {str(e)}"
+                return
+        else:
+            scraper = AgenticScraper(sub.target_url)
+            # Fetch raw HTML using Tier 3 (handles React/Vue and bypasses basic anti-bot)
+            html_content = scraper.fetch_text_snapshot(return_html=True)
             
-        # 1. Smart Filtering
-        clean_text = clean_html_for_diff(html_content)
-        if not clean_text.strip():
-            sub.last_status = "Error: Extracted text is empty"
-            return
+            if not html_content:
+                sub.last_status = "Error: Failed to fetch HTML"
+                return
+                
+            # 1. Smart Filtering
+            clean_text = clean_html_for_diff(html_content)
+            if not clean_text.strip():
+                sub.last_status = "Error: Extracted text is empty"
+                return
             
         # 2. Hash computation
         text_hash = hashlib.sha256(clean_text.encode('utf-8')).hexdigest()
@@ -116,7 +139,7 @@ def process_subscription(session, sub: Subscription, now: datetime):
         print(f"Error processing subscription {sub.name}: {e}")
         sub.last_status = f"Error: {str(e)[:50]}"
     finally:
-        sub.last_scraped_at = now
+        sub.last_scraped_at = now.replace(tzinfo=None) if now.tzinfo else now
         session.add(sub)
         session.commit()
 

@@ -55,7 +55,7 @@ def get_status():
         print(json.dumps({"status": "idle", "message": "No active tasks in the pipeline."}))
         return
         
-    data = [{"source": s.source_name, "action": s.action_type, "detail": s.detail} for s in statuses]
+    data = [{"source": s.tracker_name, "action": s.action_type, "detail": s.detail} for s in statuses]
     print(json.dumps({"status": "active", "tasks": data}, indent=2, ensure_ascii=False))
 
 def get_briefing():

@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;850&display=swap');
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #141517;
+  color: #c1c2c5;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  overflow: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Micro-animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+
+.nav-btn-hover:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: white !important;
+  transform: translateX(3px);
+}
+
+/* Mantine Tabs styling */
+.mantine-Tabs-tab {
+  color: #a6a7ab !important;
+}
+
+.mantine-Tabs-tab[data-active] {
+  color: white !important;
+  border-bottom-color: var(--mantine-color-indigo-6) !important;
+}
+
+.mantine-Tabs-tab:hover {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: white !important;
+}

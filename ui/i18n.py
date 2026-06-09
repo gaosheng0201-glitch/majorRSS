@@ -2,6 +2,17 @@ import streamlit as st
 
 TRANSLATIONS = {
     "en": {
+
+        "nav_factcheck": "🕵️ Fact-Checker Arena",
+        "factcheck_title": "Fact-Checker Arena (A/B Test)",
+        "factcheck_desc": "Input a claim or rumor, and watch Gemini Native Grounding race against the MajorRSS Agentic Scraper Funnel to verify the truth.",
+        "factcheck_input": "Enter a rumor, claim, or URL to investigate...",
+        "factcheck_btn": "Start Investigation",
+        "factcheck_native_title": "🇬 Google Native Grounding",
+        "factcheck_funnel_title": "🛡️ MajorRSS Custom Funnel",
+        "factcheck_history": "Investigation Archives",
+        "factcheck_destroy": "🗑️ Destroy",
+        "factcheck_destroyed": "Record destroyed.",
         "nav_dashboard": "Dashboard",
         "nav_briefing": "Daily Briefing",
         "nav_billing": "Billing",
@@ -124,6 +135,17 @@ TRANSLATIONS = {
         "dashboard_pending_ai": "Pending AI Processing"
     },
     "zh": {
+
+        "nav_factcheck": "🕵️ 情报溯源竞技场",
+        "factcheck_title": "情报溯源竞技场 (A/B Test)",
+        "factcheck_desc": "输入一个传闻或主张，观看 谷歌原生搜索增强 (Grounding) 与 MajorRSS 深度爬虫漏斗 同台竞技，全网追踪真相。",
+        "factcheck_input": "输入想要追溯的传闻、情报或 URL...",
+        "factcheck_btn": "⚔️ 立即开战溯源",
+        "factcheck_native_title": "🇬 谷歌原生搜索 Grounding",
+        "factcheck_funnel_title": "🛡️ MajorRSS 定制抓取漏斗",
+        "factcheck_history": "历史情报研判档案库",
+        "factcheck_destroy": "🗑️ 销毁记录",
+        "factcheck_destroyed": "记录已销毁。",
         "nav_dashboard": "情报大屏",
         "nav_briefing": "每日简报",
         "nav_trackers": "探测器管理",
@@ -282,6 +304,17 @@ TRANSLATIONS = {
         "dashboard_pending_ai": "全系统待处理情报"
     },
     "ko": {
+
+        "nav_factcheck": "🕵️ Fact-Checker Arena",
+        "factcheck_title": "Fact-Checker Arena (A/B Test)",
+        "factcheck_desc": "Input a claim or rumor, and watch Gemini Native Grounding race against the MajorRSS Agentic Scraper Funnel to verify the truth.",
+        "factcheck_input": "Enter a rumor, claim, or URL to investigate...",
+        "factcheck_btn": "Start Investigation",
+        "factcheck_native_title": "🇬 Google Native Grounding",
+        "factcheck_funnel_title": "🛡️ MajorRSS Custom Funnel",
+        "factcheck_history": "Investigation Archives",
+        "factcheck_destroy": "🗑️ Destroy",
+        "factcheck_destroyed": "Record destroyed.",
         "nav_dashboard": "대시보드",
         "nav_briefing": "일일 브리핑",
         "nav_billing": "결제 및 사용량",
@@ -404,6 +437,17 @@ TRANSLATIONS = {
         "dashboard_pending_ai": "AI 처리 대기 중"
     },
     "ja": {
+
+        "nav_factcheck": "🕵️ Fact-Checker Arena",
+        "factcheck_title": "Fact-Checker Arena (A/B Test)",
+        "factcheck_desc": "Input a claim or rumor, and watch Gemini Native Grounding race against the MajorRSS Agentic Scraper Funnel to verify the truth.",
+        "factcheck_input": "Enter a rumor, claim, or URL to investigate...",
+        "factcheck_btn": "Start Investigation",
+        "factcheck_native_title": "🇬 Google Native Grounding",
+        "factcheck_funnel_title": "🛡️ MajorRSS Custom Funnel",
+        "factcheck_history": "Investigation Archives",
+        "factcheck_destroy": "🗑️ Destroy",
+        "factcheck_destroyed": "Record destroyed.",
         "nav_dashboard": "ダッシュボード",
         "nav_briefing": "デイリーブリーフィング",
         "nav_billing": "請求・監査",
@@ -526,6 +570,17 @@ TRANSLATIONS = {
         "dashboard_pending_ai": "AI処理待ち"
     },
     "ru": {
+
+        "nav_factcheck": "🕵️ Fact-Checker Arena",
+        "factcheck_title": "Fact-Checker Arena (A/B Test)",
+        "factcheck_desc": "Input a claim or rumor, and watch Gemini Native Grounding race against the MajorRSS Agentic Scraper Funnel to verify the truth.",
+        "factcheck_input": "Enter a rumor, claim, or URL to investigate...",
+        "factcheck_btn": "Start Investigation",
+        "factcheck_native_title": "🇬 Google Native Grounding",
+        "factcheck_funnel_title": "🛡️ MajorRSS Custom Funnel",
+        "factcheck_history": "Investigation Archives",
+        "factcheck_destroy": "🗑️ Destroy",
+        "factcheck_destroyed": "Record destroyed.",
         "nav_dashboard": "Дашборд",
         "nav_briefing": "Брифинг",
         "nav_billing": "Биллинг",

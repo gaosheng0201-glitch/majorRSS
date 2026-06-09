@@ -16,7 +16,11 @@ MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising pl
 - **Database**: PostgreSQL with SQLModel
 - **AI Engine**: Google Gemini API (`google-generativeai`)
 - **Scraping**: `feedparser`, `BeautifulSoup4`, `Playwright`
+- **Routing**: [RSSHub](https://github.com/DIYgod/RSSHub) (Auto-converts social media URLs to clean RSS feeds)
 - **Task Scheduling**: `schedule`
+
+## Acknowledgments 🤝
+- **Powered by RSSHub**: This project leverages the URL routing capabilities of the MIT-licensed [RSSHub](https://github.com/DIYgod/RSSHub) project to bypass anti-bot mechanisms on major social media platforms. All generated RSS endpoints default to the public instance, but users are encouraged to self-host.
 
 ## Quick Start 🚀
 
@@ -27,10 +31,12 @@ MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising pl
    ```
 
 2. **Install Dependencies**
+   We use `pip-tools` to manage dependencies. `requirements.txt` contains pinned versions.
    ```bash
    pip install -r requirements.txt
    playwright install chromium
    ```
+   *Note: If you add new dependencies to `requirements.in`, generate the lockfile via `pip-compile requirements.in`.*
 
 3. **Configure Environment**
    Create a `.env` file in the root directory (or configure via the UI later):
@@ -44,7 +50,7 @@ MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising pl
    start_major_rss.bat
    
    # Linux / macOS:
-   python worker.py &
+   python scheduler.py &
    streamlit run ui/app.py
    ```
 

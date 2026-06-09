@@ -296,6 +296,7 @@ def page_settings():
     
     st.header(f":material/key: {t('set_auth_title')}")
     st.markdown(t('set_auth_desc'))
+    st.info("💡 **架构提示**: 社交媒体(B站/推特/微博等)的主页追踪现已全面由底层 RSSHub 隐形代理，**免登录永不封号**。此处的强制授权仅为情报溯源系统 (Fact-Checker) 提供底层的单篇深度穿透能力。")
     
     from scrapers.auth_helper import AUTH_PLATFORMS, interactive_login, check_cookie_health
     import time
@@ -377,7 +378,8 @@ def page_trackers():
                     st.error(":material/warning: 请填写所属板块 (Section is required).")
                 else:
                     import json
-                    urls_list = [u.strip() for u in t_urls.split('\n') if u.strip()]
+                    from scrapers.url_normalizer import auto_route
+                    urls_list = [auto_route(u.strip()) for u in t_urls.split('\n') if u.strip()]
                     keywords_list = [k.strip() for k in t_keywords.split('\n') if k.strip()]
                     accounts_list = [a.strip().replace('@', '') for a in t_accounts.split('\n') if a.strip()]
                     
@@ -491,17 +493,20 @@ def page_trackers():
             st.write("")
             if st.button("单独执行选中项", type="secondary", use_container_width=True):
                 if selected_tracker_ids:
-                    with st.spinner("Executing selected trackers..."):
-                        import worker
+                    with st.spinner("Submitting tasks for selected trackers..."):
+                        from db.models import TaskRequest
                         try:
                             for tid in selected_tracker_ids:
-                                worker._scrape_single_tracker(tid)
-                                worker._process_tracker_fusion(tid)
-                            st.success(f"Successfully executed {len(selected_tracker_ids)} trackers.")
+                                req1 = TaskRequest(job_type="SCRAPE", target_type="TRACKER", target_id=str(tid))
+                                req2 = TaskRequest(job_type="PROCESS", target_type="TRACKER", target_id=str(tid))
+                                session.add(req1)
+                                session.add(req2)
+                            session.commit()
+                            st.success(f"Successfully queued {len(selected_tracker_ids) * 2} tasks.")
                             import time; time.sleep(1.5)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Execution failed: {e}")
+                            st.error(f"Queueing failed: {e}")
                 else:
                     st.warning("Please check at least one tracker to run.")
 
@@ -509,10 +514,13 @@ def page_trackers():
             st.write("")
             if st.button(t('set_force'), type="primary", use_container_width=True):
                 with st.spinner(t('set_forcing')):
-                    import worker
+                    from db.models import TaskRequest
                     try:
-                        worker.run_scraping_job()
-                        worker.run_processing_job()
+                        active_trackers = session.exec(select(Tracker).where(Tracker.is_active == True)).all()
+                        for tk in active_trackers:
+                            session.add(TaskRequest(job_type="SCRAPE", target_type="TRACKER", target_id=str(tk.id)))
+                            session.add(TaskRequest(job_type="PROCESS", target_type="TRACKER", target_id=str(tk.id)))
+                        session.commit()
                         st.success(t('set_force_success'))
                     except Exception as e:
                         st.error(f"{t('set_force_fail')} {e}")
@@ -646,7 +654,8 @@ def page_monitors():
             if st.button(t('monitors_add_btn'), type="primary", use_container_width=True):
                 if new_name and new_url:
                     from db.models import Subscription
-                    sub = Subscription(name=new_name, target_url=new_url, fetch_interval_minutes=new_interval)
+                    from scrapers.url_normalizer import auto_route
+                    sub = Subscription(name=new_name, target_url=auto_route(new_url), fetch_interval_minutes=new_interval)
                     session.add(sub)
                     session.commit()
                     st.success(f"{t('monitors_add_success')} {new_name}")
@@ -716,8 +725,95 @@ def monitors_page():
 def settings_page():
     page_settings()
 
+
+def page_factcheck():
+    st.header(t("factcheck_title"))
+    st.markdown(t("factcheck_desc"))
+    
+    query = st.text_area(t("factcheck_input"), height=100)
+    
+    if st.button(t("factcheck_btn"), type="primary"):
+        if not query:
+            st.warning("Please enter a query.")
+            return
+            
+        st.divider()
+        col1, col2 = st.columns(2)
+        
+        native_res = ""
+        funnel_res = ""
+        
+        with col1:
+            st.subheader(t("factcheck_native_title"))
+            with st.spinner("Calling Google Grounding..."):
+                try:
+                    from llm.investigator import run_native_grounding
+                    native_res = run_native_grounding(query)
+                    st.markdown(native_res)
+                except Exception as e:
+                    native_res = f"Error: {e}"
+                    st.error(native_res)
+                
+        with col2:
+            st.subheader(t("factcheck_funnel_title"))
+            with st.status("Agent Pipeline Running...", expanded=True) as status:
+                def cb(msg):
+                    st.write(msg)
+                try:
+                    from llm.investigator import run_major_funnel
+                    funnel_res = run_major_funnel(query, status_callback=cb)
+                    status.update(label="Agent Pipeline Completed!", state="complete", expanded=False)
+                except Exception as e:
+                    funnel_res = f"Error: {e}"
+                    status.update(label="Agent Pipeline Failed!", state="error", expanded=False)
+            st.markdown(funnel_res)
+            
+        # Save to DB
+        from db.database import get_session
+        from db.models import InvestigationRecord
+        with get_session() as session:
+            record = InvestigationRecord(
+                query=query,
+                native_result=native_res,
+                funnel_result=funnel_res
+            )
+            session.add(record)
+            session.commit()
+            st.success("Results saved to Archives.")
+
+    st.divider()
+    st.subheader(t("factcheck_history"))
+    from db.database import get_session
+    from db.models import InvestigationRecord
+    from sqlmodel import select
+    with get_session() as session:
+        records = session.exec(select(InvestigationRecord).order_by(InvestigationRecord.created_at.desc())).all()
+        if not records:
+            st.info("No archives yet.")
+        else:
+            for r in records:
+                with st.expander(f"[{r.created_at.strftime('%Y-%m-%d %H:%M')}] {r.query[:50]}..."):
+                    st.write(f"**Query:** {r.query}")
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown(f"**Native:**\n{r.native_result}")
+                    with col_b:
+                        st.markdown(f"**Funnel:**\n{r.funnel_result}")
+                    
+                    if st.button(t("factcheck_destroy"), key=f"del_inv_{r.id}"):
+                        session.delete(r)
+                        session.commit()
+                        st.success(t("factcheck_destroyed"))
+                        st.rerun()
+
+def factcheck_page():
+    page_factcheck()
+
+
 pg = st.navigation([
     st.Page(dashboard_page, title=t('nav_dashboard'), icon=":material/dashboard:"),
+    st.Page(factcheck_page, title=t('nav_factcheck'), icon=":material/policy:"),
+
     st.Page(briefing_page, title=t('nav_briefing'), icon=":material/article:"),
     st.Page(billing_page, title=t('nav_billing'), icon=":material/payments:"),
     st.Page(trackers_page, title=t('nav_trackers'), icon=":material/satellite_alt:"),
