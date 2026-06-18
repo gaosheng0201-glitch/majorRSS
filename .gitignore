@@ -17,6 +17,18 @@ __pycache__/
 # Logs
 *.log
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+
+# Tauri sidecar binary (rebuild via build_backend.py)
+desktop/src-tauri/bin/*.exe
+
+# Sidecar debug output
+sidecar_stderr.txt
+sidecar_stdout.txt
+
 # Auth Cookies & Config (SENSITIVE)
 *_cookies.json
 *_cookies.dat
