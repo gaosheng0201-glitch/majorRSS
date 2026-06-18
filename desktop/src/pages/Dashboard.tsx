@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { 
   Text, Paper, SimpleGrid, Group, Stack, Badge, 
-  Button, RingProgress, Loader, Card, ScrollArea, Divider, Collapse, UnstyledButton, Modal, Tabs, Anchor
+  Button, RingProgress, Loader, Card, ScrollArea, Divider, Collapse, UnstyledButton, Modal, Tabs, Anchor,
+  useMantineColorScheme
 } from '@mantine/core';
 import { 
   Activity, AlertTriangle, CheckCircle, RefreshCw, Sparkles, Link as LinkIcon, FileText
@@ -34,6 +36,16 @@ interface Report {
   importance_score: number;
   created_at: string;
   key_entities: string[];
+}
+
+interface RawArticleResponse {
+  id: number;
+  tracker_name: string;
+  title: string;
+  url: string;
+  content: string;
+  published_at?: string;
+  created_at: string;
 }
 
 interface Stats {
@@ -154,7 +166,7 @@ const parseSourceLinks = (text: string): SourceLink[] => {
 const parseMarkdown = (text: string) => {
   let formatted = text
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #748ffc; text-decoration: underline; font-weight: 500;">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-link-color); text-decoration: underline; font-weight: 500;">$1</a>');
   return formatted.replace(/\n/g, '<br />');
 };
 
@@ -179,6 +191,8 @@ function SourceIcon({ domain, type }: { domain: string; type: 'evidence' | 'orig
 function IntelReportCard({ report }: { report: Report }) {
   const { t } = useLanguage();
   const [opened, setOpened] = useState(false);
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   
   // Split summary at the markdown divider (making sure to support both LF and CRLF line endings)
   const parts = report.llm_summary.split(/\r?\n\r?\n---\r?\n|\r?\n---\r?\n/);
@@ -224,9 +238,19 @@ function IntelReportCard({ report }: { report: Report }) {
       withBorder 
       p="lg" 
       radius="md" 
-      style={{ background: 'rgba(255,255,255,0.015)' }}
+      style={{ 
+        background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff',
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'
+      }}
     >
-      <Card.Section inheritPadding py="xs" style={{ background: 'rgba(255,255,255,0.02)' }}>
+      <Card.Section 
+        inheritPadding 
+        py="xs" 
+        style={{ 
+          background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f9fa',
+          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'}`
+        }}
+      >
         <Group justify="space-between">
           <Group gap="xs">
             <Badge color="indigo" variant="light">{report.radar_section}</Badge>
@@ -239,7 +263,7 @@ function IntelReportCard({ report }: { report: Report }) {
       <Stack gap="xs" mt="md">
         {/* Title and Tracker Tag */}
         <Group gap="xs" align="center" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>
-          <Text size="md" fw={700} c="white" style={{ display: 'inline' }}>
+          <Text size="md" fw={700} className="title-text-color" style={{ display: 'inline' }}>
             {report.title}
           </Text>
           {report.tracker_name && report.tracker_name !== "Unknown" && (
@@ -251,9 +275,9 @@ function IntelReportCard({ report }: { report: Report }) {
 
         <Text 
           size="sm" 
-          c="gray.4" 
+          c="dimmed" 
           style={{ lineHeight: 1.6 }} 
-          dangerouslySetInnerHTML={{ __html: parseMarkdown(summaryText) }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(summaryText)) }}
         />
         
         {detailsText && (
@@ -284,16 +308,16 @@ function IntelReportCard({ report }: { report: Report }) {
                 variant="default" 
                 styles={{
                   root: { 
-                    background: 'rgba(21, 23, 27, 0.6)', 
-                    border: '1px solid rgba(255,255,255,0.06)', 
+                    background: isDark ? 'rgba(21, 23, 27, 0.6)' : 'rgba(248, 249, 250, 0.8)', 
+                    border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.08)', 
                     borderRadius: '12px', 
                     padding: '16px',
                     marginTop: '12px',
-                    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.3)',
+                    boxShadow: isDark ? '0 4px 24px rgba(0, 0, 0, 0.3)' : '0 4px 16px rgba(0, 0, 0, 0.05)',
                     backdropFilter: 'blur(10px)'
                   },
                   list: { 
-                    borderBottom: '1px solid rgba(255,255,255,0.08)', 
+                    borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)', 
                     marginBottom: '12px',
                     display: 'flex',
                     gap: '16px'
@@ -302,7 +326,7 @@ function IntelReportCard({ report }: { report: Report }) {
                     fontWeight: 600, 
                     fontSize: '13px', 
                     padding: '8px 4px',
-                    color: 'var(--mantine-color-gray-5)',
+                    color: isDark ? 'var(--mantine-color-gray-5)' : '#495057',
                     borderBottom: '2px solid transparent',
                     backgroundColor: 'transparent',
                     cursor: 'pointer',
@@ -325,8 +349,8 @@ function IntelReportCard({ report }: { report: Report }) {
                           variant="filled"
                           style={{ 
                             borderRadius: '9999px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                            color: '#a5d8ff',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                            color: isDark ? '#a5d8ff' : 'var(--mantine-color-indigo-6)',
                             fontWeight: 700
                           }}
                         >
@@ -344,8 +368,8 @@ function IntelReportCard({ report }: { report: Report }) {
                           variant="filled"
                           style={{ 
                             borderRadius: '9999px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                            color: '#e9ecef',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                            color: isDark ? '#e9ecef' : '#495057',
                             fontWeight: 700
                           }}
                         >
@@ -373,14 +397,14 @@ function IntelReportCard({ report }: { report: Report }) {
                               wrap="nowrap" 
                               align="flex-start" 
                               py="md" 
-                              style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                              style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.06)' }}
                             >
                               <div style={{
                                 width: 32,
                                 height: 32,
                                 borderRadius: 6,
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                border: '1px solid rgba(255, 255, 255, 0.06)',
+                                background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.08)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -395,7 +419,7 @@ function IntelReportCard({ report }: { report: Report }) {
                                   target="_blank" 
                                   size="sm" 
                                   fw={600} 
-                                  c="white" 
+                                  className="title-text-color" 
                                   underline="hover"
                                   style={{ 
                                     display: 'inline-flex',
@@ -405,10 +429,10 @@ function IntelReportCard({ report }: { report: Report }) {
                                   }}
                                 >
                                   {src.title}
-                                  <span style={{ fontSize: '11px', color: '#748ffc' }}>↗</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--accent-link-color)' }}>↗</span>
                                 </Anchor>
                                 {src.description && (
-                                  <Text size="xs" c="gray.4" style={{ lineHeight: 1.5 }}>
+                                  <Text size="xs" c="dimmed" style={{ lineHeight: 1.5 }}>
                                     {src.description}
                                   </Text>
                                 )}
@@ -438,14 +462,14 @@ function IntelReportCard({ report }: { report: Report }) {
                               wrap="nowrap" 
                               align="flex-start" 
                               py="md" 
-                              style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                              style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.06)' }}
                             >
                               <div style={{
                                 width: 32,
                                 height: 32,
                                 borderRadius: 6,
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                border: '1px solid rgba(255, 255, 255, 0.06)',
+                                background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.08)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -460,7 +484,7 @@ function IntelReportCard({ report }: { report: Report }) {
                                   target="_blank" 
                                   size="sm" 
                                   fw={600} 
-                                  c="white" 
+                                  className="title-text-color" 
                                   underline="hover"
                                   style={{ 
                                     display: 'inline-flex',
@@ -470,10 +494,10 @@ function IntelReportCard({ report }: { report: Report }) {
                                   }}
                                 >
                                   {src.title}
-                                  <span style={{ fontSize: '11px', color: '#748ffc' }}>↗</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--accent-link-color)' }}>↗</span>
                                 </Anchor>
                                 {src.description && src.description !== src.title && (
-                                  <Text size="xs" c="gray.4" style={{ lineHeight: 1.5, wordBreak: 'break-all' }}>
+                                  <Text size="xs" c="dimmed" style={{ lineHeight: 1.5, wordBreak: 'break-all' }}>
                                     {src.description}
                                   </Text>
                                 )}
@@ -494,7 +518,7 @@ function IntelReportCard({ report }: { report: Report }) {
                       setOpened(false);
                     }}
                     style={{
-                      color: 'var(--mantine-color-gray-5)',
+                      color: isDark ? 'var(--mantine-color-gray-5)' : '#495057',
                       fontSize: 'var(--mantine-font-size-xs)',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -503,8 +527,8 @@ function IntelReportCard({ report }: { report: Report }) {
                       gap: '4px',
                       padding: '6px 12px',
                       borderRadius: '6px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(0, 0, 0, 0.08)',
                       transition: 'all 0.2s ease',
                     }}
                   >
@@ -516,7 +540,7 @@ function IntelReportCard({ report }: { report: Report }) {
           </Stack>
         )}
         
-        <Divider my="xs" style={{ borderColor: 'rgba(255,255,255,0.05)' }} />
+        <Divider my="xs" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)' }} />
         
         <Group justify="space-between">
           <Group gap="xs">
@@ -533,14 +557,141 @@ function IntelReportCard({ report }: { report: Report }) {
   );
 }
 
-export default function Dashboard() {
+function RawArticleCard({ article }: { article: RawArticleResponse }) {
   const { t } = useLanguage();
+  const [opened, setOpened] = useState(false);
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  let domain = "";
+  try {
+    domain = new URL(article.url).hostname;
+  } catch (e) {}
+
+  const displayTime = article.published_at || article.created_at;
+
+  return (
+    <Card 
+      withBorder 
+      p="md" 
+      radius="md" 
+      style={{ 
+        background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff',
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)'
+      }}
+    >
+      <Group justify="space-between" align="center" mb="xs">
+        <Group gap="xs">
+          <div style={{
+            width: 24,
+            height: 24,
+            borderRadius: 4,
+            background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <SourceIcon domain={domain} type="original" />
+          </div>
+          <Text size="xs" c="dimmed" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {domain}
+          </Text>
+          {article.tracker_name && article.tracker_name !== "Unknown" && (
+            <Badge color="pink" variant="light" size="xs">
+              {t('dash_tracker_badge')}: {article.tracker_name}
+            </Badge>
+          )}
+        </Group>
+        <Text size="xs" c="dimmed">
+          {new Date(displayTime).toLocaleString()}
+        </Text>
+      </Group>
+
+      <Stack gap="xs">
+        <Anchor 
+          href={article.url} 
+          target="_blank" 
+          size="sm" 
+          fw={700} 
+          className="title-text-color"
+          underline="hover"
+          style={{ lineHeight: 1.4 }}
+        >
+          {article.title}
+          <span style={{ fontSize: '11px', color: 'var(--accent-link-color)', marginLeft: 4 }}>↗</span>
+        </Anchor>
+
+        {article.content && (
+          <Stack gap="xs">
+            <UnstyledButton 
+              onClick={() => setOpened(prev => !prev)}
+              style={{ 
+                color: 'var(--mantine-color-indigo-4)', 
+                fontSize: 'var(--mantine-font-size-xs)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 0'
+              }}
+            >
+              {opened ? t('dash_hide_content') : t('dash_show_content')}
+            </UnstyledButton>
+            <Collapse expanded={opened}>
+              <Paper 
+                p="md" 
+                radius="md" 
+                mt="xs"
+                style={{ 
+                  background: isDark ? 'rgba(21, 23, 27, 0.6)' : '#f8f9fa', 
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'}`,
+                  fontSize: 'var(--mantine-font-size-sm)',
+                  lineHeight: 1.6
+                }}
+              >
+                <ScrollArea.Autosize mah={400} offsetScrollbars>
+                  <div 
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }} 
+                    style={{ 
+                      lineHeight: 1.6, 
+                      fontSize: 'var(--mantine-font-size-sm)',
+                      wordBreak: 'break-word',
+                      color: isDark ? 'rgba(255, 255, 255, 0.85)' : '#212529'
+                    }}
+                    className="raw-article-html-content"
+                  />
+                </ScrollArea.Autosize>
+              </Paper>
+            </Collapse>
+          </Stack>
+        )}
+      </Stack>
+    </Card>
+  );
+}
+
+export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }) {
+  const { t } = useLanguage();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [stats, setStats] = useState<Stats | null>(null);
   const [feed, setFeed] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [currentAlertIndex, setCurrentAlertIndex] = useState(0);
+  const seenAlertIds = useRef<Set<number>>(new Set());
+
+  // Raw Articles states
+  const [rawFeed, setRawFeed] = useState<RawArticleResponse[]>([]);
+  const [rawLoading, setRawLoading] = useState(false);
+  const [showRaw, setShowRaw] = useState(appMode === 'pure_rss');
+
+  useEffect(() => {
+    setShowRaw(appMode === 'pure_rss');
+  }, [appMode]);
 
   useEffect(() => {
     if (!stats?.latest_alerts || stats.latest_alerts.length <= 1) return;
@@ -551,18 +702,68 @@ export default function Dashboard() {
   }, [stats?.latest_alerts]);
 
   const fetchData = async () => {
+    if (showRaw || appMode === 'pure_rss') {
+      setRawLoading(true);
+    }
     try {
-      const [statsRes, feedRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         client.get<Stats>('/intelligence/stats'),
         client.get<Report[]>('/intelligence/feed')
-      ]);
-      setStats(statsRes.data);
+      ];
+
+      if (showRaw || appMode === 'pure_rss') {
+        promises.push(client.get<RawArticleResponse[]>('/intelligence/raw-feed'));
+      }
+
+      const results = await Promise.all(promises);
+      const statsRes = results[0];
+      const feedRes = results[1];
+      const rawRes = results[2];
+
+      const newStats = statsRes.data;
+      const incomingAlerts: Alert[] = newStats?.latest_alerts || [];
+      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+      // If we already have some seen alerts, and we see new ones, trigger notification
+      if (seenAlertIds.current.size > 0 && incomingAlerts.length > 0) {
+        const newAlerts = incomingAlerts.filter((a: Alert) => !seenAlertIds.current.has(a.id));
+        if (newAlerts.length > 0) {
+          // Add them to seen
+          newAlerts.forEach((a: Alert) => seenAlertIds.current.add(a.id));
+          
+          if (isTauri) {
+            import('@tauri-apps/plugin-notification').then(({ sendNotification, isPermissionGranted }) => {
+              isPermissionGranted().then((granted) => {
+                if (granted) {
+                  newAlerts.forEach((alert: Alert) => {
+                    sendNotification({
+                      title: `Trend Alert: ${alert.entity_name}`,
+                      body: alert.alert_summary.substring(0, 120) + (alert.alert_summary.length > 120 ? '...' : ''),
+                    });
+                  });
+                }
+              });
+            }).catch(err => {
+              console.error('[Tauri Notification] Failed to send notification:', err);
+            });
+          }
+        }
+      } else {
+        // First load or no alerts, just populate the seen list
+        incomingAlerts.forEach((a: Alert) => seenAlertIds.current.add(a.id));
+      }
+
+      setStats(newStats);
       setFeed(feedRes.data);
+      if (rawRes) {
+        setRawFeed(rawRes.data);
+      }
     } catch (err) {
       console.error("Failed to fetch dashboard data:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setRawLoading(false);
     }
   };
 
@@ -570,7 +771,7 @@ export default function Dashboard() {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [showRaw, appMode]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -594,22 +795,28 @@ export default function Dashboard() {
     );
   }
 
+  const handleTabChange = (val: string | null) => {
+    setShowRaw(val === 'raw');
+  };
+
   return (
     <Stack gap="lg">
       <Group justify="space-between">
         <Stack gap={0}>
-          <Text size="xl" fw={700} c="white">{t('dash_title')}</Text>
+          <Text size="xl" fw={700} className="title-text-color">{t('dash_title')}</Text>
           <Text size="sm" c="dimmed">{t('dash_desc')}</Text>
         </Stack>
         <Group>
-          <Button 
-            variant="light" 
-            color="indigo" 
-            leftSection={<Sparkles size={16} />}
-            onClick={handleScanTrends}
-          >
-            {t('dash_force_scan')}
-          </Button>
+          {!showRaw && (
+            <Button 
+              variant="light" 
+              color="indigo" 
+              leftSection={<Sparkles size={16} />}
+              onClick={handleScanTrends}
+            >
+              {t('dash_force_scan')}
+            </Button>
+          )}
           <Button 
             variant="subtle" 
             color="gray" 
@@ -623,11 +830,11 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-        <Paper withBorder p="md" radius="md" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('dash_pending_ai')}</Text>
-              <Text size="xl" fw={700} c="white">{stats?.pending_count ?? 0}</Text>
+              <Text size="xl" fw={700} className="title-text-color">{stats?.pending_count ?? 0}</Text>
             </Stack>
             <RingProgress
               size={60}
@@ -642,11 +849,11 @@ export default function Dashboard() {
           </Group>
         </Paper>
 
-        <Paper withBorder p="md" radius="md" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('dash_active_scrapers')}</Text>
-              <Text size="xl" fw={700} c="white">{stats?.active_trackers_count ?? 0}</Text>
+              <Text size="xl" fw={700} className="title-text-color">{stats?.active_trackers_count ?? 0}</Text>
             </Stack>
             <RingProgress
               size={60}
@@ -661,11 +868,11 @@ export default function Dashboard() {
           </Group>
         </Paper>
 
-        <Paper withBorder p="md" radius="md" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('dash_monitored_pages')}</Text>
-              <Text size="xl" fw={700} c="white">{stats?.active_monitors_count ?? 0}</Text>
+              <Text size="xl" fw={700} className="title-text-color">{stats?.active_monitors_count ?? 0}</Text>
             </Stack>
             <RingProgress
               size={60}
@@ -682,14 +889,14 @@ export default function Dashboard() {
       </SimpleGrid>
 
       {/* Trend Alerts Carousel Card */}
-      {stats?.latest_alerts && stats.latest_alerts.length > 0 && (() => {
+      {!showRaw && stats?.latest_alerts && stats.latest_alerts.length > 0 && (() => {
         const alert = stats.latest_alerts[currentAlertIndex];
         if (!alert) return null;
         
         return (
           <Stack gap="xs">
             <Group justify="space-between" align="center">
-              <Text size="lg" fw={700} c="white">{t('dash_alert')}</Text>
+              <Text size="lg" fw={700} className="title-text-color">{t('dash_alert')}</Text>
               {stats.latest_alerts.length > 1 && (
                 <Group gap="xs">
                   {stats.latest_alerts.map((_, idx) => (
@@ -700,7 +907,7 @@ export default function Dashboard() {
                         width: 8,
                         height: 8,
                         borderRadius: '50%',
-                        background: idx === currentAlertIndex ? 'var(--mantine-color-red-6)' : 'rgba(255, 255, 255, 0.2)',
+                        background: idx === currentAlertIndex ? 'var(--mantine-color-red-6)' : (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)'),
                         transition: 'background-color 0.2s ease',
                         cursor: 'pointer'
                       }}
@@ -725,14 +932,14 @@ export default function Dashboard() {
                 <AlertTriangle color="var(--mantine-color-red-6)" size={24} style={{ marginTop: 2, flexShrink: 0 }} />
                 <Stack gap="xs" style={{ flex: 1 }}>
                   <Group justify="space-between" align="center">
-                    <Text size="sm" fw={700} c="white">
+                    <Text size="sm" fw={700} className="title-text-color">
                       {t('dash_trend_trigger')}: {alert.entity_name}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {new Date(alert.created_at).toLocaleString()}
                     </Text>
                   </Group>
-                  <Text size="xs" c="gray.4" style={{ 
+                  <Text size="xs" c="dimmed" style={{ 
                     lineHeight: 1.6,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -769,7 +976,7 @@ export default function Dashboard() {
         title={
           <Group gap="xs">
             <AlertTriangle color="var(--mantine-color-red-6)" size={20} />
-            <Text fw={700} size="md" c="white">
+            <Text fw={700} size="md" className="title-text-color">
               {t('dash_trend_trigger')}: {selectedAlert?.entity_name}
             </Text>
           </Group>
@@ -777,8 +984,8 @@ export default function Dashboard() {
         centered
         size="lg"
         styles={{
-          content: { background: '#1a1b1e', border: '1px solid rgba(255,255,255,0.08)' },
-          header: { background: '#1a1b1e' }
+          content: { background: isDark ? '#1a1b1e' : '#ffffff', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.1)' },
+          header: { background: isDark ? '#1a1b1e' : '#ffffff' }
         }}
       >
         {selectedAlert && (
@@ -789,9 +996,9 @@ export default function Dashboard() {
             <Paper p="md" radius="md" style={{ background: 'rgba(250, 82, 82, 0.03)', border: '1px solid rgba(250, 82, 82, 0.1)' }}>
               <Text 
                 size="sm" 
-                c="gray.3" 
+                c="dimmed" 
                 style={{ lineHeight: 1.6 }}
-                dangerouslySetInnerHTML={{ __html: parseMarkdown(selectedAlert.alert_summary) }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(selectedAlert.alert_summary)) }}
               />
             </Paper>
             
@@ -800,7 +1007,7 @@ export default function Dashboard() {
               return (
                 <Stack gap="xs" mt="md">
                   <Group gap="xs" align="center">
-                    <Text size="sm" fw={700} c="white">
+                    <Text size="sm" fw={700} className="title-text-color">
                       {t('dash_adopted_sources')}
                     </Text>
                     <Badge 
@@ -808,8 +1015,8 @@ export default function Dashboard() {
                       variant="filled"
                       style={{ 
                         borderRadius: '9999px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                        color: '#a5d8ff',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                        color: isDark ? '#a5d8ff' : 'var(--mantine-color-indigo-6)',
                         fontWeight: 700
                       }}
                     >
@@ -820,9 +1027,9 @@ export default function Dashboard() {
                     p="md" 
                     radius="md" 
                     style={{ 
-                      background: 'rgba(21, 23, 27, 0.6)', 
-                      border: '1px solid rgba(255,255,255,0.06)',
-                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                      background: isDark ? 'rgba(21, 23, 27, 0.6)' : '#f8f9fa', 
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'}`,
+                      boxShadow: isDark ? 'inset 0 2px 4px rgba(0,0,0,0.2)' : 'inset 0 1px 2px rgba(0,0,0,0.05)'
                     }}
                   >
                     <ScrollArea.Autosize mah={220} offsetScrollbars>
@@ -841,15 +1048,17 @@ export default function Dashboard() {
                               align="flex-start" 
                               py="sm" 
                               style={{ 
-                                borderBottom: index === sources.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.04)' 
+                                borderBottom: index === sources.length - 1 
+                                  ? 'none' 
+                                  : `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)'}` 
                               }}
                             >
                             <div style={{
                               width: 32,
                               height: 32,
                               borderRadius: 6,
-                              background: 'rgba(255, 255, 255, 0.03)',
-                              border: '1px solid rgba(255, 255, 255, 0.06)',
+                              background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.08)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
@@ -864,7 +1073,7 @@ export default function Dashboard() {
                                 target="_blank" 
                                 size="sm" 
                                 fw={600} 
-                                c="white" 
+                               className="title-text-color" 
                                 underline="hover"
                                 style={{ 
                                   display: 'inline-flex',
@@ -874,10 +1083,10 @@ export default function Dashboard() {
                                 }}
                               >
                                 {src.title}
-                                <span style={{ fontSize: '11px', color: '#748ffc' }}>↗</span>
+                                <span style={{ fontSize: '11px', color: 'var(--accent-link-color)' }}>↗</span>
                               </Anchor>
                               {src.description && (
-                                <Text size="xs" c="gray.4" style={{ lineHeight: 1.5 }}>
+                                <Text size="xs" c="dimmed" style={{ lineHeight: 1.5 }}>
                                   {src.description}
                                 </Text>
                               )}
@@ -901,22 +1110,60 @@ export default function Dashboard() {
         )}
       </Modal>
 
-      {/* Intelligence Feed */}
+      {/* Intelligence Feed vs Raw Articles Tabs */}
       <Stack gap="xs">
-        <Text size="lg" fw={700} c="white">{t('dash_latest_intel')}</Text>
-        <ScrollArea h="55vh" scrollbarSize={6}>
-          <Stack gap="md">
-            {feed.length === 0 ? (
-              <Paper withBorder p="xl" radius="md" style={{ background: 'transparent', textAlign: 'center' }}>
-                <Text c="dimmed">{t('dash_no_intel')}</Text>
-              </Paper>
-            ) : (
-              feed.map((report) => (
-                <IntelReportCard key={report.id} report={report} />
-              ))
-            )}
+        {appMode === 'ai_fusion' && (
+          <Tabs value={showRaw ? 'raw' : 'ai'} onChange={handleTabChange} variant="outline" mb="sm">
+            <Tabs.List>
+              <Tabs.Tab value="ai" leftSection={<Sparkles size={14} />}>
+                {t('dashboard_ai_feed')}
+              </Tabs.Tab>
+              <Tabs.Tab value="raw" leftSection={<FileText size={14} />}>
+                {t('dashboard_raw_feed')}
+              </Tabs.Tab>
+            </Tabs.List>
+          </Tabs>
+        )}
+
+        {showRaw ? (
+          <Stack gap="xs">
+            <Text size="lg" fw={700} className="title-text-color">{t('dashboard_raw_feed')}</Text>
+            <ScrollArea h="55vh" scrollbarSize={6}>
+              <Stack gap="md">
+                {rawLoading ? (
+                  <Group justify="center" py="xl">
+                    <Loader size="md" color="indigo" />
+                  </Group>
+                ) : rawFeed.length === 0 ? (
+                  <Paper withBorder p="xl" radius="md" style={{ background: 'transparent', textAlign: 'center' }}>
+                    <Text c="dimmed">{t('dash_no_intel')}</Text>
+                  </Paper>
+                ) : (
+                  rawFeed.map((article) => (
+                    <RawArticleCard key={article.id} article={article} />
+                  ))
+                )}
+              </Stack>
+            </ScrollArea>
           </Stack>
-        </ScrollArea>
+        ) : (
+          <Stack gap="xs">
+            <Text size="lg" fw={700} className="title-text-color">{t('dash_latest_intel')}</Text>
+            <ScrollArea h="55vh" scrollbarSize={6}>
+              <Stack gap="md">
+                {feed.length === 0 ? (
+                  <Paper withBorder p="xl" radius="md" style={{ background: 'transparent', textAlign: 'center' }}>
+                    <Text c="dimmed">{t('dash_no_intel')}</Text>
+                  </Paper>
+                ) : (
+                  feed.map((report) => (
+                    <IntelReportCard key={report.id} report={report} />
+                  ))
+                )}
+              </Stack>
+            </ScrollArea>
+          </Stack>
+        )}
       </Stack>
     </Stack>
   );

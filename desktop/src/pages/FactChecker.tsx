@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { 
-  Text, Paper, Stack, Button, Textarea, Grid, ScrollArea, Accordion, Group, ActionIcon, Divider
+  Text, Paper, Stack, Button, Textarea, Grid, ScrollArea, Accordion, Group, ActionIcon, Divider,
+  useMantineColorScheme
 } from '@mantine/core';
 import { Send, RefreshCw } from 'lucide-react';
 import client from '../api/client';
@@ -16,6 +17,8 @@ interface Investigation {
 
 export default function FactChecker() {
   const { t } = useLanguage();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
   const [query, setQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -58,16 +61,16 @@ export default function FactChecker() {
   return (
     <Stack gap="lg">
       <Stack gap={0}>
-        <Text size="xl" fw={700} c="white">{t('factcheck_title')}</Text>
+        <Text size="xl" fw={700} className="title-text-color">{t('factcheck_title')}</Text>
         <Text size="sm" c="dimmed">{t('factcheck_desc')}</Text>
       </Stack>
 
       <Grid>
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+          <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
             <form onSubmit={handleInvestigateSubmit}>
               <Stack gap="md">
-                <Text size="md" fw={700} c="white">{t('factcheck_active_pipeline')}</Text>
+                <Text size="md" fw={700} className="title-text-color">{t('factcheck_active_pipeline')}</Text>
                 <Text size="xs" c="dimmed">
                   {t('factcheck_pipeline_desc')}
                 </Text>
@@ -78,7 +81,7 @@ export default function FactChecker() {
                   minRows={4}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  styles={{ input: { background: 'rgba(255,255,255,0.05)', color: 'white' } }}
+                  styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black' } }}
                 />
 
                 <Button 
@@ -95,9 +98,9 @@ export default function FactChecker() {
         </Grid.Col>
 
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+          <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
             <Group justify="space-between" mb="md">
-              <Text size="md" fw={700} c="white">{t('factcheck_history')}</Text>
+              <Text size="md" fw={700} className="title-text-color">{t('factcheck_history')}</Text>
               <ActionIcon variant="subtle" color="gray" onClick={fetchInvestigations} loading={loadingHistory}>
                 <RefreshCw size={16} />
               </ActionIcon>
@@ -108,9 +111,9 @@ export default function FactChecker() {
                 <Text size="sm" c="dimmed" ta="center" py="xl">{t('factcheck_empty')}</Text>
               ) : (
                 <Accordion variant="separated" styles={{
-                  item: { background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' },
-                  control: { color: 'white' },
-                  content: { color: 'var(--mantine-color-gray-3)' }
+                  item: { background: isDark ? 'rgba(0,0,0,0.2)' : '#f8f9fa', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.08)' },
+                  control: { color: isDark ? 'white' : 'black' },
+                  content: { color: isDark ? 'var(--mantine-color-gray-3)' : '#495057' }
                 }}>
                   {investigations.map((inv) => (
                     <Accordion.Item key={inv.id} value={String(inv.id)}>
@@ -129,11 +132,11 @@ export default function FactChecker() {
                           <Text size="sm" style={{ borderLeft: '3px solid var(--mantine-color-indigo-6)', paddingLeft: 8 }}>
                             <strong>{t('factcheck_query_label')}:</strong> {inv.query}
                           </Text>
-                          <Divider style={{ borderColor: 'rgba(255,255,255,0.05)' }} />
+                          <Divider style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)' }} />
                           <Grid>
                             <Grid.Col span={{ base: 12, md: 6 }}>
                               <Text size="xs" fw={700} c="indigo" mb="xs">{t('factcheck_native_title')}</Text>
-                              <ScrollArea h={200} p="xs" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 4 }}>
+                              <ScrollArea h={200} p="xs" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.025)', border: isDark ? 'none' : '1px solid rgba(0,0,0,0.06)', borderRadius: 4 }}>
                                 <Text size="xs" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                                   {inv.native_result || t('factcheck_processing')}
                                 </Text>
@@ -141,7 +144,7 @@ export default function FactChecker() {
                             </Grid.Col>
                             <Grid.Col span={{ base: 12, md: 6 }}>
                               <Text size="xs" fw={700} c="teal" mb="xs">{t('factcheck_funnel_title')}</Text>
-                              <ScrollArea h={200} p="xs" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 4 }}>
+                              <ScrollArea h={200} p="xs" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.025)', border: isDark ? 'none' : '1px solid rgba(0,0,0,0.06)', borderRadius: 4 }}>
                                 <Text size="xs" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                                   {inv.funnel_result || t('factcheck_processing')}
                                 </Text>

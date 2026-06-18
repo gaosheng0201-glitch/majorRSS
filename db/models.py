@@ -5,6 +5,15 @@ from datetime import datetime, timezone
 def utc_now_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
+class AuthProfile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    platform: str
+    display_name: str
+    storage_ref: str
+    status: str = Field(default="Active")
+    last_checked_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utc_now_naive)
+
 class Tracker(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -15,7 +24,11 @@ class Tracker(SQLModel, table=True):
     is_active: bool = Field(default=True)
     fetch_interval_minutes: int = Field(default=30)
     prompt_override: Optional[str] = Field(default=None, description="Custom instructions for LLM extraction")
-    cookie_string: Optional[str] = Field(default=None, description="Optional cookie string for authenticated Tier 3 scraping")
+    cookie_string: Optional[str] = Field(default=None, description="[DEPRECATED] Optional cookie string. Use AuthProfile instead.")
+    source_intent: str = Field(default="RSS_FEED", description="RSS_FEED, KEYWORD_DISCOVERY, ACCOUNT_TRACKING, HYBRID")
+    fetch_policy: Optional[str] = Field(default=None, description="JSON policy overrides")
+    auth_profile_id: Optional[int] = Field(default=None, foreign_key="authprofile.id", description="Auth Profile reference")
+    normalized_intent: Optional[str] = Field(default=None, description="JSON string caching intent definition mapping")
     created_at: datetime = Field(default_factory=utc_now_naive)
     last_scraped_at: Optional[datetime] = None
 
@@ -79,6 +92,8 @@ class Subscription(SQLModel, table=True):
     target_url: str = Field(unique=True, index=True)
     is_active: bool = Field(default=True)
     fetch_interval_minutes: int = Field(default=60)
+    diff_policy: Optional[str] = Field(default=None, description="JSON policy overrides for page diff")
+    normalized_intent: Optional[str] = Field(default=None, description="JSON string caching intent definition mapping")
     created_at: datetime = Field(default_factory=utc_now_naive)
     last_scraped_at: Optional[datetime] = None
     last_status: str = Field(default="Idle")
@@ -117,7 +132,38 @@ class TaskRequest(SQLModel, table=True):
     target_id: Optional[str] = Field(default=None, description="Tracker ID, or Section Name, or null")
     payload: Optional[str] = Field(default=None, description="JSON string of additional arguments")
     status: str = Field(default="PENDING", description="PENDING, RUNNING, COMPLETED, FAILED")
+    retry_count: int = Field(default=0, description="Number of times this task was retried")
+    max_retries: int = Field(default=3, description="Maximum retry limit")
     created_at: datetime = Field(default_factory=utc_now_naive)
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    error: Optional[str] = None
+
+class PipelineRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tracker_id: Optional[int] = Field(default=None, foreign_key="tracker.id", nullable=True)
+    subscription_id: Optional[int] = Field(default=None, foreign_key="subscription.id", nullable=True)
+    status: str = Field(default="RUNNING") # RUNNING, SUCCESS, FAILED
+    normalized_intent: Optional[str] = Field(default=None, description="JSON representing normalized intent mapping snapshot")
+    started_at: datetime = Field(default_factory=utc_now_naive)
+    finished_at: Optional[datetime] = None
+    total_routes: int = Field(default=0)
+    total_items: int = Field(default=0)
+    accepted_items: int = Field(default=0)
+    error_summary: Optional[str] = None
+    cost_flag_browser: bool = Field(default=False)
+    cost_flag_llm: bool = Field(default=False)
+
+class PipelineEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="pipelinerun.id")
+    step_index: int = Field(description="Sequence step number (1-indexed)")
+    created_at: datetime = Field(default_factory=utc_now_naive)
+    stage: str = Field(description="RESOLVE, FETCH, DEDUPLICATE, LLM_FILTER, SAVE")
+    route_id: Optional[str] = None
+    adapter: Optional[str] = None
+    input_data: Optional[str] = None # Masked/desensitized target snippet
+    output_summary: Optional[str] = None # Text snippet/length/hash summary (max 100 chars)
+    status: str = Field(default="SUCCESS") # SUCCESS, FAILED
+    duration_ms: int = Field(default=0)
     error: Optional[str] = None

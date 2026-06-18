@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { 
   Text, Group, Stack, Button, TextInput, Paper, ScrollArea, Divider, Select,
-  SimpleGrid, Badge, Loader
+  SimpleGrid, useMantineColorScheme, Checkbox
 } from '@mantine/core';
-import { Terminal, Settings as SettingsIcon, Save, CheckCircle2, AlertTriangle, XCircle, ShieldAlert, Key } from 'lucide-react';
+import { Terminal, Settings as SettingsIcon, Save, AlertTriangle, ShieldAlert, Database } from 'lucide-react';
 import client from '../api/client';
 import { useLanguage, type Language } from '../i18n/translations';
 
@@ -23,15 +23,54 @@ export interface AuthStatus {
   mtime: number | null;
 }
 
-export default function Settings() {
+export interface DbStatus {
+  engine_type: 'sqlite' | 'postgres';
+  postgres_info: any | null;
+  db_size_mb: number;
+  row_counts: {
+    raw_articles: number;
+    intel_reports: number;
+    daily_briefings: number;
+    trend_alerts: number;
+    token_usages: number;
+  };
+  retention_days: number;
+  max_size_mb: number;
+  is_over_size_limit: boolean;
+  expired_articles_count: number;
+}
+
+export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { appMode: 'ai_fusion' | 'pure_rss'; setAppMode: (m: 'ai_fusion' | 'pure_rss') => void; setOnboardingOpen: (o: boolean) => void; }) {
   const { lang, changeLanguage, t } = useLanguage();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
+
+
   const [apiKey, setApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [maskedApiKey, setMaskedApiKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
-  const [authStatuses, setAuthStatuses] = useState<AuthStatus[]>([]);
-  const [loggingInPlatform, setLoggingInPlatform] = useState<string | null>(null);
+  const [devMode, setDevMode] = useState(() => localStorage.getItem('developer_mode') === 'true');
+
+  // Database settings states
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
+  const [retentionDays, setRetentionDays] = useState<string>('0');
+  const [maxSizeMb, setMaxSizeMb] = useState<string>('0');
+  const [dbEngineType, setDbEngineType] = useState<'sqlite' | 'postgres'>('sqlite');
+  
+  // Postgres connection form states
+  const [pgHost, setPgHost] = useState('');
+  const [pgPort, setPgPort] = useState('5432');
+  const [pgUser, setPgUser] = useState('');
+  const [pgPass, setPgPass] = useState('');
+  const [pgName, setPgName] = useState('');
+  
+  // Loadings
+  const [savingDbConfig, setSavingDbConfig] = useState(false);
+  const [cleaningDb, setCleaningDb] = useState(false);
+  const [testingConn, setTestingConn] = useState(false);
+  const [switchingEngine, setSwitchingEngine] = useState(false);
 
   const fetchLogs = async () => {
     try {
@@ -39,15 +78,6 @@ export default function Settings() {
       setLogs(res.data);
     } catch (err) {
       console.error("Failed to fetch logs:", err);
-    }
-  };
-
-  const fetchAuthStatuses = async () => {
-    try {
-      const res = await client.get<AuthStatus[]>('/settings/auth/status');
-      setAuthStatuses(res.data);
-    } catch (err) {
-      console.error("Failed to fetch auth statuses:", err);
     }
   };
 
@@ -61,14 +91,32 @@ export default function Settings() {
     }
   };
 
+  const fetchDbStatus = async () => {
+    try {
+      const res = await client.get<DbStatus>('/settings/db-status');
+      setDbStatus(res.data);
+      setRetentionDays(res.data.retention_days.toString());
+      setMaxSizeMb(res.data.max_size_mb.toString());
+      setDbEngineType(res.data.engine_type);
+      if (res.data.postgres_info) {
+        setPgHost(res.data.postgres_info.host || '');
+        setPgPort(res.data.postgres_info.port?.toString() || '5432');
+        setPgUser(res.data.postgres_info.username || '');
+        setPgPass(res.data.postgres_info.password || '');
+        setPgName(res.data.postgres_info.database || '');
+      }
+    } catch (err) {
+      console.error("Failed to fetch DB status:", err);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
-    fetchAuthStatuses();
     fetchApiKeyStatus();
+    fetchDbStatus();
     const interval = setInterval(() => {
       fetchLogs();
-      fetchAuthStatuses();
-    }, 5000); // Poll logs/auth every 5s
+    }, 5000); // Poll logs every 5s
     return () => clearInterval(interval);
   }, []);
 
@@ -89,17 +137,96 @@ export default function Settings() {
     }
   };
 
-  const handleLogin = async (platformKey: string) => {
-    setLoggingInPlatform(platformKey);
+  const handleSaveDbSettings = async () => {
+    setSavingDbConfig(true);
     try {
-      const res = await client.post<{ success: boolean; message: string }>('/settings/auth/login', { platform: platformKey });
-      alert(res.data.message);
-      fetchAuthStatuses();
-    } catch (err) {
-      alert("Auth failed: " + err);
+      await client.post('/settings/db-settings', {
+        retention_days: parseInt(retentionDays, 10),
+        max_size_mb: parseInt(maxSizeMb, 10)
+      });
+      alert(t('set_db_save_success'));
+      fetchDbStatus();
+    } catch (err: any) {
+      alert("Failed to save settings: " + (err.response?.data?.detail || err.message));
     } finally {
-      setLoggingInPlatform(null);
+      setSavingDbConfig(false);
     }
+  };
+
+  const handleDbCleanup = async () => {
+    setCleaningDb(true);
+    try {
+      await client.post('/settings/db-cleanup');
+      alert(t('set_db_clean_success'));
+      setTimeout(fetchDbStatus, 2000);
+    } catch (err: any) {
+      alert("Failed to trigger cleanup: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setCleaningDb(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!pgHost || !pgPort || !pgUser || !pgName) {
+      alert("Please fill in Host, Port, Username and Database Name");
+      return;
+    }
+    setTestingConn(true);
+    try {
+      const res = await client.post<{ success: boolean; message: string }>('/settings/db-test-connection', {
+        host: pgHost,
+        port: parseInt(pgPort, 10),
+        username: pgUser,
+        password: pgPass,
+        database: pgName
+      });
+      if (res.data.success) {
+        alert(t('set_db_test_success'));
+      } else {
+        alert(t('set_db_test_fail') + res.data.message);
+      }
+    } catch (err: any) {
+      alert(t('set_db_test_fail') + (err.response?.data?.detail || err.message));
+    } finally {
+      setTestingConn(false);
+    }
+  };
+
+  const handleSwitchEngine = async () => {
+    setSwitchingEngine(true);
+    try {
+      const payload: any = {
+        engine_type: dbEngineType
+      };
+      if (dbEngineType === 'postgres') {
+        if (!pgHost || !pgPort || !pgUser || !pgName) {
+          alert("Please fill in all Postgres connection details");
+          setSwitchingEngine(false);
+          return;
+        }
+        payload.postgres_info = {
+          host: pgHost,
+          port: parseInt(pgPort, 10),
+          username: pgUser,
+          password: pgPass,
+          database: pgName
+        };
+      }
+      await client.post('/settings/db-switch', payload);
+      alert(t('set_db_switch_success'));
+      fetchDbStatus();
+    } catch (err: any) {
+      alert(t('set_db_switch_fail') + (err.response?.data?.detail || err.message));
+    } finally {
+      setSwitchingEngine(false);
+    }
+  };
+
+  const formatWarnBanner = (text: string, size: number, limit: number, count: number) => {
+    return text
+      .replace('{size}', size.toFixed(2))
+      .replace('{limit}', limit.toString())
+      .replace('{count}', count.toString());
   };
 
   const languageOptions = [
@@ -113,16 +240,16 @@ export default function Settings() {
   return (
     <Stack gap="lg">
       <Stack gap={0}>
-        <Text size="xl" fw={700} c="white">{t('nav_settings')}</Text>
+        <Text size="xl" fw={700} className="title-text-color">{t('nav_settings')}</Text>
         <Text size="sm" c="dimmed">{t('set_desc')}</Text>
       </Stack>
 
       {/* Language Selector */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
         <Stack gap="md">
           <Group gap="xs">
             <SettingsIcon size={18} className="text-indigo-400" />
-            <Text size="md" fw={700} c="white">{t('set_lang')}</Text>
+            <Text size="md" fw={700} className="title-text-color">{t('set_lang')}</Text>
           </Group>
           <Text size="xs" c="dimmed">{t('set_lang_desc')}</Text>
           <Select
@@ -139,158 +266,371 @@ export default function Settings() {
               }
             }}
             styles={{ 
-              input: { background: 'rgba(255,255,255,0.05)', color: 'white', maxWidth: 300 },
-              dropdown: { background: '#1a1b1e', border: '1px solid rgba(255,255,255,0.08)' }
+              input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 300 },
+              dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
             }}
           />
         </Stack>
       </Paper>
 
+      {/* System Mode Switcher */}
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Stack gap="md">
+          <Group gap="xs">
+            <SettingsIcon size={18} className="text-indigo-400" />
+            <Text size="md" fw={700} className="title-text-color">{t('set_mode_title')}</Text>
+          </Group>
+          <Text size="xs" c="dimmed">{t('set_mode_desc')}</Text>
+          <Select
+            label={t('set_mode_label')}
+            data={[
+              { value: 'ai_fusion', label: lang === 'zh' ? 'AI 智能融合提炼模式 (AI Mode)' : 'AI Intelligence Fusion Mode' },
+              { value: 'pure_rss', label: lang === 'zh' ? '纯本地 RSS 订阅阅读模式 (Local Mode)' : 'Pure Local RSS Reader Mode' }
+            ]}
+            value={appMode}
+            onChange={async (value) => {
+              if (value) {
+                const targetMode = value as 'ai_fusion' | 'pure_rss';
+                try {
+                  await client.post('/settings/app-mode', { app_mode: targetMode });
+                  setAppMode(targetMode);
+                  localStorage.setItem('app_mode', targetMode);
+                  alert(t('set_mode_switch_success'));
+                } catch (err: any) {
+                  alert("Failed to switch app mode: " + err.message);
+                }
+              }
+            }}
+            styles={{ 
+              input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 400 },
+              dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
+            }}
+          />
+          <Button 
+            variant="light" 
+            color="indigo" 
+            size="xs"
+            onClick={() => setOnboardingOpen(true)}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            {t('set_mode_reopen_guide')}
+          </Button>
+        </Stack>
+      </Paper>
+
+      {/* Enable Developer Mode Toggle */}
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Stack gap="md">
+          <Group gap="xs">
+            <ShieldAlert size={18} className="text-indigo-400" />
+            <Text size="md" fw={700} className="title-text-color">{t('set_developer_mode')}</Text>
+          </Group>
+          <Text size="xs" c="dimmed">启用开发人员模式将解锁 Pipeline Trace 诊断分析弹窗，并在订阅和探测配置时展开底层工程策略设置。 (Enables diagnostics traces and engineering settings accordion)</Text>
+          <Checkbox
+            label="启用开发人员模式 (Enable Developer Mode)"
+            checked={devMode}
+            onChange={(e) => {
+              const checked = e.currentTarget.checked;
+              setDevMode(checked);
+              localStorage.setItem('developer_mode', checked ? 'true' : 'false');
+              window.dispatchEvent(new Event('developer_mode_changed'));
+            }}
+            styles={{ label: { color: isDark ? 'white' : 'black' } }}
+          />
+        </Stack>
+      </Paper>
+
       {/* API Configuration */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
         <form onSubmit={handleSaveApiKey}>
           <Stack gap="md">
             <Group gap="xs">
               <SettingsIcon size={18} className="text-indigo-400" />
-              <Text size="md" fw={700} c="white">{t('set_api')}</Text>
+              <Text size="md" fw={700} className="title-text-color">{t('set_api')}</Text>
             </Group>
             <Text size="xs" c="dimmed">{t('set_api_desc')}</Text>
-            <TextInput
-              required={!hasApiKey}
-              placeholder={hasApiKey ? `${t('set_auth_status_ok')} (${maskedApiKey})` : t('set_api_ph')}
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              styles={{ input: { background: 'rgba(255,255,255,0.05)', color: 'white', maxWidth: 500 } }}
-            />
-            <Button 
-              type="submit" 
-              color="indigo" 
-              loading={submitting}
-              leftSection={<Save size={14} />}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              {t('set_save_api')}
-            </Button>
+            {appMode === 'pure_rss' ? (
+              <Paper p="sm" radius="xs" style={{ background: isDark ? 'rgba(255, 169, 0, 0.1)' : '#fff9db', border: `1px solid ${isDark ? 'rgba(255, 169, 0, 0.2)' : '#ffe066'}` }}>
+                <Text size="xs" style={{ color: isDark ? '#ffe066' : '#f59f00', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                  <ShieldAlert size={14} style={{ flexShrink: 0 }} />
+                  {t('set_api_disabled_mode')}
+                </Text>
+              </Paper>
+            ) : (
+              <>
+                <TextInput
+                  required={!hasApiKey}
+                  placeholder={hasApiKey ? `${t('set_auth_status_ok')} (${maskedApiKey})` : t('set_api_ph')}
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+                />
+                <Button 
+                  type="submit" 
+                  color="indigo" 
+                  loading={submitting}
+                  leftSection={<Save size={14} />}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  {t('set_save_api')}
+                </Button>
+              </>
+            )}
           </Stack>
         </form>
       </Paper>
 
-      {/* Interactive Cookie Auth Portal */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
-        <Stack gap="md">
-          <Group gap="xs">
-            <Key size={18} className="text-indigo-400" />
-            <Text size="md" fw={700} c="white">{t('set_auth_title')}</Text>
-          </Group>
-          <Text size="xs" c="dimmed">{t('set_auth_desc')}</Text>
-          <Text size="xs" style={{ color: '#ebcb8b', display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.5 }}>
-            <ShieldAlert size={14} style={{ flexShrink: 0 }} />
-            💡 架构提示: 社交媒体(B站/推特/微博等)的主页追踪现已全面由底层 RSSHub 隐形代理，免登录永不封号。此处的强制授权仅为情报溯源系统 (Fact-Checker) 提供底层的单篇深度穿透能力。
-          </Text>
+      {/* Database & Storage Management */}
+      {dbStatus && (
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+          <Stack gap="md">
+            <Group gap="xs">
+              <Database size={18} className="text-indigo-400" />
+              <Text size="md" fw={700} className="title-text-color">{t('set_db_title')}</Text>
+            </Group>
+            <Text size="xs" c="dimmed">{t('set_db_desc')}</Text>
 
-          {loggingInPlatform && (
-            <Paper p="sm" radius="sm" style={{ background: 'rgba(224, 49, 49, 0.15)', border: '1px solid rgba(224, 49, 49, 0.3)' }}>
-              <Group gap="sm">
-                <Loader size="xs" color="red" />
-                <Text size="xs" c="red" fw={600}>
-                  {t('set_auth_waiting')} ({loggingInPlatform})
-                </Text>
-              </Group>
-            </Paper>
-          )}
-
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
-            {authStatuses.map((p) => {
-              let statusColor = "gray";
-              let statusText = t('set_auth_status_none');
-              let statusIcon = <XCircle size={16} className="text-gray-400" />;
-              
-              if (p.has_cookie && p.is_healthy) {
-                statusColor = "green";
-                statusText = t('set_auth_status_ok');
-                statusIcon = <CheckCircle2 size={16} className="text-emerald-400" />;
-              } else if (p.has_cookie && !p.is_healthy) {
-                statusColor = "yellow";
-                statusText = t('set_auth_status_expired');
-                statusIcon = <AlertTriangle size={16} className="text-amber-400" />;
-              }
-
-              const formattedTime = p.mtime 
-                ? new Date(p.mtime * 1000).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-                : null;
-
-              return (
-                <Paper 
-                  key={p.key} 
-                  withBorder 
-                  p="sm" 
-                  radius="md" 
-                  style={{ 
-                    background: 'rgba(255,255,255,0.01)', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    justifyContent: 'space-between',
-                    minHeight: 120
-                  }}
-                >
-                  <Stack gap="xs">
-                    <Group justify="space-between" align="center">
-                      <Text size="sm" fw={700} c="white">{p.name}</Text>
-                      {statusIcon}
-                    </Group>
-                    <Group gap={6}>
-                      <Badge size="xs" color={statusColor} variant="light">
-                        {statusText}
-                      </Badge>
-                      {formattedTime && (
-                        <Text size="10px" c="dimmed">
-                          ({formattedTime})
-                        </Text>
-                      )}
-                    </Group>
-                  </Stack>
-                  <Button
-                    size="xs"
-                    variant={p.has_cookie && p.is_healthy ? "subtle" : "light"}
-                    color={p.has_cookie && p.is_healthy ? "gray" : "indigo"}
-                    onClick={() => handleLogin(p.key)}
-                    loading={loggingInPlatform === p.key}
-                    disabled={loggingInPlatform !== null}
-                    mt="sm"
-                    fullWidth
+            {/* Warning Banner */}
+            {(dbStatus.is_over_size_limit || dbStatus.expired_articles_count > 0) && (
+              <Paper p="md" radius="md" style={{ 
+                background: isDark ? 'rgba(240, 62, 62, 0.15)' : '#fff5f5', 
+                border: `1px solid ${isDark ? 'rgba(240, 62, 62, 0.3)' : '#ffe3e3'}` 
+              }}>
+                <Stack gap="sm">
+                  <Group gap="xs">
+                    <AlertTriangle color="var(--mantine-color-red-6)" size={16} />
+                    <Text size="sm" c="red" fw={600}>
+                      {formatWarnBanner(t('set_db_warn_banner'), dbStatus.db_size_mb, dbStatus.max_size_mb, dbStatus.expired_articles_count)}
+                    </Text>
+                  </Group>
+                  <Button 
+                    size="xs" 
+                    color="red" 
+                    loading={cleaningDb} 
+                    onClick={handleDbCleanup}
+                    style={{ alignSelf: 'flex-start' }}
                   >
-                    {p.has_cookie ? t('set_auth_relogin') : t('set_auth_login')}
+                    {t('set_db_clean_now')}
                   </Button>
+                </Stack>
+              </Paper>
+            )}
+
+            {/* Storage Board */}
+            <Paper withBorder p="sm" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.005)' : '#f8f9fa' }}>
+              <Stack gap="xs">
+                <Text size="xs" fw={700} c="dimmed">{t('set_db_size')}</Text>
+                <Text size="xl" fw={800} className="title-text-color">{dbStatus.db_size_mb.toFixed(2)} MB</Text>
+                <Divider my="xs" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="xs">
+                  <Paper p="xs" radius="xs" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                    <Text size="xs" c="dimmed">{t('set_db_col_raw_articles')}</Text>
+                    <Text size="md" fw={700} className="title-text-color">{dbStatus.row_counts.raw_articles}</Text>
+                  </Paper>
+                  <Paper p="xs" radius="xs" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                    <Text size="xs" c="dimmed">{t('set_db_col_intel_reports')}</Text>
+                    <Text size="md" fw={700} className="title-text-color">{dbStatus.row_counts.intel_reports}</Text>
+                  </Paper>
+                  <Paper p="xs" radius="xs" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                    <Text size="xs" c="dimmed">{t('set_db_col_daily_briefings')}</Text>
+                    <Text size="md" fw={700} className="title-text-color">{dbStatus.row_counts.daily_briefings}</Text>
+                  </Paper>
+                  <Paper p="xs" radius="xs" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                    <Text size="xs" c="dimmed">{t('set_db_col_trend_alerts')}</Text>
+                    <Text size="md" fw={700} className="title-text-color">{dbStatus.row_counts.trend_alerts}</Text>
+                  </Paper>
+                  <Paper p="xs" radius="xs" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                    <Text size="xs" c="dimmed">{t('set_db_col_token_usages')}</Text>
+                    <Text size="md" fw={700} className="title-text-color">{dbStatus.row_counts.token_usages}</Text>
+                  </Paper>
+                </SimpleGrid>
+              </Stack>
+            </Paper>
+
+            {/* Cleanup Settings Form */}
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <Select
+                label={t('set_db_retention')}
+                data={[
+                  { value: '0', label: lang === 'zh' ? '从不清理' : 'Never' },
+                  { value: '7', label: lang === 'zh' ? '7 天' : '7 Days' },
+                  { value: '15', label: lang === 'zh' ? '15 天' : '15 Days' },
+                  { value: '30', label: lang === 'zh' ? '30 天' : '30 Days' },
+                  { value: '60', label: lang === 'zh' ? '60 天' : '60 Days' },
+                  { value: '90', label: lang === 'zh' ? '90 天' : '90 Days' },
+                  { value: '180', label: lang === 'zh' ? '180 天' : '180 Days' },
+                  { value: '365', label: lang === 'zh' ? '1 年' : '1 Year' }
+                ]}
+                value={retentionDays}
+                onChange={(val) => val && setRetentionDays(val)}
+                styles={{ 
+                  input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black' },
+                  dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
+                }}
+              />
+              <Select
+                label={t('set_db_max_size')}
+                data={[
+                  { value: '0', label: lang === 'zh' ? '无限制' : 'Unlimited' },
+                  { value: '100', label: '100 MB' },
+                  { value: '250', label: '250 MB' },
+                  { value: '500', label: '500 MB' },
+                  { value: '1000', label: '1 GB (1000 MB)' },
+                  { value: '2000', label: '2 GB (2000 MB)' },
+                  { value: '5000', label: '5 GB (5000 MB)' }
+                ]}
+                value={maxSizeMb}
+                onChange={(val) => val && setMaxSizeMb(val)}
+                styles={{ 
+                  input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black' },
+                  dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
+                }}
+              />
+            </SimpleGrid>
+
+            <Group gap="xs" style={{ alignSelf: 'flex-start' }}>
+              <Button 
+                size="sm" 
+                color="indigo" 
+                loading={savingDbConfig} 
+                onClick={handleSaveDbSettings}
+                leftSection={<Save size={14} />}
+              >
+                {t('set_db_save_btn')}
+              </Button>
+              <Button 
+                size="sm" 
+                variant="light" 
+                color="indigo" 
+                loading={cleaningDb} 
+                onClick={handleDbCleanup}
+              >
+                {t('set_db_vacuum_btn')}
+              </Button>
+            </Group>
+
+            <Divider my="xs" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)' }} />
+
+            {/* Database Engine Switcher */}
+            <Stack gap="sm">
+              <Stack gap={2}>
+                <Text size="sm" fw={700} className="title-text-color">{t('set_db_engine_title')}</Text>
+                <Text size="xs" c="dimmed">{t('set_db_engine_desc')}</Text>
+              </Stack>
+
+              <Select
+                label={t('set_db_engine_type')}
+                data={[
+                  { value: 'sqlite', label: 'SQLite (Default, Zero-config Local)' },
+                  { value: 'postgres', label: 'PostgreSQL (High Concurrency Database Server)' }
+                ]}
+                value={dbEngineType}
+                onChange={(val) => val && setDbEngineType(val as 'sqlite' | 'postgres')}
+                styles={{ 
+                  input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 400 },
+                  dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
+                }}
+              />
+
+              {dbEngineType === 'postgres' && (
+                <Paper withBorder p="md" radius="sm" style={{ background: isDark ? 'rgba(0,0,0,0.1)' : '#f8f9fa', maxWidth: 600 }}>
+                  <Stack gap="sm">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                      <TextInput
+                        required
+                        label={t('set_db_host')}
+                        placeholder="localhost"
+                        value={pgHost}
+                        onChange={(e) => setPgHost(e.target.value)}
+                        styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff', color: isDark ? 'white' : 'black' } }}
+                      />
+                      <TextInput
+                        required
+                        label={t('set_db_port')}
+                        placeholder="5432"
+                        value={pgPort}
+                        onChange={(e) => setPgPort(e.target.value)}
+                        styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff', color: isDark ? 'white' : 'black' } }}
+                      />
+                    </SimpleGrid>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                      <TextInput
+                        required
+                        label={t('set_db_user')}
+                        placeholder="postgres"
+                        value={pgUser}
+                        onChange={(e) => setPgUser(e.target.value)}
+                        styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff', color: isDark ? 'white' : 'black' } }}
+                      />
+                      <TextInput
+                        required
+                        label={t('set_db_pass')}
+                        type="password"
+                        placeholder="password"
+                        value={pgPass}
+                        onChange={(e) => setPgPass(e.target.value)}
+                        styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff', color: isDark ? 'white' : 'black' } }}
+                      />
+                    </SimpleGrid>
+                    <TextInput
+                      required
+                      label={t('set_db_name')}
+                      placeholder="major_rss"
+                      value={pgName}
+                      onChange={(e) => setPgName(e.target.value)}
+                      styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff', color: isDark ? 'white' : 'black' } }}
+                    />
+                    <Button 
+                      size="xs" 
+                      variant="subtle" 
+                      color="indigo" 
+                      loading={testingConn} 
+                      onClick={handleTestConnection}
+                      style={{ alignSelf: 'flex-start' }}
+                    >
+                      {t('set_db_test_conn')}
+                    </Button>
+                  </Stack>
                 </Paper>
-              );
-            })}
-          </SimpleGrid>
-        </Stack>
-      </Paper>
+              )}
+
+              <Button 
+                size="sm" 
+                color="indigo" 
+                loading={switchingEngine} 
+                onClick={handleSwitchEngine}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {t('set_db_switch_btn')}
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       {/* Pipeline Logs */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
         <Stack gap="md">
           <Group justify="space-between">
             <Group gap="xs">
               <Terminal size={18} className="text-indigo-400" />
-              <Text size="md" fw={700} c="white">{t('set_logs_title')}</Text>
+              <Text size="md" fw={700} className="title-text-color">{t('set_logs_title')}</Text>
             </Group>
             <Text size="xs" c="dimmed">{t('set_logs_desc')}</Text>
           </Group>
-          <Divider style={{ borderColor: 'rgba(255,255,255,0.05)' }} />
-          <ScrollArea h="30vh" p="md" style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8 }}>
+          <Divider style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)' }} />
+          <ScrollArea h="30vh" p="md" style={{ background: isDark ? 'rgba(0,0,0,0.3)' : '#f1f3f5', borderRadius: 8 }}>
             <Stack gap="xs" style={{ fontFamily: 'monospace' }}>
               {logs.length === 0 ? (
                 <Text size="xs" c="dimmed" ta="center" py="lg">{t('set_no_logs')}</Text>
               ) : (
                 logs.map((log) => (
-                  <Text key={log.id} size="xs" style={{ lineHeight: 1.6, color: '#d8dee9' }}>
+                  <Text key={log.id} size="xs" style={{ lineHeight: 1.6, color: isDark ? '#d8dee9' : '#2e3440' }}>
                     <span style={{ color: '#88c0d0' }}>[{new Date(log.updated_at).toLocaleTimeString()}]</span>{' '}
                     <span style={{ color: '#ebcb8b' }}>[{log.tracker_name}]</span>{' '}
                     <span style={{ color: '#8fbcbb', fontWeight: 700 }}>{log.action_type}</span>{' '}
-                    <span style={{ color: '#e5e9f0' }}>- {log.detail}</span>
+                    <span style={{ color: isDark ? '#e5e9f0' : '#4c566a' }}>- {log.detail}</span>
                   </Text>
                 ))
               )}

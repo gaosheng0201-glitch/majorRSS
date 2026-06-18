@@ -1,0 +1,100 @@
+.custom-titlebar {
+  height: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  box-sizing: border-box;
+}
+
+.custom-titlebar.dark {
+  background-color: #101113; /* matches AppShell header dark background */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.custom-titlebar.light {
+  background-color: #ffffff; /* matches AppShell header light background */
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  height: 100%;
+}
+
+.custom-titlebar.dark .titlebar-left {
+  color: #c1c2c5;
+}
+
+.custom-titlebar.light .titlebar-left {
+  color: #212529;
+}
+
+.titlebar-middle {
+  flex-grow: 1;
+  height: 100%;
+  cursor: default;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.titlebar-btn {
+  background: transparent;
+  border: none;
+  width: 46px;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.custom-titlebar.dark .titlebar-btn {
+  color: #a6a7ab;
+}
+
+.custom-titlebar.light .titlebar-btn {
+  color: #495057;
+}
+
+.custom-titlebar.dark .titlebar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.custom-titlebar.light .titlebar-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #000000;
+}
+
+.custom-titlebar.dark .titlebar-btn:active {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.custom-titlebar.light .titlebar-btn:active {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.btn-close:hover {
+  background-color: #e81123 !important;
+  color: #ffffff !important;
+}
+
+.btn-close:active {
+  background-color: #f1707a !important;
+}

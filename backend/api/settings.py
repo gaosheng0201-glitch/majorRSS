@@ -185,3 +185,121 @@ def do_auth_login(req: AuthLoginRequest):
     from scrapers.auth_helper import interactive_login
     success, msg = interactive_login(req.platform)
     return {"success": success, "message": msg}
+
+class DbSettingsUpdate(BaseModel):
+    retention_days: int
+    max_size_mb: int
+
+class PgConnectionInfo(BaseModel):
+    host: str
+    port: int
+    username: str
+    password: str
+    database: str
+
+class DbSwitchRequest(BaseModel):
+    engine_type: str  # "sqlite" | "postgres"
+    postgres_info: PgConnectionInfo | None = None
+
+@router.get("/db-status")
+def get_settings_db_status():
+    from services.db_cleanup_service import get_db_status
+    try:
+        return get_db_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/db-settings")
+def update_settings_db_config(req: DbSettingsUpdate):
+    try:
+        update_env_variable("DB_CLEANUP_RETENTION_DAYS", str(req.retention_days))
+        update_env_variable("DB_CLEANUP_MAX_SIZE_MB", str(req.max_size_mb))
+        return {"status": "ok", "message": "Database settings saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/db-cleanup")
+def trigger_settings_db_cleanup(background_tasks: BackgroundTasks):
+    from services.db_cleanup_service import run_db_cleanup
+    try:
+        background_tasks.add_task(run_db_cleanup)
+        return {"status": "ok", "message": "Database cleanup triggered in background"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_postgres_password(password: str) -> str:
+    import urllib.parse
+    if password == "********":
+        existing_url = os.environ.get("DATABASE_URL", "")
+        if existing_url.startswith("postgresql"):
+            try:
+                url_part = existing_url.split("://", 1)[1]
+                auth_part, _ = url_part.split("@", 1)
+                _, existing_pass = auth_part.split(":", 1)
+                return urllib.parse.unquote_plus(existing_pass)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to reuse existing password: {e}")
+        else:
+            raise HTTPException(status_code=400, detail="No existing Postgres password found to reuse")
+    return password
+
+@router.post("/db-test-connection")
+def test_postgres_db_connection(req: PgConnectionInfo):
+    from services.db_cleanup_service import test_pg_connection
+    password = get_postgres_password(req.password)
+    success, message = test_pg_connection(
+        host=req.host,
+        port=req.port,
+        user=req.username,
+        password=password,
+        dbname=req.database
+    )
+    return {"success": success, "message": message}
+
+@router.post("/db-switch")
+def switch_database_engine(req: DbSwitchRequest):
+    import urllib.parse
+    try:
+        if req.engine_type == "sqlite":
+            from db.config import get_env_path
+            env_path = get_env_path()
+            if os.path.exists(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                new_lines = [l for l in lines if not l.strip().startswith("DATABASE_URL=")]
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+            if "DATABASE_URL" in os.environ:
+                del os.environ["DATABASE_URL"]
+        elif req.engine_type == "postgres":
+            if not req.postgres_info:
+                raise HTTPException(status_code=400, detail="Postgres connection info is required")
+            
+            info = req.postgres_info
+            password = get_postgres_password(info.password)
+            safe_pass = urllib.parse.quote_plus(password)
+            db_url = f"postgresql://{info.username}:{safe_pass}@{info.host}:{info.port}/{info.database}"
+            update_env_variable("DATABASE_URL", db_url)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid engine type")
+            
+        return {"status": "ok", "message": "Database engine settings saved. Please restart the app."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AppModeUpdate(BaseModel):
+    app_mode: str
+
+@router.get("/app-mode")
+def get_app_mode():
+    return {"app_mode": os.environ.get("APP_MODE", "ai_fusion")}
+
+@router.post("/app-mode")
+def update_app_mode(req: AppModeUpdate):
+    if req.app_mode not in ["ai_fusion", "pure_rss"]:
+        raise HTTPException(status_code=400, detail="Invalid app mode")
+    try:
+        update_env_variable("APP_MODE", req.app_mode)
+        return {"status": "ok", "message": "App mode updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

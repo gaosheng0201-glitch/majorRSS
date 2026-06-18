@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
 import { 
-  Text, Paper, Group, Stack, Button, MultiSelect, Accordion, Loader, ScrollArea
+  Text, Paper, Group, Stack, Button, MultiSelect, Accordion, Loader, ScrollArea,
+  useMantineColorScheme
 } from '@mantine/core';
 import { RefreshCw, Sparkles, Calendar } from 'lucide-react';
 import client from '../api/client';
@@ -21,6 +23,8 @@ interface Tracker {
 
 export default function Briefing() {
   const { t } = useLanguage();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [sections, setSections] = useState<string[]>([]);
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
@@ -73,7 +77,7 @@ export default function Briefing() {
   const parseMarkdown = (text: string) => {
     let formatted = text
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #748ffc; text-decoration: underline; font-weight: 500;">$1</a>');
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-link-color); text-decoration: underline; font-weight: 500;">$1</a>');
     return formatted.replace(/\n/g, '<br />');
   };
 
@@ -89,7 +93,7 @@ export default function Briefing() {
     <Stack gap="lg">
       <Group justify="space-between">
         <Stack gap={0}>
-          <Text size="xl" fw={700} c="white">{t('brief_title')}</Text>
+          <Text size="xl" fw={700} className="title-text-color">{t('brief_title')}</Text>
           <Text size="sm" c="dimmed">{t('brief_desc')}</Text>
         </Stack>
         <Button 
@@ -102,7 +106,7 @@ export default function Briefing() {
         </Button>
       </Group>
 
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
         <Stack gap="md">
           <MultiSelect
             label={t('brief_select_sections')}
@@ -113,8 +117,8 @@ export default function Briefing() {
             clearable
             searchable
             styles={{ 
-              input: { background: 'rgba(255,255,255,0.05)', color: 'white' },
-              dropdown: { background: '#1a1b1e', border: '1px solid rgba(255,255,255,0.08)' }
+              input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black' },
+              dropdown: { background: isDark ? '#1a1b1e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` }
             }}
           />
           <Button 
@@ -130,7 +134,7 @@ export default function Briefing() {
       </Paper>
 
       <Stack gap="xs">
-        <Text size="md" fw={700} c="white">{t('brief_archives')}</Text>
+        <Text size="md" fw={700} className="title-text-color">{t('brief_archives')}</Text>
         <ScrollArea h="50vh" scrollbarSize={6}>
           {briefings.length === 0 ? (
             <Paper withBorder p="xl" radius="md" style={{ background: 'transparent', textAlign: 'center' }}>
@@ -138,9 +142,9 @@ export default function Briefing() {
             </Paper>
           ) : (
             <Accordion variant="separated" styles={{
-              item: { background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 'var(--mantine-radius-md)' },
-              control: { color: 'white', fontWeight: 600 },
-              content: { color: 'var(--mantine-color-gray-3)', lineHeight: 1.6 }
+              item: { background: isDark ? 'rgba(255,255,255,0.01)' : '#ffffff', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.08)', borderRadius: 'var(--mantine-radius-md)' },
+              control: { color: isDark ? 'white' : 'black', fontWeight: 600 },
+              content: { color: isDark ? 'var(--mantine-color-gray-3)' : '#495057', lineHeight: 1.6 }
             }} defaultValue={String(briefings[0].id)}>
               {briefings.map((b) => (
                 <Accordion.Item key={b.id} value={String(b.id)}>
@@ -150,7 +154,7 @@ export default function Briefing() {
                   <Accordion.Panel>
                     <Text 
                       size="sm" 
-                      dangerouslySetInnerHTML={{ __html: parseMarkdown(b.content) }} 
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(b.content)) }} 
                     />
                   </Accordion.Panel>
                 </Accordion.Item>

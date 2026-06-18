@@ -5,9 +5,11 @@ Actual logic has been moved to scheduler.py, services/scraper_service.py, and se
 """
 
 from scheduler import start_scheduler, run_scraping_job, run_processing_job, run_trend_scan_job
-from services.scraper_service import _fetch_url, scrape_single_tracker as _scrape_single_tracker
+from services.scraper_service import scrape_single_tracker as _scrape_single_tracker
 from services.processor_service import process_tracker_fusion as _process_tracker_fusion
 from db.database import get_session
+
+_fetch_url = None  # Deprecated in refactored pipeline
 
 def set_status(*args, **kwargs):
     from repositories.repository import DBRepository

@@ -16,8 +16,51 @@ from worker_subscription import run_subscription_job
 
 db = DBRepository()
 
+def recover_stale_tasks():
+    """Finds tasks stuck in RUNNING state and marks them as FAILED or reschedules based on retry limit."""
+    from db.database import get_session
+    from db.models import TaskRequest
+    from sqlmodel import select
+    from datetime import datetime, timezone
+    
+    stale_limit_minutes = int(os.environ.get("TASK_STALE_MINUTES", "30"))
+    now = datetime.now(timezone.utc)
+    
+    with get_session() as session:
+        running_tasks = session.exec(select(TaskRequest).where(TaskRequest.status == "RUNNING")).all()
+        for task in running_tasks:
+            started_at = task.started_at
+            if started_at:
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                    
+                limit = stale_limit_minutes
+                if task.job_type == "TREND_SCAN":
+                    limit = 120
+                    
+                elapsed = (now - started_at).total_seconds() / 60
+                if elapsed >= limit:
+                    print(f"[Scheduler] Task {task.id} ({task.job_type}) is stale (running for {elapsed:.1f}m).")
+                    task.retry_count = (task.retry_count or 0) + 1
+                    max_ret = task.max_retries if task.max_retries is not None else 3
+                    if task.retry_count < max_ret:
+                        print(f"[Scheduler] Task {task.id} retry_count={task.retry_count} < {max_ret}. Rescheduling to PENDING.")
+                        task.status = "PENDING"
+                        task.started_at = None
+                        task.error = f"Stale timeout attempt {task.retry_count} exceeded {limit} mins."
+                    else:
+                        print(f"[Scheduler] Task {task.id} reached max retries. Recovering as FAILED.")
+                        task.status = "FAILED"
+                        task.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        task.error = f"Task exceeded stale limit of {limit} minutes and reached max retries ({max_ret})."
+                    session.add(task)
+        session.commit()
+
 def process_task_requests():
     """Polls the TaskRequest table for UI-triggered jobs."""
+    # Recover stale tasks first
+    recover_stale_tasks()
+    
     tasks = db.get_pending_tasks()
     for task in tasks:
         db.update_task_status(task.id, "RUNNING")
@@ -33,7 +76,26 @@ def process_task_requests():
             db.update_task_status(task.id, "COMPLETED")
         except Exception as e:
             print(f"Task {task.id} failed: {e}")
-            db.update_task_status(task.id, "FAILED", error=str(e))
+            from db.database import get_session
+            from db.models import TaskRequest
+            from datetime import datetime, timezone
+            with get_session() as session:
+                refreshed_task = session.get(TaskRequest, task.id)
+                if refreshed_task:
+                    refreshed_task.retry_count = (refreshed_task.retry_count or 0) + 1
+                    max_ret = refreshed_task.max_retries if refreshed_task.max_retries is not None else 3
+                    if refreshed_task.retry_count < max_ret:
+                        print(f"[Scheduler] Task {refreshed_task.id} failed. retry_count={refreshed_task.retry_count} < {max_ret}. Rescheduling to PENDING.")
+                        refreshed_task.status = "PENDING"
+                        refreshed_task.started_at = None
+                        refreshed_task.error = f"Attempt {refreshed_task.retry_count} failed: {str(e)}"
+                    else:
+                        print(f"[Scheduler] Task {refreshed_task.id} failed and reached max retries ({max_ret}). Marking as FAILED.")
+                        refreshed_task.status = "FAILED"
+                        refreshed_task.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        refreshed_task.error = f"Reached max retries ({max_ret}). Last error: {str(e)}"
+                    session.add(refreshed_task)
+                    session.commit()
 
 def run_scraping_job():
     print("Running scheduled scraping job...")

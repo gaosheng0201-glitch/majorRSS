@@ -17,6 +17,7 @@ if secure_key:
 database_url = get_db_url()
 
 from sqlalchemy.pool import NullPool
+from sqlalchemy import event
 
 connect_args = {}
 # Only apply SQLite-specific thread safety overrides
@@ -27,6 +28,14 @@ if database_url.startswith("sqlite"):
 else:
     # For Postgres, use robust QueuePool with higher limits to prevent timeouts
     engine = create_engine(database_url, echo=False, connect_args=connect_args, pool_size=30, max_overflow=50, pool_pre_ping=True)
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if database_url.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)

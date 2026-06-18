@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;850&display=swap');
 
-body {
+html, body {
   margin: 0;
   padding: 0;
   background-color: #141517;
@@ -9,11 +9,37 @@ body {
   overflow: hidden;
 }
 
+/* Make HTML and body transparent in Tauri to support rounded corners */
+html.is-tauri, body.is-tauri {
+  background-color: transparent !important;
+}
+
 #root {
   min-height: 100vh;
+  height: 100vh;
   width: 100vw;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Rounded corners card style in windowed mode */
+body.is-tauri #root {
+  background-color: #141517; /* Restore solid background inside root wrapper */
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  transition: border-radius 150ms ease;
+  transform: translate3d(0, 0, 0); /* Force GPU compositing and containment for fixed elements */
+  -webkit-mask-image: -webkit-radial-gradient(white, black); /* Mask container to guarantee perfect rounded corner clipping in Chromium */
+}
+
+/* Strip rounded corners when window is maximized */
+body.is-tauri.window-maximized #root {
+  border-radius: 0px !important;
+  border: none !important;
+  transform: none !important;
+  -webkit-mask-image: none !important;
 }
 
 /* Micro-animations */
@@ -41,8 +67,17 @@ body {
   color: #a6a7ab !important;
 }
 
+html[data-mantine-color-scheme="light"] .mantine-Tabs-tab {
+  color: #5c5f66 !important;
+}
+
 .mantine-Tabs-tab[data-active] {
   color: white !important;
+  border-bottom-color: var(--mantine-color-indigo-6) !important;
+}
+
+html[data-mantine-color-scheme="light"] .mantine-Tabs-tab[data-active] {
+  color: var(--mantine-color-indigo-6) !important;
   border-bottom-color: var(--mantine-color-indigo-6) !important;
 }
 
@@ -50,3 +85,70 @@ body {
   background-color: rgba(255, 255, 255, 0.02) !important;
   color: white !important;
 }
+
+html[data-mantine-color-scheme="light"] .mantine-Tabs-tab:hover {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+  color: var(--mantine-color-indigo-6) !important;
+}
+
+/* Custom CSS class for high contrast titles/values that adapt to color scheme */
+.title-text-color {
+  color: #ffffff !important;
+}
+
+html[data-mantine-color-scheme="light"] .title-text-color {
+  color: #1a1b1e !important;
+}
+
+/* High readability overrides for light mode variables */
+html[data-mantine-color-scheme="light"] {
+  --mantine-color-dimmed: #5c5f66 !important;
+  --mantine-color-text: #1a1b1e !important;
+  --mantine-color-body: #f8f9fa !important;
+  --accent-link-color: #3b5bdb;
+}
+
+/* Default variables */
+:root {
+  --accent-link-color: #748ffc;
+}
+
+/* Ensure tauri root matches theme */
+html[data-mantine-color-scheme="light"] body.is-tauri #root {
+  background-color: #f8f9fa !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Styled rendered HTML content inside raw articles */
+.raw-article-html-content p {
+  margin-top: 0;
+  margin-bottom: 0.8rem;
+  line-height: 1.6;
+}
+
+.raw-article-html-content a {
+  color: var(--accent-link-color) !important;
+  text-decoration: underline !important;
+}
+
+.raw-article-html-content a:hover {
+  text-decoration: none !important;
+}
+
+.raw-article-html-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 0.5rem 0;
+}
+
+.raw-article-html-content ul, .raw-article-html-content ol {
+  margin-top: 0;
+  margin-bottom: 0.8rem;
+  padding-left: 1.5rem;
+}
+
+.raw-article-html-content li {
+  margin-bottom: 0.3rem;
+}
+

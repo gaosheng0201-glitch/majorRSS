@@ -4,7 +4,7 @@ from typing import List
 import json
 from db.database import get_session
 from db.models import Tracker, RawArticle, IntelReport, TrendAlert, Subscription, TaskRequest
-from backend.schemas import DashboardStats, IntelReportResponse, TrendAlertResponse, TrendAlertSource
+from backend.schemas import DashboardStats, IntelReportResponse, TrendAlertResponse, TrendAlertSource, RawArticleResponse
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
@@ -126,3 +126,27 @@ def trigger_trend_scan(session: Session = Depends(get_session)):
     session.add(scan_task)
     session.commit()
     return {"message": "Trend scan task queued successfully"}
+
+@router.get("/raw-feed", response_model=List[RawArticleResponse])
+def get_raw_articles_feed(limit: int = 50, session: Session = Depends(get_session)):
+    # Query raw articles order by created_at desc
+    articles = session.exec(
+        select(RawArticle)
+        .order_by(RawArticle.created_at.desc())
+        .limit(limit)
+    ).all()
+    
+    feed = []
+    for art in articles:
+        tracker = session.get(Tracker, art.tracker_id)
+        tracker_name = tracker.name if tracker else "Unknown"
+        feed.append(RawArticleResponse(
+            id=art.id,
+            tracker_name=tracker_name,
+            title=art.title,
+            url=art.url,
+            content=art.content,
+            published_at=art.published_at,
+            created_at=art.created_at
+        ))
+    return feed

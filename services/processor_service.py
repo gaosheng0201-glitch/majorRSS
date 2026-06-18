@@ -8,6 +8,10 @@ from llm.processor import process_article
 db = DBRepository()
 
 def process_tracker_fusion(tracker_id: int):
+    import os
+    if os.environ.get("APP_MODE") == "pure_rss":
+        return
+        
     tracker = db.get_tracker(tracker_id)
     if not tracker: return
     

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { 
-  Text, Paper, SimpleGrid, Group, Stack, Table, ScrollArea, Loader, RingProgress
+  Text, Paper, SimpleGrid, Group, Stack, Table, ScrollArea, Loader, RingProgress,
+  useMantineColorScheme
 } from '@mantine/core';
 import { Database, DollarSign, Activity } from 'lucide-react';
 import client from '../api/client';
@@ -27,6 +28,8 @@ interface TokenUsageSummary {
 
 export default function Billing() {
   const { t } = useLanguage();
+  const { colorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
   const [loading, setLoading] = useState(true);
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary>({});
   const [rawUsage, setRawUsage] = useState<TokenUsageRecord[]>([]);
@@ -79,18 +82,18 @@ export default function Billing() {
   return (
     <Stack gap="lg">
       <Stack gap={0}>
-        <Text size="xl" fw={700} c="white">{t('bill_title')}</Text>
+        <Text size="xl" fw={700} className="title-text-color">{t('bill_title')}</Text>
         <Text size="sm" c="dimmed">{t('bill_desc')}</Text>
       </Stack>
 
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         {/* Gemini 3 Flash Metric */}
-        <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('bill_flash_tokens')}</Text>
-              <Text size="xl" fw={700} c="white">{flashTokens.toLocaleString()}</Text>
-              <Text size="xs" c="indigo.4">{t('bill_flash_desc')}</Text>
+              <Text size="xl" fw={700} className="title-text-color">{flashTokens.toLocaleString()}</Text>
+              <Text size="xs" c={isDark ? "indigo.4" : "indigo.7"}>{t('bill_flash_desc')}</Text>
             </Stack>
             <RingProgress
               size={60}
@@ -106,12 +109,12 @@ export default function Billing() {
         </Paper>
 
         {/* Gemini 3.1 Pro Metric */}
-        <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('bill_pro_tokens')}</Text>
-              <Text size="xl" fw={700} c="white">{proTokens.toLocaleString()}</Text>
-              <Text size="xs" c="teal.4">{t('bill_pro_desc')}</Text>
+              <Text size="xl" fw={700} className="title-text-color">{proTokens.toLocaleString()}</Text>
+              <Text size="xs" c={isDark ? "teal.4" : "teal.7"}>{t('bill_pro_desc')}</Text>
             </Stack>
             <RingProgress
               size={60}
@@ -127,11 +130,11 @@ export default function Billing() {
         </Paper>
 
         {/* Total Cost Metric */}
-        <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
           <Group justify="space-between">
             <Stack gap={2}>
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">{t('bill_est_cost')}</Text>
-              <Text size="xl" fw={700} c="white">${estCost.toFixed(4)}</Text>
+              <Text size="xl" fw={700} className="title-text-color">${estCost.toFixed(4)}</Text>
               <Text size="xs" c="dimmed">{t('bill_cost_desc')}</Text>
             </Stack>
             <RingProgress
@@ -149,8 +152,8 @@ export default function Billing() {
       </SimpleGrid>
 
       {/* Daily Consumption Bar Chart */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
-        <Text size="md" fw={700} c="white" mb="xl">{t('bill_daily_trend')}</Text>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Text size="md" fw={700} className="title-text-color" mb="xl">{t('bill_daily_trend')}</Text>
         {trendData.length === 0 ? (
           <Text size="sm" c="dimmed" ta="center" py="xl">{t('bill_daily_empty')}</Text>
         ) : (
@@ -159,7 +162,7 @@ export default function Billing() {
               const barHeight = Math.max((d.tokens / maxTokens) * 100, 6); // Max height of 100px
               return (
                 <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '8%' }}>
-                  <Text size="xs" c="white" fw={700} mb={4}>
+                  <Text size="xs" className="title-text-color" fw={700} mb={4}>
                     {d.tokens > 1000 ? `${(d.tokens / 1000).toFixed(1)}k` : d.tokens}
                   </Text>
                   <div style={{ 
@@ -181,18 +184,18 @@ export default function Billing() {
       </Paper>
 
       {/* Recent Usage table */}
-      <Paper withBorder p="lg" radius="md" style={{ background: 'rgba(255,255,255,0.015)' }}>
-        <Text size="md" fw={700} c="white" mb="md">{t('bill_recent')}</Text>
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Text size="md" fw={700} className="title-text-color" mb="md">{t('bill_recent')}</Text>
         <ScrollArea h="35vh" scrollbarSize={6}>
-          <Table verticalSpacing="md" horizontalSpacing="lg" style={{ color: 'var(--mantine-color-gray-3)' }}>
-            <Table.Thead style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <Table verticalSpacing="md" horizontalSpacing="lg" style={{ color: isDark ? 'var(--mantine-color-gray-3)' : '#495057' }}>
+            <Table.Thead style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f9fa' }}>
               <Table.Tr>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_time')}</Table.Th>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_action')}</Table.Th>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_model')}</Table.Th>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_prompt')}</Table.Th>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_comp')}</Table.Th>
-                <Table.Th style={{ color: 'white' }}>{t('bill_col_total')}</Table.Th>
+                <Table.Th>{t('bill_col_time')}</Table.Th>
+                <Table.Th>{t('bill_col_action')}</Table.Th>
+                <Table.Th>{t('bill_col_model')}</Table.Th>
+                <Table.Th>{t('bill_col_prompt')}</Table.Th>
+                <Table.Th>{t('bill_col_comp')}</Table.Th>
+                <Table.Th>{t('bill_col_total')}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -204,7 +207,7 @@ export default function Billing() {
                 </Table.Tr>
               ) : (
                 rawUsage.slice(0, 20).map((u) => (
-                  <Table.Tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <Table.Tr key={u.id} style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.08)' }}>
                     <Table.Td>{new Date(u.created_at).toLocaleString()}</Table.Td>
                     <Table.Td>{u.action_type}</Table.Td>
                     <Table.Td>{u.model_name}</Table.Td>
