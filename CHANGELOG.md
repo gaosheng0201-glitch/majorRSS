@@ -5,6 +5,102 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-06-19
+
+### Fixed
+- **Desktop Sidecar Infinite Loading**: Fixed the packaged EXE showing infinite loading screen caused by the backend sidecar failing to start.
+  - Fixed `sys.path` resolution in `backend/main.py` to use `sys._MEIPASS` in PyInstaller frozen mode, preventing `ModuleNotFoundError` on all local modules (`db`, `services`, `scrapers`, `llm`, etc.).
+  - Rewrote `backend-sidecar.spec` and `build_backend.py` to include all hidden imports (both local project modules and third-party packages like `apscheduler`, `dotenv`, `feedparser`, `bs4`, `duckduckgo_search`, `google.genai`) and bundle local module directories as data files.
+  - Excluded unnecessary packages (`streamlit`, `flet`, `pytest`, `tkinter`, `matplotlib`) from the sidecar build to reduce binary size.
+- **Tauri Capabilities**: Added missing `shell:allow-spawn`, `shell:allow-open`, and window operation permissions (`allow-show`, `allow-hide`, `allow-set-focus`, `allow-is-visible`, `allow-is-maximized`) to `capabilities/default.json`.
+- **CSP Policy**: Extended Content Security Policy in `tauri.conf.json` to include `ws://127.0.0.1:8765` (WebSocket), `font-src 'self' data:`, and `blob:` for images, preventing silent request failures in production.
+
+## [2.5.0] - 2026-06-10
+
+### Added
+- **3-Layer Pipeline Tracing & Observation System**:
+  - Introduced `PipelineRun` and `PipelineEvent` database tables to log granular execution history (stages: `RESOLVE`, `FETCH`, `DEDUPLICATE`, `LLM_FILTER`, `SAVE`, `DIFF`), total/accepted counts, latency metrics, error stack traces, and cost indicators.
+  - Automatically records pipeline diagnostics during background scheduled cron tasks in [scraper_service.py](file:///d:/majorRSS/services/scraper_service.py) and webpage checks in [worker_subscription.py](file:///d:/majorRSS/worker_subscription.py).
+  - Added fast FastAPI diagnostic REST endpoints (dry-runs, trace histories, manual run-traces, and JSON trace log exports).
+  - Enforced strict trace privacy rules: desensitizes targets, and completely scrubs raw HTML/parsed text, cookies, and authentication headers.
+- **Intent-First Wizard Forms & Developer Accordion**:
+  - Revamped topic-based `Discovery` and `Subscriptions` modals into clear, intent-centric step-by-step form wizards.
+  - Completely hides low-level technical parameters (`tier`, `max_items_per_route`, `js_rendering`, custom selectors, route strategies) under a developer-only accordion.
+  - Added a global "启用开发人员模式 (Enable Developer Mode)" switch in Settings, which unlocks advanced options in forms and diagnostic "诊断 / Pipeline Trace" dashboards on lists.
+- **Unified Sources Library Dashboard**:
+  - Built a new `Sources.tsx` dashboard containing credentials (Auth Profiles), local subscribed feeds, active discovery keyword signals, and preset collections.
+
+### Changed
+- **Dynamic Auth Credentials Routing**:
+  - Removed static task-level credentials. The route resolver now automatically queries and maps active `AuthProfile` sessions on resolved platform routes at runtime.
+- **Strict Mode Keyword Safeguards**:
+  - Enabled the `trusted_news_only` keyword strategy to automatically query Google News and filter out public forums (HN/Reddit), avoiding query dry-outs.
+
+### Fixed
+- **FastAPI Main Import Failure**: Resolved module-scope `NameError: name 'PipelineRunResponse' is not defined` inside `backend/api/trackers.py` by ensuring proper import order at load-time.
+- **Frontend TS6133 Compiler Errors**: Removed unused imports and variables in React pages (`Discovery.tsx`, `Subscriptions.tsx`, `Settings.tsx`, `Sources.tsx`) to resolve production build (`npm run build`) and linting (`npm run lint`) blocks.
+- **Canonical Intent Mapping**: Centralized the `normalized_intent` caching and override flow inside `services/intent_normalizer.py`.
+- **Trace Sensitive Data Protection**: Implemented regex-based token/cookie/auth header scrubbing in `services/privacy.py` for trace database writes.
+
+
+## [2.4.0] - 2026-06-09
+
+
+### Added
+- **Welcome Onboarding Wizard (First-time Onboarding Modal)**:
+  - Implemented a welcome onboarding modal that triggers on the very first launch, helping users easily configure their desired experience (AI Intelligence Fusion vs Pure Local RSS Mode).
+  - Designed the modal dismissing mechanism to only persist `onboarding_completed: true` in `localStorage` if the user explicitly checks the dismissal checkbox, preventing accidental bypasses.
+  - Skips background AI processing worker pipelines programmatically when running in Pure Local RSS mode (`APP_MODE = 'pure_rss'`).
+- **Segmented Native Language Selector**:
+  - Integrated a highly visible native language switcher at the top of the onboarding modal utilizing Mantine's `SegmentedControl`.
+  - Supports English, Simplified Chinese, Japanese, Korean, and Russian in their native scripts ("English", "简体中文", "日本語", "한국어", "Русский").
+  - Instantly updates all localized text of the onboarding modal on a single click, preventing user confusion upon first open.
+- **Pure Local Raw Articles Feed & HTML Rendering**:
+  - Added a dedicated raw article list feed inside the Dashboard page layout, which displays raw, unprocessed RSS feeds and webpage articles.
+  - Replaced plain text rendering with native HTML parsing utilizing `dangerouslySetInnerHTML` inside `RawArticleCard` in `Dashboard.tsx` to prevent raw HTML markup tags (like `<p>`, `<a>`, comment blocks) from cluttering the reader view.
+  - Configured CSS styled overrides (`.raw-article-html-content`) in `index.css` to format paragraphs, clickable accented links, margins, and fluid responsive images within raw HTML articles.
+  - Localized expand/collapse toggle buttons in raw article views using new keys `dash_show_content` ("展开正文") and `dash_hide_content` ("折叠正文") in translations.
+
+### Fixed
+- **Misleading Mode Switch Alert**:
+  - Changed the misleading "Database configurations saved successfully" popup alert during application mode switches to a localized run-mode-specific confirmation ("系统运行模式切换成功！" / "Application run mode updated successfully!").
+- **TypeScript Compiler Warnings & Type Inference Errors**:
+  - Resolved `Unused setRawLoading state warning` in `Dashboard.tsx` by using it to manage active fetching indicators.
+  - Eliminated implicit `any` type warnings for parameters inside alert lists and notification mapping routines.
+  - Successfully verified a 100% green compilation build for production Tauri packaging.
+
+## [2.3.0] - 2026-06-09
+
+### Added
+- **Database Storage & Lifecycle Management**:
+  - Implemented SQLite WAL (Write-Ahead Logging) mode and `synchronous = NORMAL` settings via SQLAlchemy connection listeners in [database.py](file:///d:/majorRSS/db/database.py) to prevent concurrency write locking.
+  - Created a database status utility [db_cleanup_service.py](file:///d:/majorRSS/services/db_cleanup_service.py) to calculate db file size (SQLite and PostgreSQL), table row counts, retention limits, and flag size limits and count expired records.
+  - Added cleanups to delete expired records, trim the oldest 25% of data when size exceeds limits, and execute connection-level `VACUUM` (SQLite) / `VACUUM ANALYZE` (PostgreSQL) to compact storage.
+  - Added new REST API endpoints `/settings/db-status`, `/settings/db-settings`, `/settings/db-cleanup`, `/settings/db-test-connection`, and `/settings/db-switch` inside [settings.py](file:///d:/majorRSS/backend/api/settings.py).
+  - Automatically extracts and decrypts active PostgreSQL credentials to return and populate form fields in the frontend.
+  - Integrated the **Database & Storage Management** panel card in [Settings.tsx](file:///d:/majorRSS/desktop/src/pages/Settings.tsx) with warning alerts, size and table counts grids, retention dropdowns, and an interactive database engine switcher.
+  - Added translation keys inside [translations.ts](file:///d:/majorRSS/desktop/src/i18n/translations.ts) across English, Chinese, Korean, Japanese, and Russian.
+
+### Fixed
+- **Tauri Windows App Packaging**: Rebuilt the frozen Python sidecar executable to package the new cleanup/PostgreSQL helper services, and successfully packaged production MSI installer and NSIS standalone setup EXE bundles with `npx tauri build`.
+
+## [2.2.0] - 2026-06-09
+
+### Added
+- **Integrated Codex-Style Custom Titlebar**: Hidden native OS window borders and title bars (`"decorations": false`) in Tauri configuration. Implemented a custom window titlebar in React (`TitleBar.tsx` / `TitleBar.css`) supporting dragging, minimization, maximization, and close operations via native Tauri APIs.
+- **Collapsible Sidebar Layout**: Added a toggle button in the header (`PanelLeftClose` / `PanelLeftOpen` icon) to collapse or expand the navigation sidebar. When collapsed, the sidebar width scales down to `54px` (previously `70px`), displaying centered icon buttons with zero horizontal padding and hover tooltips. Placed the header toggle button inside a width-dynamic wrapper to align its center vertically with the sidebar icons on a single layout grid axis.
+- **Cleaned Header & Title Layout**: Simplified the custom TitleBar title to just "MajorRSS" (English name only), removed the redundant shield logo and title text, and reduced the AppShell Header height from `60px/92px` to a compact `48px/80px` to save vertical space.
+- **Adjusted Default Window Scale**: Changed default desktop app window startup size in `tauri.conf.json` from `800x600` to `1280x800` to provide a comfortable default layout proportion.
+- **Rounded Card Window Layout**: Configured transparent window support (`"transparent": true`) in Tauri. Applied 12px rounded borders and a thin, glowing border to the `#root` wrapper in windowed mode, which smoothly transitions to sharp corners and removes borders when the window is maximized. Resolved visual artifacts by setting transparency on both `html` and `body` elements to eliminate sharp dark corner highlights.
+
+### Fixed
+- **ASGI Module Import Crash in Frozen Sidecar**: Fixed a critical crash where the compiled backend sidecar binary failed to start with `Error loading ASGI app. Could not import module "main"`. Modified `backend/main.py` to check `sys.frozen` and pass the FastAPI `app` object directly (`uvicorn.run(app, ...)`) in frozen mode.
+- **Sidebar Toggle Button Alignment**: Fixed toggle button horizontal alignment mismatch in both collapsed and expanded states by removing the default padding on AppShell.Header and mathematically matching the padding-left and container centering widths to the vertical axis of the navbar icons.
+- **Light Mode Style and Contrast Audit**: Fixed poor text contrast in light mode by replacing hardcoded dark-mode backgrounds and white text with theme-dynamic styles (`className="title-text-color"`, `c="dimmed"`) and `isDark` conditionals across all pages (Dashboard, Briefing, FactChecker, Billing, Monitors, Trackers, Settings).
+- **Dynamic Titlebar Background Color Scheme**: Enabled the custom window TitleBar background and button hover states to adapt along with the active dark/light theme (matching `#101113` in dark mode and `#ffffff` in light mode).
+- **Internal Vertical Scroll Constraint**: Fixed content overflow cutoffs in windowed mode by setting `overflowY: "auto"` and constraining the height (`calc(100vh - header_offset)`) on the main `AppShell.Main` content container.
+- **Localization of Auth Portal Architecture Tip**: Localized the Interactive Cookie Auth Portal warning tip into all 5 system languages using `set_auth_architecture_tip` inside translations, resolving the Chinese-only warning box issue.
+
 ## [2.1.0] - 2026-06-09
 
 ### Added

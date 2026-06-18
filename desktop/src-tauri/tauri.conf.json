@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MajorRSS",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.majorss.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,14 +13,16 @@
     "windows": [
       {
         "title": "MajorRSS",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 800,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:5173 http://127.0.0.1:8765 ws://127.0.0.1:8765; img-src 'self' https://*.google.com data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
     }
   },
   "bundle": {

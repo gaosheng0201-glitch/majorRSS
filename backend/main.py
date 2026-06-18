@@ -6,11 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 # Add root folder to sys.path so we can import services/db modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if getattr(sys, 'frozen', False):
+    # PyInstaller frozen mode: use _MEIPASS as module root
+    sys.path.insert(0, sys._MEIPASS)
+else:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db.database import create_db_and_tables
 from scheduler import start_scheduler
-from backend.api import trackers, intelligence, briefing, monitors, settings
+from backend.api import trackers, intelligence, briefing, monitors, settings, auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +58,7 @@ app.add_middleware(
 
 # Include Routers
 app.include_router(trackers.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(intelligence.router, prefix="/api")
 app.include_router(briefing.router, prefix="/api")
 app.include_router(monitors.router, prefix="/api")
@@ -65,4 +70,10 @@ def index():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8765, reload=True)
+    # Check if running as packaged app
+    is_frozen = getattr(sys, 'frozen', False)
+    if is_frozen:
+        # Pass the app object directly in frozen mode to avoid import issues
+        uvicorn.run(app, host="127.0.0.1", port=8765)
+    else:
+        uvicorn.run("main:app", host="127.0.0.1", port=8765, reload=True)
