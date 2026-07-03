@@ -19,26 +19,74 @@ database_url = get_db_url()
 from sqlalchemy.pool import NullPool
 from sqlalchemy import event
 
-connect_args = {}
-# Only apply SQLite-specific thread safety overrides
-if database_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
-    from sqlalchemy.pool import NullPool
-    engine = create_engine(database_url, echo=False, connect_args=connect_args, poolclass=NullPool)
-else:
-    # For Postgres, use robust QueuePool with higher limits to prevent timeouts
-    engine = create_engine(database_url, echo=False, connect_args=connect_args, pool_size=30, max_overflow=50, pool_pre_ping=True)
+startup_db_error = None
 
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    if database_url.startswith("sqlite"):
+def _is_sqlite_url(url: str) -> bool:
+    return url.startswith("sqlite")
+
+def _is_postgres_url(url: str) -> bool:
+    return url.startswith("postgresql") or url.startswith("postgres://")
+
+def _build_engine(url: str):
+    connect_args = {}
+    if _is_sqlite_url(url):
+        connect_args = {"check_same_thread": False}
+        return create_engine(url, echo=False, connect_args=connect_args, poolclass=NullPool)
+
+    if _is_postgres_url(url):
+        # Avoid a stale packaged .env DATABASE_URL blocking the desktop app startup forever.
+        connect_args = {"connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT_SECONDS", "5"))}
+
+    return create_engine(
+        url,
+        echo=False,
+        connect_args=connect_args,
+        pool_size=30,
+        max_overflow=50,
+        pool_pre_ping=True,
+    )
+
+def _attach_sqlite_pragmas(db_engine, url: str):
+    if not _is_sqlite_url(url):
+        return
+
+    @event.listens_for(db_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
+engine = _build_engine(database_url)
+_attach_sqlite_pragmas(engine, database_url)
+
+def _fallback_to_local_sqlite(reason: Exception):
+    global database_url, engine, startup_db_error
+
+    startup_db_error = str(reason)
+    print(f"[DB WARNING] Failed to initialize configured database: {reason}")
+    print("[DB WARNING] Falling back to local SQLite for this packaged app session.")
+    os.environ.pop("DATABASE_URL", None)
+    database_url = get_db_url()
+    engine = _build_engine(database_url)
+    _attach_sqlite_pragmas(engine, database_url)
+
 def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+    try:
+        SQLModel.metadata.create_all(engine)
+    except Exception as e:
+        if getattr(sys, 'frozen', False) and _is_postgres_url(database_url):
+            _fallback_to_local_sqlite(e)
+            SQLModel.metadata.create_all(engine)
+        else:
+            raise
 
 def get_session():
     return Session(engine, expire_on_commit=False)
+
+def get_database_diagnostics():
+    return {
+        "database_url_kind": "sqlite" if _is_sqlite_url(database_url) else "postgres" if _is_postgres_url(database_url) else "other",
+        "env_path": get_env_path(),
+        "startup_db_error": startup_db_error,
+    }

@@ -1,6 +1,7 @@
 from typing import Optional
 from sqlmodel import Field, SQLModel
 from datetime import datetime, timezone
+from sqlalchemy import Column, Text
 
 def utc_now_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -111,6 +112,48 @@ class SubscriptionUpdate(SQLModel, table=True):
     diff_text: str
     is_read: bool = Field(default=False)
     llm_summary: Optional[str] = None
+    created_at: datetime = Field(default_factory=utc_now_naive)
+
+class SourcePreset(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    preset_id: str = Field(unique=True, index=True)
+    title: str
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    source_type: str = Field(index=True)
+    url: str = Field(sa_column=Column(Text))
+    canonical_site: Optional[str] = Field(default=None, sa_column=Column(Text))
+    categories_json: str = Field(default="[]", sa_column=Column(Text))
+    tags_json: str = Field(default="[]", sa_column=Column(Text))
+    language: Optional[str] = Field(default=None, index=True)
+    region: Optional[str] = Field(default=None, index=True)
+    importance: Optional[str] = Field(default=None, index=True)
+    noise_level: Optional[str] = Field(default=None)
+    update_frequency: Optional[str] = Field(default=None)
+    requires_auth: bool = Field(default=False)
+    owner_type: str = Field(default="built_in", index=True)
+    verification_status: str = Field(default="candidate", index=True)
+    raw_metadata: str = Field(default="{}", sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=utc_now_naive)
+    updated_at: datetime = Field(default_factory=utc_now_naive)
+
+class SourcePresetCollection(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    collection_id: str = Field(unique=True, index=True)
+    title: str
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    categories_json: str = Field(default="[]", sa_column=Column(Text))
+    owner_type: str = Field(default="built_in", index=True)
+    default_keywords_json: str = Field(default="[]", sa_column=Column(Text))
+    default_summary_style: Optional[str] = None
+    source_count: int = Field(default=0)
+    created_at: datetime = Field(default_factory=utc_now_naive)
+    updated_at: datetime = Field(default_factory=utc_now_naive)
+
+class SourcePresetCollectionItem(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    collection_id: str = Field(index=True)
+    preset_id: str = Field(index=True)
+    sort_order: int = Field(default=0)
     created_at: datetime = Field(default_factory=utc_now_naive)
 
 class InvestigationRecord(SQLModel, table=True):

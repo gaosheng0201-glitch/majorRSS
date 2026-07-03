@@ -52,6 +52,8 @@ def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_sessi
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
+
+    from services.app_mode import is_pure_rss_mode
     
     # Create TaskRequest for Scrape
     scrape_task = TaskRequest(
@@ -60,17 +62,22 @@ def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_sessi
         target_id=str(tracker_id),
         status="PENDING"
     )
-    # Create TaskRequest for Process
-    process_task = TaskRequest(
-        job_type="PROCESS",
-        target_type="TRACKER",
-        target_id=str(tracker_id),
-        status="PENDING"
-    )
     session.add(scrape_task)
-    session.add(process_task)
+
+    if not is_pure_rss_mode():
+        # Create TaskRequest for Process
+        process_task = TaskRequest(
+            job_type="PROCESS",
+            target_type="TRACKER",
+            target_id=str(tracker_id),
+            status="PENDING"
+        )
+        session.add(process_task)
+
     session.commit()
     
+    if is_pure_rss_mode():
+        return {"message": "Scrape task queued successfully. AI processing skipped in pure RSS mode."}
     return {"message": "Scrape and AI process tasks queued successfully"}
 
 @router.put("/{tracker_id}", response_model=TrackerResponse)

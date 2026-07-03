@@ -58,6 +58,35 @@ interface SignalItem {
   intensity: string;
 }
 
+interface SourcePresetCollection {
+  collection_id: string;
+  title: string;
+  description?: string;
+  categories: string[];
+  owner_type: string;
+  default_keywords: string[];
+  source_count: number;
+}
+
+interface SourcePreset {
+  preset_id: string;
+  title: string;
+  description?: string;
+  source_type: string;
+  url: string;
+  canonical_site?: string;
+  categories: string[];
+  tags: string[];
+  language?: string;
+  region?: string;
+  importance?: string;
+  noise_level?: string;
+  update_frequency?: string;
+  requires_auth: boolean;
+  owner_type: string;
+  verification_status: string;
+}
+
 export default function Sources() {
   const { t } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
@@ -76,6 +105,11 @@ export default function Sources() {
   const [trackers, setTrackers] = useState<Tracker[]>([]);
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [loadingSignals, setLoadingSignals] = useState(false);
+  const [presetCollections, setPresetCollections] = useState<SourcePresetCollection[]>([]);
+  const [sourcePresets, setSourcePresets] = useState<SourcePreset[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [loadingPresets, setLoadingPresets] = useState(false);
+  const [seedingPresets, setSeedingPresets] = useState(false);
 
   const fetchProfiles = async () => {
     try {
@@ -119,11 +153,49 @@ export default function Sources() {
     }
   };
 
+  const fetchPresetCollections = async () => {
+    try {
+      const res = await client.get<SourcePresetCollection[]>('/source-presets/collections');
+      setPresetCollections(res.data);
+    } catch (err) {
+      console.error("Failed to fetch source preset collections:", err);
+    }
+  };
+
+  const fetchSourcePresets = async (collectionId: string | null = selectedCollectionId) => {
+    setLoadingPresets(true);
+    try {
+      const res = await client.get<SourcePreset[]>('/source-presets/sources', {
+        params: collectionId ? { collection_id: collectionId } : {}
+      });
+      setSourcePresets(res.data);
+    } catch (err) {
+      console.error("Failed to fetch source presets:", err);
+    } finally {
+      setLoadingPresets(false);
+    }
+  };
+
+  const seedAndRefreshPresets = async () => {
+    setSeedingPresets(true);
+    try {
+      await client.post('/source-presets/seed');
+      await fetchPresetCollections();
+      await fetchSourcePresets(selectedCollectionId);
+    } catch (err: any) {
+      alert("Failed to seed source presets: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setSeedingPresets(false);
+    }
+  };
+
   useEffect(() => {
     fetchProfiles();
     fetchAuthStatuses();
     fetchLocalSources();
     fetchDiscoveryTrackers();
+    fetchPresetCollections();
+    fetchSourcePresets(null);
 
     const interval = setInterval(() => {
       fetchProfiles();
@@ -131,6 +203,10 @@ export default function Sources() {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    fetchSourcePresets(selectedCollectionId);
+  }, [selectedCollectionId]);
 
   const handleLogin = async (platformKey: string) => {
     setLoggingInPlatform(platformKey);
@@ -243,6 +319,14 @@ export default function Sources() {
   };
 
   const signals = compileSignals();
+  const selectedCollection = presetCollections.find(c => c.collection_id === selectedCollectionId);
+  const collectionOptions = [
+    { value: '__all__', label: `All official presets (${sourcePresets.length})` },
+    ...presetCollections.map(collection => ({
+      value: collection.collection_id,
+      label: `${collection.title} (${collection.source_count})`
+    }))
+  ];
 
   return (
     <Stack gap="lg">
@@ -599,7 +683,150 @@ export default function Sources() {
 
         {/* Tab 4: Presets & Collections */}
         <Tabs.Panel value="presets" pt="md">
-          <Paper withBorder p="xl" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff', textAlign: 'center' }}>
+          <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+            <Stack gap="md">
+              <Group justify="space-between" align="flex-start">
+                <Stack gap={4}>
+                  <Group gap="xs">
+                    <Compass size={16} className="text-indigo-400" />
+                    <Text size="sm" fw={700} className="title-text-color">Official Source Preset Library</Text>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    Curated RSS feeds, official blogs, changelogs, service status feeds, research sources, and vertical collections seeded into the local database.
+                  </Text>
+                </Stack>
+                <Group gap="xs">
+                  <Button size="xs" variant="light" color="indigo" onClick={() => {
+                    fetchPresetCollections();
+                    fetchSourcePresets(selectedCollectionId);
+                  }} leftSection={<RefreshCw size={12} />} loading={loadingPresets}>
+                    {t('dash_refresh')}
+                  </Button>
+                  <Button size="xs" variant="light" color="teal" onClick={seedAndRefreshPresets} loading={seedingPresets}>
+                    Re-seed
+                  </Button>
+                </Group>
+              </Group>
+
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+                <Paper withBorder p="sm" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.01)' : '#f8f9fa' }}>
+                  <Stack gap={2}>
+                    <Text size="xs" c="dimmed">Collections</Text>
+                    <Text size="lg" fw={700}>{presetCollections.length}</Text>
+                  </Stack>
+                </Paper>
+                <Paper withBorder p="sm" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.01)' : '#f8f9fa' }}>
+                  <Stack gap={2}>
+                    <Text size="xs" c="dimmed">Visible sources</Text>
+                    <Text size="lg" fw={700}>{sourcePresets.length}</Text>
+                  </Stack>
+                </Paper>
+                <Paper withBorder p="sm" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.01)' : '#f8f9fa' }}>
+                  <Stack gap={2}>
+                    <Text size="xs" c="dimmed">Selected collection</Text>
+                    <Text size="sm" fw={700} lineClamp={1}>{selectedCollection?.title || 'All presets'}</Text>
+                  </Stack>
+                </Paper>
+                <Paper withBorder p="sm" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.01)' : '#f8f9fa' }}>
+                  <Stack gap={2}>
+                    <Text size="xs" c="dimmed">Owner</Text>
+                    <Badge size="sm" color="indigo" variant="light">built-in</Badge>
+                  </Stack>
+                </Paper>
+              </SimpleGrid>
+
+              <Select
+                size="xs"
+                label="Collection"
+                data={collectionOptions}
+                value={selectedCollectionId || '__all__'}
+                onChange={(value) => setSelectedCollectionId(value === '__all__' ? null : value)}
+              />
+
+              {selectedCollection && (
+                <Alert color="indigo" variant="light" icon={<Layers size={14} />}>
+                  <Stack gap={4}>
+                    <Text size="xs" fw={700}>{selectedCollection.title}</Text>
+                    {selectedCollection.description && (
+                      <Text size="xs">{selectedCollection.description}</Text>
+                    )}
+                    <Group gap={6}>
+                      {selectedCollection.categories.map(category => (
+                        <Badge key={category} size="xs" variant="light">{category}</Badge>
+                      ))}
+                    </Group>
+                  </Stack>
+                </Alert>
+              )}
+
+              {loadingPresets ? (
+                <Group justify="center" py="lg">
+                  <Loader size="sm" />
+                </Group>
+              ) : sourcePresets.length === 0 ? (
+                <Stack align="center" gap="sm" py="xl">
+                  <Compass size={40} className="text-indigo-400" />
+                  <Text size="sm" fw={700}>No preset sources found</Text>
+                  <Text size="xs" c="dimmed" ta="center" style={{ maxWidth: 520 }}>
+                    The backend API is available, but the local preset seed has not populated this database yet. Use Re-seed to import the bundled official library.
+                  </Text>
+                  <Button size="xs" variant="light" color="teal" onClick={seedAndRefreshPresets} loading={seedingPresets}>
+                    Re-seed official library
+                  </Button>
+                </Stack>
+              ) : (
+                <ScrollArea>
+                  <Table striped highlightOnHover>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Source</Table.Th>
+                        <Table.Th>Type</Table.Th>
+                        <Table.Th>Region</Table.Th>
+                        <Table.Th>Trust</Table.Th>
+                        <Table.Th>URL</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {sourcePresets.map(preset => (
+                        <Table.Tr key={preset.preset_id}>
+                          <Table.Td>
+                            <Stack gap={3}>
+                              <Text size="xs" fw={700}>{preset.title}</Text>
+                              {preset.description && (
+                                <Text size="10px" c="dimmed" lineClamp={2}>{preset.description}</Text>
+                              )}
+                              <Group gap={4}>
+                                {preset.tags.slice(0, 3).map(tag => (
+                                  <Badge key={tag} size="xs" color="gray" variant="light">{tag}</Badge>
+                                ))}
+                              </Group>
+                            </Stack>
+                          </Table.Td>
+                          <Table.Td>
+                            <Badge size="xs" color={preset.source_type === 'rss' ? 'teal' : 'blue'} variant="light">
+                              {preset.source_type}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td><Text size="xs">{preset.region || 'global'}</Text></Table.Td>
+                          <Table.Td>
+                            <Badge size="xs" color={preset.verification_status === 'official_feed' ? 'green' : 'yellow'} variant="light">
+                              {preset.verification_status}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" c="dimmed" style={{ wordBreak: 'break-all', maxWidth: 360 }}>
+                              {preset.url}
+                            </Text>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </Stack>
+          </Paper>
+          <Paper withBorder p="xl" radius="md" style={{ display: 'none', background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff', textAlign: 'center' }}>
             <Stack align="center" gap="md" py="xl">
               <Compass size={48} className="text-indigo-400" />
               <Text size="lg" fw={700} className="title-text-color">{t('sources_coming_soon')}</Text>

@@ -11,6 +11,7 @@ from migrations.runner import run_migrations
 from repositories.repository import DBRepository
 from services.scraper_service import scrape_single_tracker
 from services.processor_service import process_tracker_fusion
+from services.app_mode import is_pure_rss_mode
 from llm.processor import scan_trends
 from worker_subscription import run_subscription_job
 
@@ -68,9 +69,15 @@ def process_task_requests():
             if task.job_type == "SCRAPE" and task.target_type == "TRACKER":
                 scrape_single_tracker(int(task.target_id))
             elif task.job_type == "PROCESS" and task.target_type == "TRACKER":
-                process_tracker_fusion(int(task.target_id))
+                if is_pure_rss_mode():
+                    print(f"[Scheduler] Skipping PROCESS task {task.id} because APP_MODE=pure_rss.")
+                else:
+                    process_tracker_fusion(int(task.target_id))
             elif task.job_type == "TREND_SCAN":
-                scan_trends()
+                if is_pure_rss_mode():
+                    print(f"[Scheduler] Skipping TREND_SCAN task {task.id} because APP_MODE=pure_rss.")
+                else:
+                    scan_trends()
             # other types can be added here
             
             db.update_task_status(task.id, "COMPLETED")
@@ -126,6 +133,10 @@ def run_scraping_job():
         concurrent.futures.wait(futures)
 
 def run_processing_job():
+    if is_pure_rss_mode():
+        print("Skipping Intelligence Fusion job because APP_MODE=pure_rss.")
+        return
+
     print("Running Intelligence Fusion job...")
     trackers_with_work = db.get_trackers_with_unprocessed_articles()
     
@@ -137,6 +148,10 @@ def run_processing_job():
             print(f"Error processing fusion for tracker {tid}: {e}")
 
 def run_trend_scan_job():
+    if is_pure_rss_mode():
+        print("Skipping trend scan because APP_MODE=pure_rss.")
+        return
+
     print("Running scheduled trend scan job...")
     try:
         scan_trends()
@@ -155,12 +170,7 @@ def start_scheduler():
     scheduler.add_job(run_subscription_job, 'interval', minutes=5)
     scheduler.start()
     print("Scheduler started. Press Ctrl+C to exit.")
-    
-    process_task_requests()
-    run_scraping_job()
-    run_processing_job()
-    run_trend_scan_job()
-    run_subscription_job()
+    print("Scheduled jobs will run on their configured intervals after startup.")
     
     try:
         while True:

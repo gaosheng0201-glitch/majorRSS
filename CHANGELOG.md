@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Source Preset Seed Library**:
+  - Added an audited seed library in `docs/source_presets.seed.json` with broad baseline sources, regional perspectives, AI, developer tools, healthcare, academic research, policy, cybersecurity, finance, and crypto/Web3 collections.
+  - Added `docs/source_preset_classification.md` to define the split between broad baseline sources, vertical source packs, high-weight non-RSS sources, and source trust labels.
+  - Added `docs/rss_feed_generation_method.md` documenting how MajorRSS can adapt an Olshansk-style generated RSS pipeline for high-value public pages without native feeds.
+  - Added `docs/local_radar_upgrade_plan.md` describing MajorRSS as a local personal information radar with OnlyFourBot as an optional sharing and reuse layer.
+- **Application Mode Helper**:
+  - Added `services/app_mode.py` as a shared backend helper for checking `APP_MODE` and pure RSS mode.
+- **Source Preset Database Seed**:
+  - Added database-backed source preset tables for built-in sources, collections, and collection membership.
+  - Added startup seeding from `docs/source_presets.seed.json`, syncing 133 sources, 18 collections, and 177 collection links into the local database.
+  - Added `/api/source-presets/collections`, `/api/source-presets/sources`, and `/api/source-presets/seed` endpoints for preset library access.
+  - Wired the Sources page preset tab to the local source preset API, replacing the old Coming Soon placeholder with collection filtering, source counts, trust badges, and a manual re-seed action.
+  - Bundled `docs/source_presets.seed.json` into the PyInstaller backend sidecar so packaged installs can seed the official preset library without the source tree.
+
+### Changed
+- **Pure RSS Mode Backend Behavior**:
+  - Pure RSS mode now skips scheduled AI processing jobs and scheduled trend scans in `scheduler.py`.
+  - Manual tracker runs now queue only scraping tasks in pure RSS mode instead of also queuing AI processing.
+  - Manual trend scan requests now return a skipped response in pure RSS mode instead of queuing an AI-dependent trend scan.
+  - `services/processor_service.py` now uses the shared app mode helper for pure RSS checks.
+
+### Fixed
+- **Desktop Installer Backend Packaging Guardrail**:
+  - Updated the Tauri production build flow so `npx tauri build` rebuilds the PyInstaller backend sidecar before compiling the desktop installer.
+  - Limited Tauri bundle targets to NSIS and MSI installers to avoid producing the misleading standalone `app-portable.exe`, which did not carry the backend sidecar and caused the frontend to keep waiting for `127.0.0.1:8765`.
+  - Added `npm run build:backend` and `npm run tauri:build` scripts for a single explicit packaging entry point from `desktop/`.
+  - Verified the new release app starts `backend-sidecar.exe` and returns `200` from `/api/settings/health` locally.
+  - Removed stale files from `builds/` so manual testing uses the freshly generated installers under `desktop/src-tauri/target/release/bundle/`.
+  - Added NSIS installer hooks that prompt before upgrades/uninstalls and attempt to close `app.exe` plus `backend-sidecar.exe`, preventing file overwrite failures when an older MajorRSS backend is still running.
+  - Hardened app shutdown so the tray Exit action and global Tauri exit events both stop the saved sidecar child and, on Windows, also terminate the PyInstaller `backend-sidecar.exe` process tree by PID/name to handle onefile parent/child process leftovers.
+  - Added a system-tray tooltip and a one-time desktop notification when the main window is closed, clarifying that MajorRSS is still running in the tray and must be exited from the tray menu for a full shutdown.
+  - Added detailed startup diagnostics to the desktop loading screen, including sidecar command resolution, sidecar spawn status, backend stdout/stderr, health-check attempts, elapsed time, and the exact local health endpoint being tested.
+  - Extended startup diagnostics with sidecar termination/error events plus Windows `tasklist` and `netstat` snapshots so failed test machines can distinguish "sidecar process did not start" from "process exists but port 8765 is not listening".
+  - Added a packaged-mode database startup guard: stale or unreachable Postgres `DATABASE_URL` settings now use a short connection timeout and fall back to local SQLite for the current session instead of preventing the backend from listening on port 8765.
+  - Included database startup diagnostics in `/api/settings/health`, including database kind, config path, and any startup database error summary.
+  - Delayed scheduler workload execution so scraping, processing, trend scans, and webpage monitoring no longer run immediately during backend startup.
+  - Limited Windows packaging output to NSIS only because the current upgrade/uninstall process cleanup hooks are NSIS-specific.
+  - Fixed packaged Tauri WebView CORS by allowing `http://tauri.localhost`; affected builds could show a backend connection failure even while `backend-sidecar.exe` was listening on `127.0.0.1:8765` and returning `200 OK`.
+  - Documented the packaging assumption that end-user machines do not need Python installed because the backend sidecar is a PyInstaller onefile executable; the Windows installer still relies on Tauri's WebView2 bootstrapper flow for WebView2 availability.
+  - Pending external validation: install the new package on another Windows machine and confirm the backend sidecar starts correctly in a clean environment.
+
 ## [2.5.1] - 2026-06-19
 
 ### Fixed

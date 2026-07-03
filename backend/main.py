@@ -14,7 +14,7 @@ else:
 
 from db.database import create_db_and_tables
 from scheduler import start_scheduler
-from backend.api import trackers, intelligence, briefing, monitors, settings, auth
+from backend.api import trackers, intelligence, briefing, monitors, settings, auth, source_presets
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,7 +44,10 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://localhost",
+    "http://127.0.0.1",
     "tauri://localhost",
+    "http://tauri.localhost",
     "https://tauri.localhost",
 ]
 
@@ -63,6 +66,7 @@ app.include_router(intelligence.router, prefix="/api")
 app.include_router(briefing.router, prefix="/api")
 app.include_router(monitors.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(source_presets.router, prefix="/api")
 
 @app.get("/")
 def index():
@@ -70,6 +74,36 @@ def index():
 
 if __name__ == "__main__":
     import uvicorn
+    
+    # Start parent process death watchdog
+    def start_parent_watchdog():
+        import threading
+        parent_pid = os.getppid()
+        if parent_pid <= 1:
+            return
+            
+        def watchdog():
+            if os.name == 'nt':
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                SYNCHRONIZE = 0x00100000
+                handle = kernel32.OpenProcess(SYNCHRONIZE, False, parent_pid)
+                if handle:
+                    kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
+                    kernel32.CloseHandle(handle)
+                    os._exit(0)
+            else:
+                import time
+                while True:
+                    time.sleep(2)
+                    if os.getppid() != parent_pid:
+                        os._exit(0)
+                        
+        t = threading.Thread(target=watchdog, daemon=True)
+        t.start()
+        
+    start_parent_watchdog()
+
     # Check if running as packaged app
     is_frozen = getattr(sys, 'frozen', False)
     if is_frozen:

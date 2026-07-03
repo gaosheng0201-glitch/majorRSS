@@ -119,6 +119,10 @@ def get_all_alerts(session: Session = Depends(get_session)):
 
 @router.post("/scan-trends")
 def trigger_trend_scan(session: Session = Depends(get_session)):
+    from services.app_mode import is_pure_rss_mode
+    if is_pure_rss_mode():
+        return {"message": "Trend scan skipped in pure RSS mode"}
+
     scan_task = TaskRequest(
         job_type="TREND_SCAN",
         status="PENDING"

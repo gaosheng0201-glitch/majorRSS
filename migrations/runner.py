@@ -159,5 +159,17 @@ def run_migrations():
             else:
                 print(f"Migration {m} already applied.")
 
+    try:
+        from services.source_preset_service import upsert_source_presets_from_seed
+        result = upsert_source_presets_from_seed()
+        print(
+            "Source preset seed synced: "
+            f"{result['sources']} sources, "
+            f"{result['collections']} collections, "
+            f"{result['collection_items']} collection items."
+        )
+    except FileNotFoundError as e:
+        print(f"Source preset seed skipped: {e}")
+
 if __name__ == "__main__":
     run_migrations()

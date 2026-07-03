@@ -59,6 +59,7 @@ def build_backend():
         "--add-data", f"migrations{os.pathsep}migrations",
         "--add-data", f"llm{os.pathsep}llm",
         "--add-data", f"backend{os.pathsep}backend",
+        "--add-data", f"docs/source_presets.seed.json{os.pathsep}docs",
         # Hidden imports - local modules
         "--hidden-import", "scheduler",
         "--hidden-import", "worker_subscription",

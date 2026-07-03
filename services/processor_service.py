@@ -4,12 +4,12 @@ import urllib.parse
 from repositories.repository import DBRepository
 from db.models import IntelReport
 from llm.processor import process_article
+from services.app_mode import is_pure_rss_mode
 
 db = DBRepository()
 
 def process_tracker_fusion(tracker_id: int):
-    import os
-    if os.environ.get("APP_MODE") == "pure_rss":
+    if is_pure_rss_mode():
         return
         
     tracker = db.get_tracker(tracker_id)

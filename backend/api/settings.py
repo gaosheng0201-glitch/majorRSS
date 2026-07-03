@@ -70,7 +70,12 @@ def save_system_language(req: SystemLanguageUpdate):
 
 @router.get("/health")
 def health_check():
-    return {"status": "ok", "message": "FastAPI backend is running"}
+    from db.database import get_database_diagnostics
+    return {
+        "status": "ok",
+        "message": "FastAPI backend is running",
+        "database": get_database_diagnostics(),
+    }
 
 @router.get("/token-usage")
 def get_token_usage(session: Session = Depends(get_session)):

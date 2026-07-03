@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   MantineProvider, createTheme, AppShell, Group, Text, UnstyledButton, Stack, rem, ActionIcon, Select, useMantineColorScheme,
   Loader, Button, Modal, Checkbox, Badge, Card, SimpleGrid, SegmentedControl, Paper
@@ -18,6 +18,8 @@ import Sources from './pages/Sources';
 import { useLanguage, type Language, LanguageProvider } from './i18n/translations';
 import TitleBar from './components/TitleBar';
 import client from './api/client';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 // Mantine v7 custom dark theme config
 const theme = createTheme({
@@ -43,6 +45,31 @@ const theme = createTheme({
 });
 
 type PageName = 'dashboard' | 'briefing' | 'factcheck' | 'billing' | 'trackers' | 'monitors' | 'sources' | 'settings';
+type StartupStage = 'info' | 'checking' | 'success' | 'warning' | 'error';
+
+type BackendStartupStatus = {
+  phase: string;
+  message: string;
+  detail?: string | null;
+  level: StartupStage | string;
+  timestamp_ms?: number;
+};
+
+type StartupViewStatus = {
+  stage: StartupStage;
+  title: string;
+  detail: string;
+  timestamp: number;
+};
+
+type BackendRuntimeSnapshot = {
+  processes: string;
+  port_8765: string;
+};
+
+const BACKEND_HEALTH_URL = 'http://127.0.0.1:8765/api/settings/health';
+const STARTUP_ERROR_AFTER_MS = 45000;
+const HEALTH_RETRY_MS = 1500;
 
 function MainAppShell() {
   const { lang, changeLanguage, t } = useLanguage();
@@ -56,6 +83,16 @@ function MainAppShell() {
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [backendError, setBackendError] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [startupNonce, setStartupNonce] = useState(0);
+  const [startupStartedAt, setStartupStartedAt] = useState(() => Date.now());
+  const [healthAttempt, setHealthAttempt] = useState(0);
+  const [startupStatus, setStartupStatus] = useState<StartupViewStatus>({
+    stage: 'info',
+    title: 'Preparing application startup checks',
+    detail: 'Waiting for the local backend process and health endpoint.',
+    timestamp: Date.now(),
+  });
+  const [startupEvents, setStartupEvents] = useState<StartupViewStatus[]>([]);
 
   // App mode and onboarding states
   const [appMode, setAppMode] = useState<'ai_fusion' | 'pure_rss'>(
@@ -66,6 +103,71 @@ function MainAppShell() {
   );
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [onboardingMode, setOnboardingMode] = useState<'ai_fusion' | 'pure_rss'>('ai_fusion');
+
+  const startupText = useCallback((en: string, zh: string) => (lang === 'zh' ? zh : en), [lang]);
+
+  const pushStartupEvent = useCallback((event: StartupViewStatus) => {
+    setStartupStatus(event);
+    setStartupEvents((events) => [...events.slice(-7), event]);
+  }, []);
+
+  const pushBackendEvent = useCallback((payload: BackendStartupStatus) => {
+    const stage = ['success', 'warning', 'error'].includes(payload.level)
+      ? payload.level as StartupStage
+      : 'info';
+
+    pushStartupEvent({
+      stage,
+      title: payload.message,
+      detail: payload.detail || `Backend startup phase: ${payload.phase}`,
+      timestamp: payload.timestamp_ms || Date.now(),
+    });
+  }, [pushStartupEvent]);
+
+  const describeHealthError = useCallback((err: any) => {
+    if (err?.response) {
+      return startupText(
+        `Backend responded with HTTP ${err.response.status}.`,
+        `后台服务已有响应，但返回 HTTP ${err.response.status}。`
+      );
+    }
+
+    if (err?.code === 'ECONNABORTED') {
+      return startupText(
+        'The health request timed out. The backend may be starting slowly or blocked.',
+        '健康检查请求超时，后台可能启动较慢或被系统拦截。'
+      );
+    }
+
+    if (err?.code === 'ERR_NETWORK' || err?.request) {
+      return startupText(
+        'No HTTP response from 127.0.0.1:8765 yet. The sidecar may still be starting, blocked, or not listening.',
+        '127.0.0.1:8765 暂无 HTTP 响应；侧车可能仍在启动、被拦截，或尚未监听端口。'
+      );
+    }
+
+    return startupText(
+      `Health check failed: ${err?.message || 'unknown error'}.`,
+      `健康检查失败：${err?.message || '未知错误'}。`
+    );
+  }, [startupText]);
+
+  const getRuntimeSnapshotDetail = useCallback(async () => {
+    if (!isTauri) return '';
+
+    try {
+      const snapshot = await invoke<BackendRuntimeSnapshot>('get_backend_runtime_snapshot');
+      return startupText(
+        `\nProcess snapshot:\n${snapshot.processes}\nPort 8765 snapshot:\n${snapshot.port_8765}`,
+        `\n进程快照：\n${snapshot.processes}\n8765 端口快照：\n${snapshot.port_8765}`
+      );
+    } catch (snapshotError: any) {
+      return startupText(
+        `\nRuntime snapshot unavailable: ${snapshotError?.message || snapshotError}`,
+        `\n运行时快照不可用：${snapshotError?.message || snapshotError}`
+      );
+    }
+  }, [isTauri, startupText]);
 
   useEffect(() => {
     const fetchMode = async () => {
@@ -83,46 +185,123 @@ function MainAppShell() {
   }, [isBackendReady]);
 
   useEffect(() => {
+    if (!isTauri) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const loadBackendStartupEvents = async () => {
+      try {
+        const events = await invoke<BackendStartupStatus[]>('get_backend_startup_statuses');
+        if (!disposed) {
+          events.forEach(pushBackendEvent);
+        }
+      } catch (err) {
+        console.warn('[Backend Startup Status] Failed to read startup events:', err);
+      }
+    };
+
+    listen<BackendStartupStatus>('backend-startup-status', (event) => {
+      pushBackendEvent(event.payload);
+    }).then((handler) => {
+      unlisten = handler;
+    }).catch((err) => {
+      console.warn('[Backend Startup Status] Failed to listen for startup events:', err);
+    });
+
+    loadBackendStartupEvents();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isTauri, pushBackendEvent]);
+
+  useEffect(() => {
+    if (!isChecking || isBackendReady) return;
+
     let active = true;
-    let timer: any;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let attempts = 0;
+
+    setStartupStartedAt(startedAt);
+    setHealthAttempt(0);
+    pushStartupEvent({
+      stage: 'checking',
+      title: startupText('Checking local backend health endpoint', '正在检查本地后台健康接口'),
+      detail: startupText(`GET ${BACKEND_HEALTH_URL}`, `请求 ${BACKEND_HEALTH_URL}`),
+      timestamp: startedAt,
+    });
 
     const checkHealth = async () => {
-      if (!isChecking) return;
+      if (!active || !isChecking) return;
+
+      attempts += 1;
+      const attempt = attempts;
+      setHealthAttempt(attempt);
+      pushStartupEvent({
+        stage: 'checking',
+        title: startupText('Waiting for backend HTTP service', '正在等待后台 HTTP 服务'),
+        detail: startupText(
+          `Health check attempt ${attempt}: ${BACKEND_HEALTH_URL}`,
+          `第 ${attempt} 次健康检查：${BACKEND_HEALTH_URL}`
+        ),
+        timestamp: Date.now(),
+      });
+
       try {
         const response = await client.get('/settings/health');
         if (response.data && response.data.status === 'ok') {
           if (active) {
+            pushStartupEvent({
+              stage: 'success',
+              title: startupText('Backend is ready', '后台服务已就绪'),
+              detail: startupText('Health endpoint returned status=ok.', '健康接口返回 status=ok。'),
+              timestamp: Date.now(),
+            });
             setIsBackendReady(true);
             setBackendError(false);
             setIsChecking(false);
           }
           return;
         }
+
+        pushStartupEvent({
+          stage: 'warning',
+          title: startupText('Backend responded but is not healthy yet', '后台已有响应但尚未健康'),
+          detail: startupText(
+            `Health response: ${JSON.stringify(response.data)}`,
+            `健康检查响应：${JSON.stringify(response.data)}`
+          ),
+          timestamp: Date.now(),
+        });
       } catch (err) {
+        const detail = `${describeHealthError(err)}${await getRuntimeSnapshotDetail()}`;
         console.warn('[Backend Health Check] Failed to connect:', err);
+        pushStartupEvent({
+          stage: Date.now() - startedAt > STARTUP_ERROR_AFTER_MS ? 'warning' : 'checking',
+          title: startupText('Backend health check is still waiting', '后台健康检查仍在等待'),
+          detail,
+          timestamp: Date.now(),
+        });
       }
 
-      // Retry after 1.5 seconds if we haven't succeeded
       if (active) {
-        timer = setTimeout(checkHealth, 1500);
+        if (Date.now() - startedAt > STARTUP_ERROR_AFTER_MS) {
+          setBackendError(true);
+        }
+        timer = setTimeout(checkHealth, HEALTH_RETRY_MS);
       }
     };
 
     checkHealth();
 
-    // If it takes more than 45 seconds, show retry/error screen (but keep trying in background)
-    const timeoutTimer = setTimeout(() => {
-      if (active && !isBackendReady) {
-        setBackendError(true);
-      }
-    }, 45000);
-
     return () => {
       active = false;
-      clearTimeout(timer);
-      clearTimeout(timeoutTimer);
+      if (timer) clearTimeout(timer);
     };
-  }, [isBackendReady, isChecking]);
+  }, [startupNonce, isChecking, isBackendReady, describeHealthError, getRuntimeSnapshotDetail, pushStartupEvent, startupText]);
 
   useEffect(() => {
     if (isTauri) {
@@ -142,6 +321,15 @@ function MainAppShell() {
   }, [isTauri]);
 
   if (!isBackendReady) {
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - startupStartedAt) / 1000));
+    const statusColor = startupStatus.stage === 'success'
+      ? 'teal'
+      : startupStatus.stage === 'error'
+        ? 'red'
+        : startupStatus.stage === 'warning' || backendError
+          ? 'yellow'
+          : 'indigo';
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <TitleBar />
@@ -156,7 +344,80 @@ function MainAppShell() {
           padding: '24px',
           boxSizing: 'border-box'
         }}>
-          {backendError ? (
+          <Stack align="center" gap="md" style={{ width: '100%', maxWidth: 640, textAlign: 'center' }}>
+            {backendError ? (
+              <ShieldAlert size={48} color="var(--mantine-color-yellow-6)" />
+            ) : (
+              <Loader size="xl" type="dots" color="indigo" />
+            )}
+
+            <Stack align="center" gap={6}>
+              <Text size="lg" fw={700}>
+                {backendError ? t('startup_error') : t('startup_loading')}
+              </Text>
+              <Group gap="xs" justify="center">
+                <Badge color={statusColor} variant="light">
+                  {startupStatus.stage}
+                </Badge>
+                <Badge color="gray" variant="light">
+                  {startupText(`Attempt ${healthAttempt}`, `第 ${healthAttempt} 次检查`)}
+                </Badge>
+                <Badge color="gray" variant="light">
+                  {startupText(`${elapsedSeconds}s elapsed`, `已等待 ${elapsedSeconds} 秒`)}
+                </Badge>
+              </Group>
+            </Stack>
+
+            <Paper withBorder radius="md" p="md" style={{ width: '100%', textAlign: 'left' }}>
+              <Stack gap={8}>
+                <Text size="sm" fw={700}>{startupStatus.title}</Text>
+                <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{startupStatus.detail}</Text>
+                <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                  {BACKEND_HEALTH_URL}
+                </Text>
+              </Stack>
+            </Paper>
+
+            {startupEvents.length > 0 && (
+              <Paper withBorder radius="md" p="md" style={{ width: '100%', textAlign: 'left' }}>
+                <Stack gap={8}>
+                  <Text size="xs" fw={700} c="dimmed">
+                    {startupText('Startup trace', '启动跟踪')}
+                  </Text>
+                  {startupEvents.slice(-6).map((event, index) => (
+                    <Group key={`${event.timestamp}-${index}`} align="flex-start" gap="xs" wrap="nowrap">
+                      <Badge size="xs" color={event.stage === 'error' ? 'red' : event.stage === 'warning' ? 'yellow' : event.stage === 'success' ? 'teal' : 'indigo'} variant="dot">
+                        {event.stage}
+                      </Badge>
+                      <Stack gap={2} style={{ minWidth: 0 }}>
+                        <Text size="xs" fw={600}>{event.title}</Text>
+                        <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{event.detail}</Text>
+                      </Stack>
+                    </Group>
+                  ))}
+                </Stack>
+              </Paper>
+            )}
+
+            {backendError && (
+              <Button
+                variant="filled"
+                color="indigo"
+                onClick={() => {
+                  setBackendError(false);
+                  setIsBackendReady(false);
+                  setIsChecking(true);
+                  setStartupNonce((nonce) => nonce + 1);
+                  setStartupEvents([]);
+                }}
+                mt="xs"
+              >
+                {t('startup_retry')}
+              </Button>
+            )}
+          </Stack>
+
+          {false && (backendError ? (
             <Stack align="center" gap="md" style={{ maxWidth: 450, textAlign: 'center' }}>
               <ShieldAlert size={48} color="var(--mantine-color-red-6)" />
               <Text size="lg" fw={700}>{t('startup_error')}</Text>
@@ -181,7 +442,7 @@ function MainAppShell() {
               <Loader size="xl" type="dots" color="indigo" />
               <Text size="md" fw={500} c="dimmed">{t('startup_loading')}</Text>
             </Stack>
-          )}
+          ))}
         </div>
       </div>
     );
