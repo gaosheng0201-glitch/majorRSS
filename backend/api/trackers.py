@@ -62,6 +62,19 @@ def toggle_tracker(tracker_id: int, session: Session = Depends(get_api_session))
     session.refresh(tracker)
     return tracker
 
+@router.post("/{tracker_id}/high-attention", response_model=TrackerResponse)
+def toggle_high_attention(tracker_id: int, session: Session = Depends(get_api_session)):
+    """Flip a target's high-attention flag. High-attention targets alert earlier
+    (a CONFIRMED/CORROBORATED increment is pushed, not just shown) — 愿景 #2."""
+    tracker = session.get(Tracker, tracker_id)
+    if not tracker:
+        raise HTTPException(status_code=404, detail="Tracker not found")
+    tracker.is_high_attention = not tracker.is_high_attention
+    session.add(tracker)
+    session.commit()
+    session.refresh(tracker)
+    return tracker
+
 @router.post("/{tracker_id}/run")
 def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)

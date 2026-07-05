@@ -102,12 +102,25 @@ function ThreadCard({ th, isDark, lang }: { th: StoryThread; isDark: boolean; la
   );
 }
 
+interface CatchUp {
+  since: string;
+  updated_threads: number;
+  resonant: number;
+  confirmed: number;
+}
+
+const LAST_SEEN_KEY = 'radar_last_seen_at';
+
 export default function Radar() {
   const { lang } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
   const isDark = colorScheme === 'dark';
   const [threads, setThreads] = useState<StoryThread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [catchup, setCatchup] = useState<CatchUp | null>(null);
+  // Snapshot the previous "last seen" once on mount, before we overwrite it —
+  // this is the anchor for "since you last looked".
+  const [sinceAnchor] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_KEY));
 
   const fetchThreads = async () => {
     setLoading(true);
@@ -121,8 +134,22 @@ export default function Radar() {
     }
   };
 
+  const fetchCatchup = async () => {
+    // Only meaningful if the user has looked before.
+    if (!sinceAnchor) return;
+    try {
+      const res = await client.get<CatchUp>(`/intelligence/catchup?since=${encodeURIComponent(sinceAnchor)}`);
+      setCatchup(res.data);
+    } catch (e) {
+      console.error('Failed to load catch-up', e);
+    }
+  };
+
   useEffect(() => {
     fetchThreads();
+    fetchCatchup();
+    // Mark "seen now" so the next visit measures increments since this one.
+    localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
     const t = setInterval(fetchThreads, 30000);
     return () => clearInterval(t);
   }, []);
@@ -149,6 +176,20 @@ export default function Radar() {
           <Group gap={6}><RefreshCw size={14} /><Text size="sm">{lang === 'zh' ? '刷新' : 'Refresh'}</Text></Group>
         </UnstyledButton>
       </Group>
+
+      {/* Catch-up: "since you last looked" — the increment, not N unread (盲区 #7). */}
+      {catchup && catchup.updated_threads > 0 && (
+        <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(99,102,241,0.06)' : '#f4f6ff', borderColor: isDark ? 'rgba(99,102,241,0.25)' : undefined }}>
+          <Group gap="xs" wrap="nowrap">
+            <Zap size={16} className="text-indigo-400" />
+            <Text size="sm" className="title-text-color">
+              {lang === 'zh'
+                ? <>自你上次查看，<Text span fw={800} c="indigo">{catchup.updated_threads}</Text> 条线索有新进展{catchup.resonant > 0 ? <>，其中 <Text span fw={700} c="orange">{catchup.resonant}</Text> 条正在共振</> : null}{catchup.confirmed > 0 ? <>，<Text span fw={700} c="teal">{catchup.confirmed}</Text> 条已证实</> : null}。</>
+                : <>Since you last looked, <Text span fw={800} c="indigo">{catchup.updated_threads}</Text> threads advanced{catchup.resonant > 0 ? <>, <Text span fw={700} c="orange">{catchup.resonant}</Text> resonating</> : null}{catchup.confirmed > 0 ? <>, <Text span fw={700} c="teal">{catchup.confirmed}</Text> confirmed</> : null}.</>}
+            </Text>
+          </Group>
+        </Paper>
+      )}
 
       {loading && threads.length === 0 ? (
         <Group justify="center" p="xl"><Loader size="sm" /></Group>

@@ -5,9 +5,9 @@ import {
   Stepper, Card, ScrollArea, Accordion, Alert, SimpleGrid, Loader
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { 
-  Plus, Play, Trash2, Power, MoreVertical, Edit, AlertCircle, 
-  CheckCircle2, Activity, Clock, FileText, Download, RefreshCw 
+import {
+  Plus, Play, Trash2, Power, MoreVertical, Edit, AlertCircle,
+  CheckCircle2, Activity, Clock, FileText, Download, RefreshCw, Star
 } from 'lucide-react';
 import client from '../api/client';
 import { useLanguage } from '../i18n/translations';
@@ -25,6 +25,7 @@ interface Tracker {
   source_intent?: string;
   fetch_policy?: string;
   auth_profile_id?: number;
+  is_high_attention?: boolean;
   created_at: string;
   last_scraped_at?: string;
 }
@@ -169,6 +170,17 @@ export default function Discovery() {
       alert("Discovery scan triggered successfully");
     } catch (err) {
       alert("Failed to run discovery scan");
+    }
+  };
+
+  // High-attention targets alert earlier (a CONFIRMED/CORROBORATED increment is
+  // pushed, not just shown in the quiet Radar) — 愿景 #2.
+  const handleHighAttention = async (id: number) => {
+    try {
+      const res = await client.post<Tracker>(`/trackers/${id}/high-attention`);
+      setDiscoveries(prev => prev.map(d => d.id === id ? { ...d, is_high_attention: res.data.is_high_attention } : d));
+    } catch (err) {
+      alert("Failed to toggle high-attention");
     }
   };
 
@@ -504,9 +516,17 @@ export default function Discovery() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs" justify="flex-end">
-                      <ActionIcon 
-                        variant="subtle" 
-                        color="teal" 
+                      <ActionIcon
+                        variant={d.is_high_attention ? 'light' : 'subtle'}
+                        color={d.is_high_attention ? 'yellow' : 'gray'}
+                        title={d.is_high_attention ? '高关注：重要进展会主动提醒（点击取消）' : '设为高关注：重要进展主动提醒'}
+                        onClick={() => handleHighAttention(d.id)}
+                      >
+                        <Star size={16} fill={d.is_high_attention ? 'currentColor' : 'none'} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        color="teal"
                         title="立即扫描"
                         onClick={() => handleRun(d.id)}
                       >

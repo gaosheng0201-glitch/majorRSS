@@ -30,6 +30,7 @@ class TrackerResponse(BaseModel):
     fetch_policy: Optional[str] = None
     auth_profile_id: Optional[int] = None
     normalized_intent: Optional[str] = None
+    is_high_attention: bool = False
     created_at: datetime
     last_scraped_at: Optional[datetime] = None
 
