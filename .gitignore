@@ -22,8 +22,8 @@ build/
 dist/
 *.spec.bak
 
-# Tauri sidecar binary (rebuild via build_backend.py)
-desktop/src-tauri/bin/*.exe
+# Tauri sidecar binaries for all platforms (rebuild via build_backend.py)
+desktop/src-tauri/bin/backend-sidecar-*
 
 # Sidecar debug output
 sidecar_stderr.txt
@@ -45,3 +45,14 @@ replace_*.py
 test_*.py
 update_i18n*.py
 migrate_*.py
+
+# Runtime logs (dev mode writes to repo root)
+logs/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# macOS + local IDE config
+.DS_Store
+.claude/settings.local.json

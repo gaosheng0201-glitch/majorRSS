@@ -6,10 +6,6 @@ sqlmodel==0.0.38
 APScheduler==3.11.2
 python-dotenv==1.2.2
 pydantic==2.13.4
-streamlit==1.57.0
-flet==0.85.3
-flet-desktop==0.85.3
-flet-web==0.85.3
 feedparser==6.0.12
 pytest
 requests==2.33.1
