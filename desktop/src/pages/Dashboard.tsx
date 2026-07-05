@@ -678,7 +678,7 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
 }
 
 export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
   const isDark = colorScheme === 'dark';
   const [stats, setStats] = useState<Stats | null>(null);
@@ -897,32 +897,14 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
         </Paper>
       </SimpleGrid>
 
-      {/* Radar KPIs — the "time saved" proof (盲区 #8): how much noise the radar
-          removed so you didn't have to read it. */}
+      {/* Radar KPIs — one quiet line, not a card grid (info-design: meta is
+          secondary; content is the hero). "time saved" proof, 盲区 #8. */}
       {radarStats && radarStats.ingested > 0 && (
-        <Paper withBorder p="md" radius="md" mt="md" style={{ background: isDark ? 'rgba(99,102,241,0.04)' : '#f8f9ff' }}>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" fw={700} className="title-text-color">本周雷达战绩 · Radar This Week</Text>
-            <Badge variant="light" color="indigo" size="sm">近 7 天</Badge>
-          </Group>
-          <Text size="xs" c="dimmed" mb="md">
-            共摄入 {radarStats.ingested} 条 · 为你过滤了 <Text span fw={700} c="indigo">{radarStats.noise_removed_total}</Text> 条噪音与重复
-          </Text>
-          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
-            {[
-              { label: '过滤噪音', value: radarStats.noise_filtered, hint: '不相关，未喂 AI' },
-              { label: '合并重复', value: radarStats.duplicates_merged, hint: '同一事件的重复报道' },
-              { label: '追踪事件', value: radarStats.events_tracked, hint: '聚类出的事件线索' },
-              { label: '共振事件', value: radarStats.resonant_events, hint: '多源同时讨论' },
-            ].map((k) => (
-              <Paper key={k.label} p="xs" radius="sm" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
-                <Text size="xl" fw={800} className="title-text-color">{k.value}</Text>
-                <Text size="10px" fw={600} c="dimmed">{k.label}</Text>
-                <Text size="9px" c="dimmed">{k.hint}</Text>
-              </Paper>
-            ))}
-          </SimpleGrid>
-        </Paper>
+        <Text size="xs" c="dimmed" mt="xs">
+          {lang === 'zh'
+            ? <>本周雷达为你过滤了 <Text span fw={700} c="indigo">{radarStats.noise_removed_total}</Text> 条噪音与重复，从 {radarStats.ingested} 条中提炼出 <Text span fw={700} c="indigo">{radarStats.events_tracked}</Text> 个事件{radarStats.resonant_events > 0 ? <>（<Text span c="orange">{radarStats.resonant_events}</Text> 个共振）</> : null}。</>
+            : <>This week the radar filtered <Text span fw={700} c="indigo">{radarStats.noise_removed_total}</Text> noise/dupes from {radarStats.ingested} items into <Text span fw={700} c="indigo">{radarStats.events_tracked}</Text> events{radarStats.resonant_events > 0 ? <> (<Text span c="orange">{radarStats.resonant_events}</Text> resonant)</> : null}.</>}
+        </Text>
       )}
 
       {/* Trend Alerts Carousel Card */}

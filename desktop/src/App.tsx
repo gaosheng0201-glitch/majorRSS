@@ -75,7 +75,9 @@ const HEALTH_RETRY_MS = 1500;
 function MainAppShell() {
   const { lang, changeLanguage, t } = useLanguage();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
-  const [activePage, setActivePage] = useState<PageName>('dashboard');
+  // Land on the Radar (the information itself), not the stats-heavy Dashboard —
+  // content is the hero (info-design principle).
+  const [activePage, setActivePage] = useState<PageName>('radar');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const isDark = colorScheme === 'dark';

@@ -40,7 +40,6 @@ const REASON_LABEL: Record<string, { en: string; zh: string }> = {
 
 function ThreadCard({ th, isDark, lang }: { th: StoryThread; isDark: boolean; lang: string }) {
   const [open, setOpen] = useState(false);
-  const meta = LIFECYCLE_META[th.lifecycle] || LIFECYCLE_META.LEAD;
   return (
     <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff' }}>
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -48,8 +47,9 @@ function ThreadCard({ th, isDark, lang }: { th: StoryThread; isDark: boolean; la
           <Text size="sm" fw={700} className="title-text-color" lineClamp={2}>
             {th.title || (lang === 'zh' ? '未命名线索' : 'Untitled thread')}
           </Text>
+          {/* Lifecycle is conveyed by the group header — don't repeat it per card.
+              Keep only the per-card signal (resonance) + a quiet source count. */}
           <Group gap="xs">
-            <Badge size="xs" color={meta.color} variant="light">{lang === 'zh' ? meta.zh : meta.en}</Badge>
             {th.is_resonant && (
               <Badge size="xs" color="orange" variant="filled" leftSection={<Zap size={10} />}>
                 {lang === 'zh' ? `共振 ×${th.distinct_source_count}` : `Resonant ×${th.distinct_source_count}`}
@@ -177,18 +177,13 @@ export default function Radar() {
         </UnstyledButton>
       </Group>
 
-      {/* Catch-up: "since you last looked" — the increment, not N unread (盲区 #7). */}
+      {/* Catch-up: one quiet line, not a banner card (info-design: don't add chrome). 盲区 #7 */}
       {catchup && catchup.updated_threads > 0 && (
-        <Paper withBorder p="md" radius="md" style={{ background: isDark ? 'rgba(99,102,241,0.06)' : '#f4f6ff', borderColor: isDark ? 'rgba(99,102,241,0.25)' : undefined }}>
-          <Group gap="xs" wrap="nowrap">
-            <Zap size={16} className="text-indigo-400" />
-            <Text size="sm" className="title-text-color">
-              {lang === 'zh'
-                ? <>自你上次查看，<Text span fw={800} c="indigo">{catchup.updated_threads}</Text> 条线索有新进展{catchup.resonant > 0 ? <>，其中 <Text span fw={700} c="orange">{catchup.resonant}</Text> 条正在共振</> : null}{catchup.confirmed > 0 ? <>，<Text span fw={700} c="teal">{catchup.confirmed}</Text> 条已证实</> : null}。</>
-                : <>Since you last looked, <Text span fw={800} c="indigo">{catchup.updated_threads}</Text> threads advanced{catchup.resonant > 0 ? <>, <Text span fw={700} c="orange">{catchup.resonant}</Text> resonating</> : null}{catchup.confirmed > 0 ? <>, <Text span fw={700} c="teal">{catchup.confirmed}</Text> confirmed</> : null}.</>}
-            </Text>
-          </Group>
-        </Paper>
+        <Text size="sm" c="dimmed">
+          {lang === 'zh'
+            ? <>自你上次查看，<Text span fw={700} c="indigo">{catchup.updated_threads}</Text> 条线索有新进展{catchup.resonant > 0 ? <>，<Text span c="orange">{catchup.resonant}</Text> 条共振</> : null}{catchup.confirmed > 0 ? <>，<Text span c="teal">{catchup.confirmed}</Text> 条已证实</> : null}。</>
+            : <>Since you last looked, <Text span fw={700} c="indigo">{catchup.updated_threads}</Text> threads advanced{catchup.resonant > 0 ? <>, <Text span c="orange">{catchup.resonant}</Text> resonating</> : null}{catchup.confirmed > 0 ? <>, <Text span c="teal">{catchup.confirmed}</Text> confirmed</> : null}.</>}
+        </Text>
       )}
 
       {loading && threads.length === 0 ? (
