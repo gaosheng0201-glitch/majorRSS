@@ -17,6 +17,11 @@ import time
 import urllib.parse
 
 from services.privacy import desensitize_url, scrub_sensitive_info
+from services.pipeline_trace import PipelineTracer
+from services.error_classifier import classify_error, format_error
+from services.log_service import get_logger
+
+logger = get_logger("subscription")
 
 def clean_html_for_diff(html_content: str, extract_selector: str = None, ignore_selector: str = None) -> str:
     """
@@ -93,46 +98,32 @@ def process_subscription(session, sub: Subscription, now: datetime):
         session.commit()
     normalized_intent = sub.normalized_intent
 
-    run = PipelineRun(
-        subscription_id=sub.id,
-        normalized_intent=normalized_intent,
-        status="RUNNING",
-        started_at=datetime.now(timezone.utc).replace(tzinfo=None)
-    )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
+    tracer = PipelineTracer.start(session, subscription_id=sub.id, normalized_intent=normalized_intent)
 
-    step_counter = 1
     cost_browser = False
     cost_llm = False
     success = False
+    change_detected = False
     accepted_items = 0
     error_summary = None
+    # Initialize before the try body so the except handlers (which read
+    # fetch_start / html_content) never raise NameError if the RESOLVE step
+    # itself fails.
+    fetch_start = time.time()
+    html_content = ""
+    clean_text = ""
 
     try:
-        print(f"Monitoring Subscription: {sub.name} ({sub.target_url})")
-        
+        logger.info(f"Monitoring Subscription: {sub.name} ({sub.target_url})")
+
         # RESOLVE Event
         from scrapers.url_normalizer import is_rss_url
         is_rss = is_rss_url(sub.target_url)
         strategy_desc = "RSS feed parsing" if is_rss else "Webpage monitoring"
-        
-        resolve_event = PipelineEvent(
-            run_id=run.id,
-            step_index=step_counter,
-            stage="RESOLVE",
-            status="SUCCESS",
-            output_summary=f"Resolved target strategy: {strategy_desc}",
-            duration_ms=0
-        )
-        session.add(resolve_event)
-        session.commit()
-        step_counter += 1
+
+        tracer.event("RESOLVE", output_summary=f"Resolved target strategy: {strategy_desc}")
 
         fetch_start = time.time()
-        html_content = ""
-        clean_text = ""
 
         if is_rss:
             import feedparser
@@ -152,18 +143,9 @@ def process_subscription(session, sub: Subscription, now: datetime):
                 clean_text = "TEXT: No items found in feed."
                 
             fetch_duration = int((time.time() - fetch_start) * 1000)
-            fetch_event = PipelineEvent(
-                run_id=run.id,
-                step_index=step_counter,
-                stage="FETCH",
-                input_data=desensitize_url(sub.target_url),
-                output_summary=f"Parsed RSS feed. Extracted {len(items)} items",
-                status="SUCCESS",
-                duration_ms=fetch_duration
-            )
-            session.add(fetch_event)
-            session.commit()
-            step_counter += 1
+            tracer.event("FETCH", input_data=desensitize_url(sub.target_url),
+                         output_summary=f"Parsed RSS feed. Extracted {len(items)} items",
+                         duration_ms=fetch_duration)
         else:
             policy = {}
             if sub.diff_policy:
@@ -189,39 +171,21 @@ def process_subscription(session, sub: Subscription, now: datetime):
                 raise Exception("Failed to fetch HTML content (returned empty)")
                 
             fetch_duration = int((time.time() - fetch_start) * 1000)
-            fetch_event = PipelineEvent(
-                run_id=run.id,
-                step_index=step_counter,
-                stage="FETCH",
-                adapter="AgenticAdapter" if js_rendering else "StaticAdapter",
-                input_data=desensitize_url(sub.target_url),
-                output_summary=f"Fetched HTML (length: {len(html_content)} bytes)",
-                status="SUCCESS",
-                duration_ms=fetch_duration
-            )
-            session.add(fetch_event)
-            session.commit()
-            step_counter += 1
-            
+            tracer.event("FETCH", adapter="AgenticAdapter" if js_rendering else "StaticAdapter",
+                         input_data=desensitize_url(sub.target_url),
+                         output_summary=f"Fetched HTML (length: {len(html_content)} bytes)",
+                         duration_ms=fetch_duration)
+
             # CLEAN Event
             clean_start = time.time()
             clean_text = clean_html_for_diff(html_content, extract_selector=extract_sel, ignore_selector=ignore_sel)
             clean_duration = int((time.time() - clean_start) * 1000)
-            
+
             if not clean_text.strip():
                 raise Exception("Extracted text is empty after filtering")
-                
-            clean_event = PipelineEvent(
-                run_id=run.id,
-                step_index=step_counter,
-                stage="CLEAN",
-                output_summary=f"Cleaned HTML. Text length: {len(clean_text)} characters",
-                status="SUCCESS",
-                duration_ms=clean_duration
-            )
-            session.add(clean_event)
-            session.commit()
-            step_counter += 1
+
+            tracer.event("CLEAN", output_summary=f"Cleaned HTML. Text length: {len(clean_text)} characters",
+                         duration_ms=clean_duration)
             
         # DIFF Event
         diff_start = time.time()
@@ -301,88 +265,72 @@ def process_subscription(session, sub: Subscription, now: datetime):
             accepted_items = 0
             
         diff_duration = int((time.time() - diff_start) * 1000)
-        diff_event = PipelineEvent(
-            run_id=run.id,
-            step_index=step_counter,
-            stage="DIFF",
-            output_summary=f"Diff completed. Change detected: {change_detected}. Diff size: {len(diff_text)} chars",
-            status="SUCCESS",
-            duration_ms=diff_duration
-        )
-        session.add(diff_event)
-        session.commit()
-        step_counter += 1
-        
+        tracer.event("DIFF",
+                     output_summary=f"Diff completed. Change detected: {change_detected}. Diff size: {len(diff_text)} chars",
+                     duration_ms=diff_duration)
+
         success = True
-            
+
     except CookieExpiredException as e:
         duration = int((time.time() - fetch_start) * 1000)
-        print(f"Cookie expired for {sub.name}: {e}")
+        logger.warning(f"Cookie expired for {sub.name}: {e}")
         sub.last_status = "Error: Cookie Expired"
         error_summary = f"Cookie Expired: {e}"
-        
-        fail_event = PipelineEvent(
-            run_id=run.id,
-            step_index=step_counter,
-            stage="FETCH",
-            status="FAILED",
-            error="AUTH_EXPIRED",
-            duration_ms=duration
-        )
-        session.add(fail_event)
-        session.commit()
-        step_counter += 1
+        tracer.event("FETCH", status="FAILED", error="AUTH_EXPIRED", duration_ms=duration)
     except Exception as e:
         duration = int((time.time() - fetch_start) * 1000)
-        print(f"Error processing subscription {sub.name}: {e}")
-        sub.last_status = f"Error: {str(e)[:50]}"
-        error_summary = str(e)
-        
-        fail_event = PipelineEvent(
-            run_id=run.id,
-            step_index=step_counter,
-            stage="FETCH" if not html_content else "CLEAN",
-            status="FAILED",
-            error=scrub_sensitive_info(str(e))[:100],
-            duration_ms=duration
-        )
-        session.add(fail_event)
-        session.commit()
-        step_counter += 1
+        error_type = classify_error(e)
+        logger.warning(f"Error processing subscription {sub.name} [{error_type}]: {e}")
+        sub.last_status = f"Error: {error_type}"
+        error_summary = format_error(e)
+        tracer.event("FETCH" if not html_content else "CLEAN", status="FAILED",
+                     error=scrub_sensitive_info(format_error(e))[:200], duration_ms=duration)
     finally:
         sub.last_scraped_at = now.replace(tzinfo=None) if now.tzinfo else now
         session.add(sub)
         session.commit()
-        
-        # Finalize PipelineRun
-        run.status = "SUCCESS" if success else "FAILED"
-        run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        run.total_routes = 1
-        run.total_items = 1 if success else 0
-        run.accepted_items = accepted_items
-        run.cost_flag_browser = cost_browser
-        run.cost_flag_llm = cost_llm
-        if error_summary:
-            run.error_summary = scrub_sensitive_info(error_summary)[:200]
-        session.add(run)
-        session.commit()
+
+        # Finalize: SUCCESS only when a real change was accepted; a reachable
+        # page with no change is NO_NEW_ITEMS (a quiet healthy page), not a
+        # failure — consistent with the tracker pipeline's semantics.
+        if not success:
+            final_status = "FAILED"
+        elif accepted_items > 0:
+            final_status = "SUCCESS"
+        else:
+            final_status = "NO_NEW_ITEMS"
+        tracer.finish(final_status, total_routes=1, total_items=1 if success else 0,
+                      accepted_items=accepted_items, error_summary=error_summary,
+                      cost_browser=cost_browser, cost_llm=cost_llm)
 
 def run_subscription_job():
-    print("Running scheduled subscription monitor job...")
+    logger.info("Running scheduled subscription monitor job...")
     session = get_session()
-    subs = session.exec(select(Subscription).where(Subscription.is_active == True)).all()
-    
-    now = datetime.now(timezone.utc)
-    for sub in subs:
-        if not sub.last_scraped_at:
-            process_subscription(session, sub, now)
-        else:
-            last_scraped = sub.last_scraped_at
-            if last_scraped.tzinfo is None:
-                last_scraped = last_scraped.replace(tzinfo=timezone.utc)
-                
-            if now - last_scraped >= timedelta(minutes=sub.fetch_interval_minutes):
-                process_subscription(session, sub, now)
+    try:
+        subs = session.exec(select(Subscription).where(Subscription.is_active == True)).all()
+
+        now = datetime.now(timezone.utc)
+        for sub in subs:
+            due = not sub.last_scraped_at
+            if not due:
+                last_scraped = sub.last_scraped_at
+                if last_scraped.tzinfo is None:
+                    last_scraped = last_scraped.replace(tzinfo=timezone.utc)
+                due = now - last_scraped >= timedelta(minutes=sub.fetch_interval_minutes)
+            if due:
+                # Isolate each subscription: one crash must not skip the rest.
+                try:
+                    process_subscription(session, sub, now)
+                except Exception as e:
+                    logger.error(f"Subscription {sub.id} ({sub.name}) crashed: {e}", exc_info=e)
+                    # Roll back so a poisoned/failed transaction doesn't break
+                    # every remaining subscription sharing this session.
+                    try:
+                        session.rollback()
+                    except Exception:
+                        pass
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     run_subscription_job()

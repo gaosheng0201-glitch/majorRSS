@@ -2,6 +2,12 @@ import os
 import json
 from playwright.sync_api import sync_playwright
 
+# ⚠️ UNVERIFIED (2026-07-05, confirmed by author): these platform definitions
+# (login URLs, success cookies, expired indicators) have NOT been validated
+# against live logged-in accounts. Treat every entry as a hypothesis until it
+# passes the per-platform auth diagnostic matrix. Known suspect: xiaohongshu's
+# "/explore" indicator was removed because its home page IS /explore (the
+# indicator was always true, logged in or not).
 AUTH_PLATFORMS = {
     "twitter": {
         "name": "Twitter / X",
@@ -49,7 +55,7 @@ AUTH_PLATFORMS = {
         "cookie_file": "xiaohongshu_cookies.json",
         "success_cookies": ["web_session"],
         "domains": ["xiaohongshu.com"],
-        "expired_indicators": ["/explore", "登录"]
+        "expired_indicators": ["登录"]
     },
     "weibo": {
         "name": "Weibo (微博)",
@@ -122,6 +128,83 @@ def check_cookie_health(platform_key: str, cookie_path: str) -> bool:
         return False
 
 
+def detect_login_wall(platform: dict, current_url: str, page_text: str):
+    """
+    Returns the matched indicator if a login wall is detected, else None.
+
+    URL-like indicators (containing '/' or '.') match ONLY against the current
+    URL (redirect detection). Plain-text indicators match ONLY against visible
+    page text. The previous behavior — substring search over the full raw
+    HTML — produced false positives on logged-in pages, where strings like
+    "Log in" or "/login.php" routinely appear in nav links and JS routes.
+    """
+    for indicator in platform.get("expired_indicators", []):
+        if "/" in indicator or "." in indicator:
+            if indicator in current_url:
+                return indicator
+        elif page_text and indicator in page_text:
+            return indicator
+    return None
+
+
+def _load_storage_state(cookie_path: str):
+    with open(cookie_path, 'rb') as f:
+        content = f.read()
+    try:
+        from services.crypto_service import decrypt_data
+        return json.loads(decrypt_data(content))
+    except Exception:
+        return json.loads(content.decode('utf-8'))
+
+
+def live_check_cookie_health(platform_key: str, cookie_path: str) -> tuple:
+    """
+    Real session validation: loads the stored state into a headless browser,
+    visits the platform and looks for login-wall indicators. The static check
+    (check_cookie_health) only proves the cookie *exists*; this proves the
+    platform still *accepts* it.
+    Returns:
+        tuple (healthy: bool, message: str)
+    """
+    platform = AUTH_PLATFORMS.get(platform_key)
+    if not platform:
+        return False, f"Unknown platform: {platform_key}"
+    if not os.path.exists(cookie_path):
+        return False, "No saved session file"
+
+    try:
+        storage_state = _load_storage_state(cookie_path)
+    except Exception as e:
+        return False, f"Session file unreadable: {e}"
+
+    check_url = platform.get("check_url") or f"https://{platform['domains'][0]}"
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    storage_state=storage_state,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                page = context.new_page()
+                page.goto(check_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(2000)
+                try:
+                    page_text = page.inner_text("body")
+                except Exception:
+                    page_text = ""
+                matched = detect_login_wall(platform, page.url, page_text)
+                if matched:
+                    return False, f"Login wall detected ({matched})"
+                return True, "Session accepted by platform"
+            finally:
+                browser.close()
+    except Exception as e:
+        # A network failure is not proof of an expired session — report it as
+        # inconclusive rather than flipping the profile to Expired.
+        return None, f"Live check inconclusive: {e}"
+
+
 def interactive_login(platform_key: str):
     """
     Launches a headful browser to allow the user to log in manually to the specific platform.
@@ -166,6 +249,13 @@ def interactive_login(platform_key: str):
                 encrypted_bytes = encrypt_data(state_str)
                 with open(output_file, 'wb') as f:
                     f.write(encrypted_bytes)
+                # Invalidate pooled browser contexts so the refreshed cookies
+                # take effect on the next scrape instead of a stale session.
+                try:
+                    from services.browser_pool import bump_generation
+                    bump_generation()
+                except Exception:
+                    pass
                 return True, f"✅ 授权成功！已保存 {platform['name']} 的核心登录凭证。"
             else:
                 if os.path.exists(output_file):

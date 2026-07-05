@@ -30,6 +30,9 @@ class Tracker(SQLModel, table=True):
     fetch_policy: Optional[str] = Field(default=None, description="JSON policy overrides")
     auth_profile_id: Optional[int] = Field(default=None, foreign_key="authprofile.id", description="Auth Profile reference")
     normalized_intent: Optional[str] = Field(default=None, description="JSON string caching intent definition mapping")
+    # High-attention targets alert earlier (愿景 #2): a CONFIRMED/CORROBORATED
+    # increment here is pushed, not just shown in the quiet dashboard.
+    is_high_attention: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utc_now_naive)
     last_scraped_at: Optional[datetime] = None
 
@@ -42,6 +45,14 @@ class RawArticle(SQLModel, table=True):
     published_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utc_now_naive)
     processed: bool = Field(default=False, description="Whether it has been processed by LLM")
+    # R3 semantic layer: which story thread this item was clustered into
+    # (first_seen for radar/increment logic is created_at; published_at is the
+    # source's own date used by the age gate).
+    thread_id: Optional[int] = Field(default=None, foreign_key="storythread.id", nullable=True, index=True)
+    # Relevance gate: below-threshold items stay visible in the Raw Feed but are
+    # excluded from LLM fusion (token economy). Only set when a REAL embedder is
+    # configured — the fallback bag-of-words must never silently drop content.
+    relevance_gated: bool = Field(default=False, index=True)
 
 class IntelReport(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -186,7 +197,7 @@ class PipelineRun(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     tracker_id: Optional[int] = Field(default=None, foreign_key="tracker.id", nullable=True)
     subscription_id: Optional[int] = Field(default=None, foreign_key="subscription.id", nullable=True)
-    status: str = Field(default="RUNNING") # RUNNING, SUCCESS, FAILED
+    status: str = Field(default="RUNNING") # RUNNING, SUCCESS, NO_NEW_ITEMS, FAILED
     normalized_intent: Optional[str] = Field(default=None, description="JSON representing normalized intent mapping snapshot")
     started_at: datetime = Field(default_factory=utc_now_naive)
     finished_at: Optional[datetime] = None
@@ -210,3 +221,100 @@ class PipelineEvent(SQLModel, table=True):
     status: str = Field(default="SUCCESS") # SUCCESS, FAILED
     duration_ms: int = Field(default=0)
     error: Optional[str] = None
+
+# --- R1 fetch runtime (2026-07-05) ---
+
+class HttpCacheEntry(SQLModel, table=True):
+    """Conditional-GET validators per URL, persisted across restarts so a
+    5-minute poll of an unchanged changelog page costs one 304 (愿景 #4)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    url: str = Field(unique=True, index=True)
+    etag: Optional[str] = None
+    last_modified: Optional[str] = None  # raw HTTP header value
+    content_hash: Optional[str] = None   # sha256 of body, for servers lacking validators
+    last_status: Optional[int] = None
+    last_checked_at: datetime = Field(default_factory=utc_now_naive)
+    updated_at: datetime = Field(default_factory=utc_now_naive)
+
+class SourceHealth(SQLModel, table=True):
+    """Per-domain (or per-route-key) reliability record driving backoff and
+    'quarantine an unstable source' decisions."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(unique=True, index=True)  # domain or route key
+    state: str = Field(default="healthy")      # healthy | degraded | failed | quarantined
+    consecutive_failures: int = Field(default=0)
+    total_success: int = Field(default=0)
+    total_failure: int = Field(default=0)
+    last_success_at: Optional[datetime] = None
+    last_failure_at: Optional[datetime] = None
+    last_error_type: Optional[str] = None
+    next_eligible_at: Optional[datetime] = None  # backoff gate; skip source until then
+    avg_latency_ms: int = Field(default=0)
+    updated_at: datetime = Field(default_factory=utc_now_naive)
+
+class ArticleEmbedding(SQLModel, table=True):
+    """Embedding vector per RawArticle, kept in its own table so RawArticle
+    stays lean and items can be re-embedded (e.g. after a model change) without
+    touching the article row. Vector stored as JSON text — engine-agnostic;
+    pgvector/sqlite-vec are optional accelerations layered on later."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    article_id: int = Field(foreign_key="rawarticle.id", unique=True, index=True)
+    model_name: str = Field(description="Embedder that produced this vector")
+    dim: int = Field(default=0)
+    vector: str = Field(sa_column=Column(Text), description="JSON list[float]")
+    relevance: Optional[float] = Field(default=None, description="Max cosine vs the tracker's topic profile")
+    created_at: datetime = Field(default_factory=utc_now_naive)
+
+class StoryThread(SQLModel, table=True):
+    """A clustered event/issue line for a target. New content is compared to
+    thread centroids: same event → merge (silent), new event → new thread.
+    Carries the state the radar reasons over (愿景 增量优先 + 线索生命周期)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tracker_id: Optional[int] = Field(default=None, foreign_key="tracker.id", nullable=True, index=True)
+    title: Optional[str] = None
+    centroid: Optional[str] = Field(default=None, sa_column=Column(Text), description="JSON list[float] running centroid")
+    member_count: int = Field(default=0)
+    distinct_source_count: int = Field(default=0)   # for resonance / corroboration
+    # Lifecycle: LEAD (single unverified source) → CORROBORATED (N sources) →
+    # CONFIRMED (a first-party source present). Speed of promotion = resonance.
+    lifecycle: str = Field(default="LEAD")
+    importance_score: int = Field(default=0)
+    resonance_score: float = Field(default=0.0, description="distinct sources / hour since first_seen")
+    is_resonant: bool = Field(default=False, description="crossed the resonance threshold (愿景 #2 alert signal)")
+    first_seen_at: datetime = Field(default_factory=utc_now_naive)
+    last_update_at: datetime = Field(default_factory=utc_now_naive)
+
+class RadarAlert(SQLModel, table=True):
+    """A thread-level alert. Default is a quiet dashboard; an alert is created
+    only when an increment earns interruption (愿景 #2). Every alert stores its
+    trigger reason so the UI can always answer 'why am I being interrupted?'."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    thread_id: int = Field(foreign_key="storythread.id", index=True)
+    tracker_id: Optional[int] = Field(default=None, foreign_key="tracker.id", nullable=True)
+    reason: str = Field(index=True, description="RESONANCE | CONFIRMED_HIGH_ATTENTION | CORROBORATED_HIGH_ATTENTION")
+    title: Optional[str] = None
+    summary: Optional[str] = Field(default=None, sa_column=Column(Text), description="Synthesized increment with citations (if a model is configured)")
+    distinct_source_count: int = Field(default=0)
+    lifecycle: Optional[str] = None
+    delivered: bool = Field(default=False, description="Pushed as a system notification")
+    is_read: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utc_now_naive)
+
+class AccountGuardState(SQLModel, table=True):
+    """Per auth-account rate/risk state (愿景 #10 防封 + 平衡). Budget is an
+    AIMD-calibrated safe allowance, not a fear ceiling; circuit trips on risk
+    signals and recovers half-open."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_key: str = Field(unique=True, index=True)  # e.g. "twitter:profile_7"
+    hourly_budget: int = Field(default=20)             # current AIMD allowance
+    window_started_at: datetime = Field(default_factory=utc_now_naive)
+    window_count: int = Field(default=0)               # requests spent in current hour window
+    circuit_state: str = Field(default="closed")       # closed | open | half_open
+    circuit_until: Optional[datetime] = None           # cooldown end when open
+    consecutive_clean_days: int = Field(default=0)
+    last_budget_calibrated_at: Optional[datetime] = None  # anchor for AIMD additive increase
+    last_risk_signal_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    total_authorized_yield: int = Field(default=0)      # items produced via this account (utilization sentinel)
+    last_yield_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=utc_now_naive)

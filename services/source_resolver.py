@@ -46,6 +46,8 @@ class SourceResolver:
             target_data = json.loads(target)
             if isinstance(target_data, dict) and "topic" in target_data and "signals" in target_data:
                 routes = self._resolve_hybrid_routes(target)
+                routes = self._append_portfolio_routes(routes)
+                routes = self._apply_budget(routes)
                 self._enrich_routes_with_auth(routes)
                 return routes
         except:
@@ -63,8 +65,79 @@ class SourceResolver:
         else:
             # Fallback/Backward compatibility mapping
             routes = self._resolve_rss_routes(target)
-            
+
+        # Watch Target portfolio: expand selected preset collections into routes
+        # (the planner's source_scope), then cap by the per-target budget.
+        routes = self._append_portfolio_routes(routes)
+        routes = self._apply_budget(routes)
         self._enrich_routes_with_auth(routes)
+        return routes
+
+    def _append_portfolio_routes(self, routes: List[SourceRoute]) -> List[SourceRoute]:
+        """Turn the fetch_policy's source_scope (preset collection ids) into
+        routes from the curated preset library. This is how a planned portfolio
+        actually executes. No-op when no source_scope is set."""
+        scope = self.policy.get("source_scope") or []
+        if not scope:
+            return routes
+        try:
+            from db.database import get_session
+            from db.models import SourcePresetCollectionItem, SourcePreset
+            from sqlmodel import select
+            existing_urls = {r.url_or_command for r in routes}
+            added = []
+            with get_session() as session:
+                preset_ids = []
+                for cid in scope:
+                    items = session.exec(
+                        select(SourcePresetCollectionItem)
+                        .where(SourcePresetCollectionItem.collection_id == cid)
+                        .order_by(SourcePresetCollectionItem.sort_order)
+                    ).all()
+                    preset_ids.extend(it.preset_id for it in items)
+                # Preserve order, dedup.
+                seen = set()
+                for pid in preset_ids:
+                    if pid in seen:
+                        continue
+                    seen.add(pid)
+                    preset = session.exec(select(SourcePreset).where(SourcePreset.preset_id == pid)).first()
+                    if not preset or not preset.url or preset.url in existing_urls:
+                        continue
+                    stype = (preset.source_type or "rss").lower()
+                    if stype == "rsshub" or preset.url.startswith("rsshub:"):
+                        adapter, platform = "RssHubAdapter", "rsshub"
+                    elif stype in ("web", "webpage", "html"):
+                        adapter, platform = "AgenticAdapter", "web"
+                    else:
+                        adapter, platform = "RssAdapter", "rss"
+                    added.append(SourceRoute(
+                        route_id=f"preset_{pid}",
+                        adapter=adapter,
+                        url_or_command=preset.url,
+                        purpose="discovery",
+                        requires_auth=False,
+                        platform=platform,
+                        # Lower priority band than a target's own routes (1-3) so
+                        # the budget cap keeps the user's explicit sources +
+                        # their fallbacks before tangential portfolio presets.
+                        priority=5,
+                    ))
+                    existing_urls.add(preset.url)
+            return routes + added
+        except Exception as e:
+            # Portfolio expansion must never break base resolution.
+            print(f"[SourceResolver] Portfolio expansion failed: {e}")
+            return routes
+
+    def _apply_budget(self, routes: List[SourceRoute]) -> List[SourceRoute]:
+        """Cap the number of sources fetched per run (per-target budget). 0/None
+        = unlimited. Keeps lower-priority routes as fallback ordering intact."""
+        cap = self.policy.get("max_sources_per_run", 0) or 0
+        if cap and len(routes) > cap:
+            # Stable sort by priority so the cap keeps the best routes.
+            ordered = sorted(routes, key=lambda r: r.priority)
+            return ordered[:cap]
         return routes
 
     def _enrich_routes_with_auth(self, routes: List[SourceRoute]):

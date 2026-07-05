@@ -18,7 +18,8 @@ def run_migrations():
             "0002_intent_and_auth_profile",
             "0003_task_retry_columns",
             "0004_subscription_diff_policy",
-            "0005_pipeline_trace_tables"
+            "0005_pipeline_trace_tables",
+            "0006_semantic_and_radar_columns"
         ]
         
         for m in migrations:
@@ -150,6 +151,35 @@ def run_migrations():
                     columns_sub = [col["name"] for col in inspector.get_columns(sub_table)]
                     if "normalized_intent" not in columns_sub:
                         conn.execute(text(f"ALTER TABLE {sub_table} ADD COLUMN normalized_intent TEXT"))
+                    session.commit()
+
+                elif m == "0006_semantic_and_radar_columns":
+                    # R3/R5 added columns to EXISTING tables. create_all only
+                    # creates new tables (StoryThread/ArticleEmbedding/RadarAlert),
+                    # never ALTERs existing ones — so on an upgraded DB these
+                    # columns are missing and the whole pipeline crashes. Add them
+                    # idempotently (guarded by inspector) like migrations 0002-0005.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+
+                    ra_table = "rawarticle"
+                    if ra_table not in inspector.get_table_names() and "raw_article" in inspector.get_table_names():
+                        ra_table = "raw_article"
+                    if ra_table in inspector.get_table_names():
+                        ra_cols = [c["name"] for c in inspector.get_columns(ra_table)]
+                        if "thread_id" not in ra_cols:
+                            conn.execute(text(f"ALTER TABLE {ra_table} ADD COLUMN thread_id INTEGER"))
+                        if "relevance_gated" not in ra_cols:
+                            conn.execute(text(f"ALTER TABLE {ra_table} ADD COLUMN relevance_gated BOOLEAN DEFAULT 0"))
+
+                    tr_table = "tracker"
+                    if tr_table not in inspector.get_table_names() and "trackers" in inspector.get_table_names():
+                        tr_table = "trackers"
+                    if tr_table in inspector.get_table_names():
+                        tr_cols = [c["name"] for c in inspector.get_columns(tr_table)]
+                        if "is_high_attention" not in tr_cols:
+                            conn.execute(text(f"ALTER TABLE {tr_table} ADD COLUMN is_high_attention BOOLEAN DEFAULT 0"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

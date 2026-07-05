@@ -1,4 +1,5 @@
 import os
+import sys
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 from .models import Tracker, RawArticle, IntelReport, PipelineStatus, DailyBriefing, TrendAlert, TokenUsage
@@ -55,6 +56,10 @@ def _attach_sqlite_pragmas(db_engine, url: str):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        # Scheduler thread pool + task poller + API request threads all write
+        # concurrently; without a busy timeout a held write lock surfaces as
+        # an immediate "database is locked" error instead of a short wait.
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 engine = _build_engine(database_url)
@@ -83,6 +88,16 @@ def create_db_and_tables():
 
 def get_session():
     return Session(engine, expire_on_commit=False)
+
+def get_api_session():
+    """FastAPI dependency. Unlike get_session (used as a context manager in
+    services), this yields and always closes the session after the request —
+    plain `Depends(get_session)` leaked one connection per API call."""
+    session = Session(engine, expire_on_commit=False)
+    try:
+        yield session
+    finally:
+        session.close()
 
 def get_database_diagnostics():
     return {

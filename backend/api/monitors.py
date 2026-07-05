@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List
-from db.database import get_session
+from db.database import get_session, get_api_session
 from db.models import Subscription, SubscriptionUpdate
 from backend.schemas import SubscriptionCreate, SubscriptionResponse, SubscriptionUpdateResponse, AdHocDiffTestRequest, DiffTestResponse, PipelineRunResponse, PipelineEventResponse
 from worker_subscription import run_subscription_job
@@ -9,11 +9,11 @@ from worker_subscription import run_subscription_job
 router = APIRouter(prefix="/monitors", tags=["monitors"])
 
 @router.get("/", response_model=List[SubscriptionResponse])
-def get_subscriptions(session: Session = Depends(get_session)):
+def get_subscriptions(session: Session = Depends(get_api_session)):
     return session.exec(select(Subscription)).all()
 
 @router.post("/", response_model=SubscriptionResponse)
-def create_subscription(sub_in: SubscriptionCreate, session: Session = Depends(get_session)):
+def create_subscription(sub_in: SubscriptionCreate, session: Session = Depends(get_api_session)):
     from services.intent_normalizer import generate_subscription_normalized_intent
     data = sub_in.model_dump()
     data["normalized_intent"] = generate_subscription_normalized_intent(
@@ -28,7 +28,7 @@ def create_subscription(sub_in: SubscriptionCreate, session: Session = Depends(g
     return db_sub
 
 @router.delete("/{sub_id}")
-def delete_subscription(sub_id: int, session: Session = Depends(get_session)):
+def delete_subscription(sub_id: int, session: Session = Depends(get_api_session)):
     sub = session.get(Subscription, sub_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -37,7 +37,7 @@ def delete_subscription(sub_id: int, session: Session = Depends(get_session)):
     return {"message": f"Subscription {sub_id} deleted successfully"}
 
 @router.post("/{sub_id}/toggle", response_model=SubscriptionResponse)
-def toggle_subscription(sub_id: int, session: Session = Depends(get_session)):
+def toggle_subscription(sub_id: int, session: Session = Depends(get_api_session)):
     sub = session.get(Subscription, sub_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -48,7 +48,7 @@ def toggle_subscription(sub_id: int, session: Session = Depends(get_session)):
     return sub
 
 @router.get("/updates", response_model=List[SubscriptionUpdateResponse])
-def get_subscription_updates(limit: int = 50, session: Session = Depends(get_session)):
+def get_subscription_updates(limit: int = 50, session: Session = Depends(get_api_session)):
     updates = session.exec(
         select(SubscriptionUpdate)
         .order_by(SubscriptionUpdate.created_at.desc())
@@ -71,7 +71,7 @@ def get_subscription_updates(limit: int = 50, session: Session = Depends(get_ses
     return response
 
 @router.post("/updates/{update_id}/read")
-def mark_update_as_read(update_id: int, session: Session = Depends(get_session)):
+def mark_update_as_read(update_id: int, session: Session = Depends(get_api_session)):
     update = session.get(SubscriptionUpdate, update_id)
     if not update:
         raise HTTPException(status_code=404, detail="Update not found")
@@ -373,7 +373,7 @@ def test_diff_route_trace(req: AdHocDiffTestRequest):
     return run_resp
 
 @router.post("/{sub_id}/run-trace", response_model=PipelineRunResponse)
-def run_monitor_trace(sub_id: int, session: Session = Depends(get_session)):
+def run_monitor_trace(sub_id: int, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     from backend.schemas import PipelineRunResponse
     sub = session.get(Subscription, sub_id)
@@ -409,7 +409,7 @@ def run_monitor_trace(sub_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{sub_id}/traces", response_model=List[PipelineRunResponse])
-def get_monitor_traces(sub_id: int, limit: int = 20, session: Session = Depends(get_session)):
+def get_monitor_traces(sub_id: int, limit: int = 20, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     from backend.schemas import PipelineRunResponse
     runs = session.exec(
@@ -432,7 +432,7 @@ def get_monitor_traces(sub_id: int, limit: int = 20, session: Session = Depends(
     return results
 
 @router.get("/traces/{run_id}/export")
-def export_monitor_trace(run_id: int, session: Session = Depends(get_session)):
+def export_monitor_trace(run_id: int, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     from datetime import datetime, timezone
     run = session.get(PipelineRun, run_id)

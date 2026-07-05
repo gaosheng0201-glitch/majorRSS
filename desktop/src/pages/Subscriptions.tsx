@@ -1280,7 +1280,7 @@ export default function Subscriptions() {
                     >
                       <Group justify="space-between">
                         <Text size="11px" fw={700}>Run #{run.id}</Text>
-                        <Badge size="xs" color={run.status === 'SUCCESS' ? 'green' : 'red'}>
+                        <Badge size="xs" color={run.status === 'SUCCESS' ? 'green' : run.status === 'NO_NEW_ITEMS' ? 'gray' : 'red'}>
                           {run.status}
                         </Badge>
                       </Group>

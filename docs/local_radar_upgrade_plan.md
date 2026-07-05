@@ -1,5 +1,7 @@
 # MajorRSS 本地雷达升级方案
 
+> **定位说明（2026-07-05）**：本文档是设计意图档案（产品定位、关注目标、SourceSelector 方向），长期有效。当前工程状态与路线图以 [engineering_baseline.md](engineering_baseline.md) 为准。
+
 > 创建时间：2026-06-20
 >
 > 本文用于定义 MajorRSS 作为“个人本地信息助手 / 本地雷达”的升级方向，并说明 OnlyFourBot 在其中只承担可选的共享与复用角色。

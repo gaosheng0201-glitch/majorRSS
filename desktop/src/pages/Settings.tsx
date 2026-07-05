@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { 
+import {
   Text, Group, Stack, Button, TextInput, Paper, ScrollArea, Divider, Select,
-  SimpleGrid, useMantineColorScheme, Checkbox
+  SimpleGrid, useMantineColorScheme, Checkbox, Badge
 } from '@mantine/core';
-import { Terminal, Settings as SettingsIcon, Save, AlertTriangle, ShieldAlert, Database } from 'lucide-react';
+import { Terminal, Settings as SettingsIcon, Save, AlertTriangle, ShieldAlert, Database, Activity } from 'lucide-react';
 import client from '../api/client';
 import { useLanguage, type Language } from '../i18n/translations';
 
@@ -21,6 +21,14 @@ export interface AuthStatus {
   has_cookie: boolean;
   is_healthy: boolean;
   mtime: number | null;
+}
+
+export interface SchedulerState {
+  status: 'running' | 'starting' | 'stalled' | 'error';
+  started_at: string | null;
+  last_heartbeat_at: string | null;
+  error: string | null;
+  jobs: { name: string; next_run_time: string | null }[];
 }
 
 export interface DbStatus {
@@ -51,6 +59,7 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
   const [maskedApiKey, setMaskedApiKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
+  const [scheduler, setScheduler] = useState<SchedulerState | null>(null);
   const [devMode, setDevMode] = useState(() => localStorage.getItem('developer_mode') === 'true');
 
   // Database settings states
@@ -78,6 +87,15 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
       setLogs(res.data);
     } catch (err) {
       console.error("Failed to fetch logs:", err);
+    }
+  };
+
+  const fetchEngineStatus = async () => {
+    try {
+      const res = await client.get<{ scheduler: SchedulerState }>('/settings/health');
+      setScheduler(res.data.scheduler ?? null);
+    } catch (err) {
+      console.error("Failed to fetch engine status:", err);
     }
   };
 
@@ -114,9 +132,11 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
     fetchLogs();
     fetchApiKeyStatus();
     fetchDbStatus();
+    fetchEngineStatus();
     const interval = setInterval(() => {
       fetchLogs();
-    }, 5000); // Poll logs every 5s
+      fetchEngineStatus();
+    }, 5000); // Poll logs + engine heartbeat every 5s
     return () => clearInterval(interval);
   }, []);
 
@@ -243,6 +263,60 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
         <Text size="xl" fw={700} className="title-text-color">{t('nav_settings')}</Text>
         <Text size="sm" c="dimmed">{t('set_desc')}</Text>
       </Stack>
+
+      {/* Scraping Engine Status */}
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Stack gap="sm">
+          <Group justify="space-between">
+            <Group gap="xs">
+              <Activity size={18} className="text-indigo-400" />
+              <Text size="md" fw={700} className="title-text-color">
+                {lang === 'zh' ? '抓取引擎状态' : 'Scraping Engine'}
+              </Text>
+            </Group>
+            <Badge
+              size="md"
+              color={
+                scheduler?.status === 'running' ? 'green'
+                : scheduler?.status === 'starting' ? 'yellow'
+                : scheduler?.status === 'stalled' ? 'orange'
+                : scheduler?.status === 'error' ? 'red'
+                : 'gray'
+              }
+            >
+              {scheduler
+                ? (lang === 'zh'
+                    ? { running: '运行中', starting: '启动中', stalled: '已停滞', error: '启动失败' }[scheduler.status]
+                    : scheduler.status.toUpperCase())
+                : (lang === 'zh' ? '未知' : 'UNKNOWN')}
+            </Badge>
+          </Group>
+          {scheduler?.error && (
+            <Paper p="sm" radius="xs" style={{ background: isDark ? 'rgba(240,62,62,0.1)' : '#fff5f5', border: `1px solid ${isDark ? 'rgba(240,62,62,0.25)' : '#ffc9c9'}` }}>
+              <Text size="xs" c="red">{scheduler.error}</Text>
+            </Paper>
+          )}
+          {scheduler?.last_heartbeat_at && (
+            <Text size="xs" c="dimmed">
+              {lang === 'zh' ? '最近心跳：' : 'Last heartbeat: '}
+              {new Date(scheduler.last_heartbeat_at).toLocaleString()}
+            </Text>
+          )}
+          {scheduler && scheduler.jobs.length > 0 && (
+            <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
+              {scheduler.jobs.filter(j => j.name !== 'heartbeat').map(job => (
+                <Paper key={job.name} p="xs" radius="xs" withBorder style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#f8f9fa' }}>
+                  <Text size="10px" fw={600}>{job.name}</Text>
+                  <Text size="10px" c="dimmed">
+                    {lang === 'zh' ? '下次：' : 'Next: '}
+                    {job.next_run_time ? new Date(job.next_run_time).toLocaleTimeString() : '—'}
+                  </Text>
+                </Paper>
+              ))}
+            </SimpleGrid>
+          )}
+        </Stack>
+      </Paper>
 
       {/* Language Selector */}
       <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>

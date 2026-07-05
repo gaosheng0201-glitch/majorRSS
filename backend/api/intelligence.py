@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 from typing import List
 import json
-from db.database import get_session
+from db.database import get_session, get_api_session
 from db.models import Tracker, RawArticle, IntelReport, TrendAlert, Subscription, TaskRequest
 from backend.schemas import DashboardStats, IntelReportResponse, TrendAlertResponse, TrendAlertSource, RawArticleResponse
 
@@ -51,7 +51,7 @@ def make_alert_response(a: TrendAlert, session: Session) -> TrendAlertResponse:
     )
 
 @router.get("/stats", response_model=DashboardStats)
-def get_dashboard_stats(session: Session = Depends(get_session)):
+def get_dashboard_stats(session: Session = Depends(get_api_session)):
     pending_count = session.exec(select(func.count()).where(RawArticle.processed == False)).one()
     active_trackers = session.exec(select(func.count()).where(Tracker.is_active == True)).one()
     active_monitors = session.exec(select(func.count()).where(Subscription.is_active == True)).one()
@@ -68,7 +68,7 @@ def get_dashboard_stats(session: Session = Depends(get_session)):
     )
 
 @router.get("/feed", response_model=List[IntelReportResponse])
-def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_session)):
+def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_api_session)):
     # Query reports and join raw article for the title
     reports = session.exec(
         select(IntelReport)
@@ -112,13 +112,110 @@ def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_sessio
     return feed
 
 @router.get("/alerts", response_model=List[TrendAlertResponse])
-def get_all_alerts(session: Session = Depends(get_session)):
+def get_all_alerts(session: Session = Depends(get_api_session)):
     alerts = session.exec(select(TrendAlert).order_by(TrendAlert.created_at.desc())).all()
     alert_responses = [make_alert_response(a, session) for a in alerts]
     return alert_responses
 
+@router.get("/threads")
+def get_story_threads(limit: int = 40, tracker_id: int = None, session: Session = Depends(get_api_session)):
+    """Story threads for the Radar view — the aggregator→radar payoff. Each
+    thread carries its lifecycle (LEAD/CORROBORATED/CONFIRMED), resonance,
+    distinct-source count, member articles (citations), and any alert reasons
+    ('why am I being interrupted?'). Resonant + recently-updated first."""
+    from db.models import StoryThread, RadarAlert
+    q = select(StoryThread)
+    if tracker_id is not None:
+        q = q.where(StoryThread.tracker_id == tracker_id)
+    threads = session.exec(
+        q.order_by(StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc()).limit(limit)
+    ).all()
+    if not threads:
+        return []
+
+    # Batch member + alert loads (avoid N+1 across the thread list).
+    thread_ids = [th.id for th in threads]
+    members_by_thread = {tid: [] for tid in thread_ids}
+    for art in session.exec(
+        select(RawArticle).where(RawArticle.thread_id.in_(thread_ids))
+        .order_by(RawArticle.created_at.desc())
+    ).all():
+        bucket = members_by_thread.get(art.thread_id)
+        if bucket is not None and len(bucket) < 8:
+            bucket.append({"title": art.title, "url": art.url})
+    reasons_by_thread = {tid: set() for tid in thread_ids}
+    for al in session.exec(select(RadarAlert).where(RadarAlert.thread_id.in_(thread_ids))).all():
+        reasons_by_thread[al.thread_id].add(al.reason)
+
+    out = []
+    for th in threads:
+        out.append({
+            "id": th.id,
+            "tracker_id": th.tracker_id,
+            "title": th.title,
+            "lifecycle": th.lifecycle,
+            "distinct_source_count": th.distinct_source_count,
+            "member_count": th.member_count,
+            "is_resonant": th.is_resonant,
+            "resonance_score": round(th.resonance_score, 2),
+            "last_update_at": th.last_update_at.isoformat() if th.last_update_at else None,
+            "first_seen_at": th.first_seen_at.isoformat() if th.first_seen_at else None,
+            "alert_reasons": sorted(reasons_by_thread[th.id]),
+            "sources": members_by_thread[th.id],
+        })
+    return out
+
+@router.get("/radar-stats")
+def get_radar_stats_endpoint(since_hours: int = 168):
+    """Noise-reduction / time-saved KPIs (盲区补全 #8): filtered N noise, merged
+    M duplicates, tracked K events."""
+    from services.radar_digest import get_radar_stats
+    return get_radar_stats(since_hours)
+
+@router.get("/catchup")
+def get_catchup_endpoint(since: str = None, since_hours: int = 24):
+    """'Since you last looked' increment digest (盲区补全 #7) — real thread
+    increments, not a pile of unread items."""
+    from services.radar_digest import get_catchup
+    return get_catchup(since_iso=since, since_hours=since_hours)
+
+@router.get("/radar-alerts")
+def get_radar_alerts(limit: int = 50, unread_only: bool = False, session: Session = Depends(get_api_session)):
+    """Thread-level alerts with their trigger reason (愿景 #2 — every alert can
+    answer 'why am I being interrupted?')."""
+    from db.models import RadarAlert
+    q = select(RadarAlert)
+    if unread_only:
+        q = q.where(RadarAlert.is_read == False)
+    return session.exec(q.order_by(RadarAlert.created_at.desc()).limit(limit)).all()
+
+@router.get("/radar-alerts/undelivered")
+def get_undelivered_radar_alerts(session: Session = Depends(get_api_session)):
+    """Alerts not yet shown as OS notifications — the desktop delivery poll
+    fetches these, shows a system notification, then marks them delivered."""
+    from services.alert_engine import get_undelivered_alerts
+    return get_undelivered_alerts()
+
+@router.post("/radar-alerts/{alert_id}/delivered")
+def mark_alert_delivered(alert_id: int, session: Session = Depends(get_api_session)):
+    from db.models import RadarAlert
+    a = session.get(RadarAlert, alert_id)
+    if a:
+        a.delivered = True
+        session.add(a); session.commit()
+    return {"ok": True}
+
+@router.post("/radar-alerts/{alert_id}/read")
+def mark_alert_read(alert_id: int, session: Session = Depends(get_api_session)):
+    from db.models import RadarAlert
+    a = session.get(RadarAlert, alert_id)
+    if a:
+        a.is_read = True
+        session.add(a); session.commit()
+    return {"ok": True}
+
 @router.post("/scan-trends")
-def trigger_trend_scan(session: Session = Depends(get_session)):
+def trigger_trend_scan(session: Session = Depends(get_api_session)):
     from services.app_mode import is_pure_rss_mode
     if is_pure_rss_mode():
         return {"message": "Trend scan skipped in pure RSS mode"}
@@ -132,7 +229,7 @@ def trigger_trend_scan(session: Session = Depends(get_session)):
     return {"message": "Trend scan task queued successfully"}
 
 @router.get("/raw-feed", response_model=List[RawArticleResponse])
-def get_raw_articles_feed(limit: int = 50, session: Session = Depends(get_session)):
+def get_raw_articles_feed(limit: int = 50, session: Session = Depends(get_api_session)):
     # Query raw articles order by created_at desc
     articles = session.exec(
         select(RawArticle)

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlmodel import Session, select
 from typing import List
-from db.database import get_session
+from db.database import get_session, get_api_session
 from db.models import DailyBriefing
 from backend.schemas import DailyBriefingResponse, DailyBriefingGenerateRequest
 from llm.processor import generate_daily_briefing
@@ -9,7 +9,7 @@ from llm.processor import generate_daily_briefing
 router = APIRouter(prefix="/briefing", tags=["briefing"])
 
 @router.get("/", response_model=List[DailyBriefingResponse])
-def get_briefings(limit: int = 10, session: Session = Depends(get_session)):
+def get_briefings(limit: int = 10, session: Session = Depends(get_api_session)):
     return session.exec(select(DailyBriefing).order_by(DailyBriefing.created_at.desc()).limit(limit)).all()
 
 def generate_briefing_task(target_sections: List[str] = None):

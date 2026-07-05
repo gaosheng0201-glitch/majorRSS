@@ -1,13 +1,39 @@
 import os
 import json
-from google import genai
-from google.genai import types
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone, timedelta
 from db.database import get_session
 from db.models import IntelReport, DailyBriefing, TokenUsage
 from sqlmodel import select
 from typing import Optional
+from services.log_service import get_logger
+from services.llm_provider import get_provider
+
+logger = get_logger("llm")
+
+
+def _record_usage(model_name: str, action_type: str, usage: dict, session=None):
+    """Persist token usage (drives the daily-budget guard). Never silently
+    swallow — accounting must stay visible."""
+    if not usage:
+        return
+    try:
+        row = TokenUsage(
+            model_name=model_name,
+            action_type=action_type,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+        )
+        if session is not None:
+            session.add(row)
+            session.commit()
+        else:
+            with get_session() as s:
+                s.add(row)
+                s.commit()
+    except Exception as e:
+        logger.warning(f"Failed to record token usage: {e}")
 
 def get_target_language() -> str:
     lang_map = {
@@ -31,14 +57,12 @@ class FactCheckResult(BaseModel):
 
 def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None) -> FactCheckResult:
     """
-    Passes the scraped content through Gemini to fact-check, categorize, and summarize.
+    Passes the scraped content through the configured provider (BYOK Gemini,
+    OpenAI-compatible / local model) to fact-check, categorize, and summarize.
     """
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
-    
-    client = genai.Client(api_key=api_key)
+    provider = get_provider()
+    if not provider.supports_generation:
+        raise ValueError("No generation model configured (pure-RSS / no API key).")
 
     if prompt_override:
         system_instruction = (
@@ -88,46 +112,26 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
     import time
     max_retries = 4
     base_sleep = 2
-    
+
+    text = None
     for attempt in range(max_retries):
         try:
-            response = client.models.generate_content(
-                model='gemini-3-flash-preview',
-                contents=prompt_contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=FactCheckResult,
-                    temperature=0.2,
-                ),
-            )
+            text, usage = provider.generate(
+                prompt_contents, system=system_instruction,
+                schema=FactCheckResult, temperature=0.2)
+            _record_usage(provider.name, f"FactCheck: {tracker_name}" if tracker_name else "FactCheck", usage)
             break
         except Exception as e:
             if "429" in str(e) or "Too Many Requests" in str(e) or "Resource exhausted" in str(e):
                 if attempt == max_retries - 1:
                     raise e
                 sleep_time = base_sleep * (2 ** attempt)
-                print(f"Rate limited by Gemini API. Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                logger.warning(f"Rate limited by provider. Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(sleep_time)
             else:
                 raise e
-    
-    if hasattr(response, 'usage_metadata') and response.usage_metadata:
-        try:
-            with get_session() as session:
-                usage = TokenUsage(
-                    model_name='gemini-3-flash-preview',
-                    action_type=f"FactCheck: {tracker_name}" if tracker_name else "FactCheck",
-                    prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-                    completion_tokens=response.usage_metadata.candidates_token_count or 0,
-                    total_tokens=response.usage_metadata.total_token_count or 0
-                )
-                session.add(usage)
-                session.commit()
-        except:
-            pass
-    
-    result_dict = json.loads(response.text)
+
+    result_dict = json.loads(text)
     return FactCheckResult(**result_dict)
 
 def generate_daily_briefing(target_sections: list[str] = None, api_key: str = None) -> str:
@@ -183,13 +187,11 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
         
     master_text = "\n---\n".join(content_list)
     
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
-    
-    client = genai.Client(api_key=api_key)
-    
+    provider = get_provider()
+    if not provider.supports_generation:
+        session.close()
+        raise ValueError("No generation model configured (pure-RSS / no API key).")
+
     target_lang = get_target_language()
     system_instruction = (
         "You are an expert technology analyst and podcast host. "
@@ -199,30 +201,11 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
         "Use markdown formatting. Do not just list them out; tell a narrative of what happened in tech/AI today."
     )
 
-    response = client.models.generate_content(
-        model='gemini-3.1-pro-preview', # Use latest 3.1 Pro
-        contents=f"Generate the daily briefing based on the following raw reports:\n\n{master_text}",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.4,
-        ),
-    )
-    
-    if hasattr(response, 'usage_metadata') and response.usage_metadata:
-        try:
-            usage = TokenUsage(
-                model_name='gemini-3.1-pro-preview',
-                action_type='DailyBriefing',
-                prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-                completion_tokens=response.usage_metadata.candidates_token_count or 0,
-                total_tokens=response.usage_metadata.total_token_count or 0
-            )
-            session.add(usage)
-            session.commit()
-        except:
-            pass
-    
-    briefing_text = response.text
+    briefing_model = os.environ.get("LLM_BRIEFING_MODEL", "gemini-3.1-pro-preview")
+    briefing_text, usage = provider.generate(
+        f"Generate the daily briefing based on the following raw reports:\n\n{master_text}",
+        system=system_instruction, temperature=0.4, model=briefing_model)
+    _record_usage(provider.name, "DailyBriefing", usage, session=session)
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     section_name_val = "ALL"
     if target_sections:
@@ -266,8 +249,8 @@ def scan_trends(api_key: str = None):
                 if e_norm not in entity_to_reports:
                     entity_to_reports[e_norm] = {"name": e.strip(), "reports": []}
                 entity_to_reports[e_norm]["reports"].append(r)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to parse key_entities for report {r.id}: {e}")
             
     # Check for threshold (e.g. appeared in >= 2 distinct sources for testing)
     for e_norm, data in entity_to_reports.items():
@@ -279,84 +262,46 @@ def scan_trends(api_key: str = None):
                 .where(TrendAlert.created_at >= recent_time)
             ).first()
             if not existing:
-                if not api_key:
-                    api_key = os.environ.get("GEMINI_API_KEY")
-                    if not api_key:
-                        session.close()
-                        return
-                client = genai.Client(api_key=api_key)
-                
+                provider = get_provider()
+                if not provider.supports_generation:
+                    session.close()
+                    return
+
                 content_list = [f"Source: {r.source_url}\nSummary: {r.llm_summary}" for r in data["reports"]]
                 master_text = "\n---\n".join(content_list)
-                
+
                 target_lang = get_target_language()
                 system_instruction = (
                     f"You are a Trend Analyst. Multiple sources have recently reported on '{data['name']}'. "
                     f"Analyze these reports and provide a short, urgent 1-paragraph alert summarizing "
                     f"what is happening with this entity. The alert summary MUST be written in {target_lang}."
                 )
-                
-                response = client.models.generate_content(
-                    model='gemini-3-flash-preview',
-                    contents=master_text,
-                    config=types.GenerateContentConfig(system_instruction=system_instruction)
-                )
-                
-                if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                    try:
-                        usage = TokenUsage(
-                            model_name='gemini-3-flash-preview',
-                            action_type='TrendScan',
-                            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-                            completion_tokens=response.usage_metadata.candidates_token_count or 0,
-                            total_tokens=response.usage_metadata.total_token_count or 0
-                        )
-                        session.add(usage)
-                    except:
-                        pass
-                
+
+                alert_text, usage = provider.generate(master_text, system=system_instruction)
+                _record_usage(provider.name, "TrendScan", usage, session=session)
+
                 alert = TrendAlert(
                     entity_name=data["name"],
-                    alert_summary=response.text,
+                    alert_summary=alert_text,
                     related_article_ids=",".join([str(r.id) for r in data["reports"]])
                 )
                 session.add(alert)
                 session.commit()
-                print(f"Generated Trend Alert for: {data['name']}")
+                logger.info(f"Generated Trend Alert for: {data['name']}")
     session.close()
 
 def summarize_diff(diff_text: str, api_key: str = None) -> str:
     """Provides a concise summary of what changed in a text diff."""
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
-    
-    client = genai.Client(api_key=api_key)
+    provider = get_provider()
+    if not provider.supports_generation:
+        return "No generation model configured."
     target_lang = get_target_language()
     prompt = f"You are an assistant tracking webpage changes. The following is a diff showing what changed on a tracked page. Provide a very concise, 1-2 sentence summary of what was added, removed, or changed in {target_lang}. Ignore minor whitespace or formatting changes.\n\nDIFF:\n{diff_text}"
-    
+
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        # Log token usage
-        try:
-            with get_session() as session:
-                tu = TokenUsage(
-                    model_name="gemini-2.5-flash",
-                    action_type="Diff Summary",
-                    prompt_tokens=response.usage_metadata.prompt_token_count,
-                    completion_tokens=response.usage_metadata.candidates_token_count,
-                    total_tokens=response.usage_metadata.total_token_count
-                )
-                session.add(tu)
-                session.commit()
-        except:
-            pass
-            
-        return response.text
+        text, usage = provider.generate(prompt)
+        _record_usage(provider.name, "Diff Summary", usage)
+        return text
     except Exception as e:
         return f"Failed to summarize: {e}"
     

@@ -3,6 +3,7 @@ import React, { useState, createContext, useContext } from 'react';
 export const TRANSLATIONS = {
   en: {
     nav_dashboard: "Dashboard",
+    nav_radar: "Radar",
     nav_briefing: "Daily Briefing",
     nav_factcheck: "Fact-Checker Arena",
     nav_billing: "Billing",
@@ -274,6 +275,7 @@ export const TRANSLATIONS = {
   },
   zh: {
     nav_dashboard: "情报大屏",
+    nav_radar: "雷达",
     nav_briefing: "每日简报",
     nav_factcheck: "情报溯源竞技场",
     nav_billing: "计费与消耗审计",
@@ -545,6 +547,7 @@ export const TRANSLATIONS = {
   },
   ko: {
     nav_dashboard: "대시보드",
+    nav_radar: "레이더",
     nav_briefing: "데일리 브리핑",
     nav_factcheck: "팩트체크 아레나",
     nav_billing: "AI 사용량 및 비용 감사",
@@ -799,6 +802,7 @@ export const TRANSLATIONS = {
   },
   ja: {
     nav_dashboard: "ダッシュボード",
+    nav_radar: "レーダー",
     nav_briefing: "デイリーブリーフィング",
     nav_factcheck: "ファクトチェック・アリーナ",
     nav_billing: "AI使用量・コスト監査",
@@ -1053,6 +1057,7 @@ export const TRANSLATIONS = {
   },
   ru: {
     nav_dashboard: "Дашборд",
+    nav_radar: "Радар",
     nav_briefing: "Брифинг",
     nav_factcheck: "Арена фактчекинга",
     nav_billing: "Биллинг",

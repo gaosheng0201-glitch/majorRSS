@@ -12,6 +12,11 @@ if getattr(sys, 'frozen', False):
 else:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from services.log_service import setup_logging, get_logger
+
+setup_logging()
+logger = get_logger("backend")
+
 from db.database import create_db_and_tables
 from scheduler import start_scheduler
 from backend.api import trackers, intelligence, briefing, monitors, settings, auth, source_presets
@@ -19,18 +24,19 @@ from backend.api import trackers, intelligence, briefing, monitors, settings, au
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
-    print("[FastAPI] Starting local backend services...")
+    logger.info("Starting local backend services...")
     create_db_and_tables()
-    
-    # Start scheduler in a background daemon thread
-    # The start_scheduler function runs migrations and keeps polling in a loop
-    scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
+
+    # Start scheduler in a background daemon thread. block=False: the thread
+    # only runs migrations + scheduler.start() and then exits; job threads are
+    # owned by APScheduler. Startup failures land in scheduler_state → /health.
+    scheduler_thread = threading.Thread(target=lambda: start_scheduler(block=False), daemon=True)
     scheduler_thread.start()
-    print("[FastAPI] Background scheduler thread launched.")
-    
+    logger.info("Background scheduler thread launched.")
+
     yield
     # Shutdown actions
-    print("[FastAPI] Shutting down backend services...")
+    logger.info("Shutting down backend services...")
 
 app = FastAPI(
     title="MajorRSS API",

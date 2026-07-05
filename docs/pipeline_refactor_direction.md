@@ -1,5 +1,7 @@
 # MajorRSS Pipeline Refactor Direction
 
+> **定位说明（2026-07-05）**：本文档是设计意图档案，其中的方向和原则长期有效；但「当前实现审计」等状态性内容为历史快照，已部分过时。当前工程状态与路线图以 [engineering_baseline.md](engineering_baseline.md) 为准。
+
 ## 背景
 
 当前 MajorRSS 的数据获取主要由两类能力组成：

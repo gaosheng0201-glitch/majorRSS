@@ -11,6 +11,11 @@ import {
 import client from '../api/client';
 import { useLanguage } from '../i18n/translations';
 
+// Only allow http(s) hrefs from untrusted feed/LLM content — blocks a
+// javascript:/data: URL in a scraped link from executing on click (stored XSS).
+const safeHref = (u?: string): string | undefined =>
+  (u && /^https?:\/\//i.test(u)) ? u : undefined;
+
 interface AlertSource {
   title: string;
   url: string;
@@ -415,8 +420,8 @@ function IntelReportCard({ report }: { report: Report }) {
                               </div>
                               <Stack gap={4} style={{ flex: 1 }}>
                                 <Anchor 
-                                  href={src.url} 
-                                  target="_blank" 
+                                  href={safeHref(src.url)} 
+                                  target="_blank" rel="noopener noreferrer"
                                   size="sm" 
                                   fw={600} 
                                   className="title-text-color" 
@@ -480,8 +485,8 @@ function IntelReportCard({ report }: { report: Report }) {
                               </div>
                               <Stack gap={4} style={{ flex: 1 }}>
                                 <Anchor 
-                                  href={src.url} 
-                                  target="_blank" 
+                                  href={safeHref(src.url)} 
+                                  target="_blank" rel="noopener noreferrer"
                                   size="sm" 
                                   fw={600} 
                                   className="title-text-color" 
@@ -611,8 +616,8 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
 
       <Stack gap="xs">
         <Anchor 
-          href={article.url} 
-          target="_blank" 
+          href={safeHref(article.url)} 
+          target="_blank" rel="noopener noreferrer"
           size="sm" 
           fw={700} 
           className="title-text-color"
@@ -677,6 +682,7 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
   const { colorScheme } = useMantineColorScheme();
   const isDark = colorScheme === 'dark';
   const [stats, setStats] = useState<Stats | null>(null);
+  const [radarStats, setRadarStats] = useState<{ingested:number;noise_filtered:number;duplicates_merged:number;noise_removed_total:number;events_tracked:number;resonant_events:number;alerts:number}|null>(null);
   const [feed, setFeed] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -719,6 +725,9 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
       const statsRes = results[0];
       const feedRes = results[1];
       const rawRes = results[2];
+
+      // Radar KPIs (time saved / noise reduction) — non-blocking.
+      client.get('/intelligence/radar-stats').then(r => setRadarStats(r.data)).catch(() => {});
 
       const newStats = statsRes.data;
       const incomingAlerts: Alert[] = newStats?.latest_alerts || [];
@@ -887,6 +896,34 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
           </Group>
         </Paper>
       </SimpleGrid>
+
+      {/* Radar KPIs — the "time saved" proof (盲区 #8): how much noise the radar
+          removed so you didn't have to read it. */}
+      {radarStats && radarStats.ingested > 0 && (
+        <Paper withBorder p="md" radius="md" mt="md" style={{ background: isDark ? 'rgba(99,102,241,0.04)' : '#f8f9ff' }}>
+          <Group justify="space-between" mb="xs">
+            <Text size="sm" fw={700} className="title-text-color">本周雷达战绩 · Radar This Week</Text>
+            <Badge variant="light" color="indigo" size="sm">近 7 天</Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mb="md">
+            共摄入 {radarStats.ingested} 条 · 为你过滤了 <Text span fw={700} c="indigo">{radarStats.noise_removed_total}</Text> 条噪音与重复
+          </Text>
+          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+            {[
+              { label: '过滤噪音', value: radarStats.noise_filtered, hint: '不相关，未喂 AI' },
+              { label: '合并重复', value: radarStats.duplicates_merged, hint: '同一事件的重复报道' },
+              { label: '追踪事件', value: radarStats.events_tracked, hint: '聚类出的事件线索' },
+              { label: '共振事件', value: radarStats.resonant_events, hint: '多源同时讨论' },
+            ].map((k) => (
+              <Paper key={k.label} p="xs" radius="sm" withBorder style={{ textAlign: 'center', background: isDark ? 'rgba(0,0,0,0.2)' : '#ffffff' }}>
+                <Text size="xl" fw={800} className="title-text-color">{k.value}</Text>
+                <Text size="10px" fw={600} c="dimmed">{k.label}</Text>
+                <Text size="9px" c="dimmed">{k.hint}</Text>
+              </Paper>
+            ))}
+          </SimpleGrid>
+        </Paper>
+      )}
 
       {/* Trend Alerts Carousel Card */}
       {!showRaw && stats?.latest_alerts && stats.latest_alerts.length > 0 && (() => {
@@ -1069,8 +1106,8 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
                             </div>
                             <Stack gap={4} style={{ flex: 1 }}>
                               <Anchor 
-                                href={src.url} 
-                                target="_blank" 
+                                href={safeHref(src.url)} 
+                                target="_blank" rel="noopener noreferrer"
                                 size="sm" 
                                 fw={600} 
                                className="title-text-color" 

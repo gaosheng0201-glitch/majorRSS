@@ -1,8 +1,12 @@
 import os
 from sqlmodel import select, func, text, Session
+from sqlalchemy import delete as sa_delete
 from db.database import engine, get_db_url
 from db.models import RawArticle, IntelReport, DailyBriefing, TrendAlert, TokenUsage
 from datetime import datetime, timezone, timedelta
+from services.log_service import get_logger
+
+logger = get_logger("db_cleanup")
 
 def get_db_status():
     """
@@ -21,13 +25,13 @@ def get_db_status():
     else:
         try:
             with Session(engine) as session:
-                # Extract dbname from postgresql://user:pass@host:port/dbname
-                dbname = db_url.split("/")[-1]
-                res = session.execute(text(f"SELECT pg_database_size('{dbname}')"))
+                # current_database() avoids fragile URL parsing (a trailing
+                # ?sslmode=... query would corrupt a split('/')[-1] dbname).
+                res = session.execute(text("SELECT pg_database_size(current_database())"))
                 size_bytes = res.scalar() or 0
                 db_size_mb = size_bytes / (1024 * 1024)
         except Exception as e:
-            print(f"[ERROR] Failed to query Postgres DB size: {e}")
+            logger.error(f"Failed to query Postgres DB size: {e}")
             
         try:
             import urllib.parse
@@ -51,7 +55,7 @@ def get_db_status():
                 "database": database
             }
         except Exception as e:
-            print(f"[WARNING] Failed to parse DATABASE_URL for Postgres info: {e}")
+            logger.warning(f"Failed to parse DATABASE_URL for Postgres info: {e}")
             
     with Session(engine) as session:
         raw_articles = session.exec(select(func.count(RawArticle.id))).one()
@@ -73,7 +77,7 @@ def get_db_status():
                 expired_articles_count += session.exec(select(func.count(RawArticle.id)).where(RawArticle.created_at < cutoff_naive)).one()
                 expired_articles_count += session.exec(select(func.count(IntelReport.id)).where(IntelReport.created_at < cutoff_naive)).one()
         except Exception as e:
-            print(f"[WARNING] Failed to query expired counts: {e}")
+            logger.warning(f"Failed to query expired counts: {e}")
             
     return {
         "engine_type": engine_type,
@@ -169,9 +173,68 @@ def run_db_cleanup():
             with engine.connect() as connection:
                 connection.execution_options(isolation_level="AUTOCOMMIT").execute(text("VACUUM ANALYZE"))
     except Exception as e:
-        print(f"[WARNING] Database vacuum/compaction failed: {e}")
-        
+        logger.warning(f"Database vacuum/compaction failed: {e}")
+
     return deleted_count
+
+def cleanup_observability_data() -> int:
+    """
+    Retention for internal telemetry tables (PipelineRun/PipelineEvent traces
+    and PageSnapshot page copies). These grow on every scheduled run, so —
+    unlike user-facing data — this cleanup is always on, independent of the
+    user's DB_CLEANUP_RETENTION_DAYS setting.
+    """
+    from db.models import PipelineRun, PipelineEvent, PageSnapshot, Subscription
+
+    trace_days = int(os.environ.get("PIPELINE_TRACE_RETENTION_DAYS", "14"))
+    snapshots_keep = int(os.environ.get("PAGE_SNAPSHOTS_KEEP_PER_SUBSCRIPTION", "3"))
+    deleted = 0
+
+    with Session(engine) as session:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=trace_days)).replace(tzinfo=None)
+        # Delete by SUBQUERY predicate, not a materialized id list — a long
+        # backlog would blow past SQLite's ~999 bound-variable limit and the
+        # whole cleanup would fail, leaving telemetry to grow unbounded.
+        old_runs = select(PipelineRun.id).where(PipelineRun.started_at < cutoff)
+        res = session.execute(sa_delete(PipelineEvent).where(PipelineEvent.run_id.in_(old_runs)))
+        deleted += res.rowcount or 0
+        res = session.execute(sa_delete(PipelineRun).where(PipelineRun.started_at < cutoff))
+        deleted += res.rowcount or 0
+
+        # Page diffing only needs the latest snapshot per subscription; keep a
+        # small history for debugging and drop the rest.
+        sub_ids = session.exec(select(Subscription.id)).all()
+        for sid in sub_ids:
+            keep_ids = session.exec(
+                select(PageSnapshot.id)
+                .where(PageSnapshot.subscription_id == sid)
+                .order_by(PageSnapshot.created_at.desc())
+                .limit(snapshots_keep)
+            ).all()
+            res = session.execute(
+                sa_delete(PageSnapshot).where(
+                    PageSnapshot.subscription_id == sid,
+                    PageSnapshot.id.not_in(keep_ids),
+                )
+            )
+            deleted += res.rowcount or 0
+        session.commit()
+
+    return deleted
+
+def run_maintenance():
+    """Daily scheduled maintenance: user-data retention + telemetry retention."""
+    try:
+        user_deleted = run_db_cleanup()
+    except Exception as e:
+        user_deleted = 0
+        logger.error(f"User-data cleanup failed: {e}", exc_info=e)
+    try:
+        telemetry_deleted = cleanup_observability_data()
+    except Exception as e:
+        telemetry_deleted = 0
+        logger.error(f"Telemetry cleanup failed: {e}", exc_info=e)
+    logger.info(f"DB maintenance done: {user_deleted} user rows, {telemetry_deleted} telemetry rows removed.")
 
 def test_pg_connection(host, port, user, password, dbname):
     """

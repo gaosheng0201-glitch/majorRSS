@@ -3,7 +3,7 @@ from sqlmodel import Session, select, func
 from typing import List
 import os
 from pydantic import BaseModel
-from db.database import get_session
+from db.database import get_session, get_api_session
 from db.models import TokenUsage, PipelineStatus, InvestigationRecord
 from backend.schemas import InvestigationCreate, InvestigationResponse
 from llm.investigator import run_native_grounding, run_major_funnel
@@ -71,14 +71,26 @@ def save_system_language(req: SystemLanguageUpdate):
 @router.get("/health")
 def health_check():
     from db.database import get_database_diagnostics
+    from services import scheduler_state
     return {
         "status": "ok",
         "message": "FastAPI backend is running",
         "database": get_database_diagnostics(),
+        # "Is the scraping engine actually running?" — running / starting /
+        # stalled / error, plus per-job next fire times.
+        "scheduler": scheduler_state.get_state(),
+    }
+
+@router.get("/app-logs")
+def get_app_logs(lines: int = 200):
+    from services.log_service import tail_log, get_log_path
+    return {
+        "path": get_log_path(),
+        "lines": tail_log(lines),
     }
 
 @router.get("/token-usage")
-def get_token_usage(session: Session = Depends(get_session)):
+def get_token_usage(session: Session = Depends(get_api_session)):
     usages = session.exec(select(TokenUsage).order_by(TokenUsage.created_at.desc())).all()
     # Summarize stats
     totals = {}
@@ -116,11 +128,11 @@ def get_token_usage(session: Session = Depends(get_session)):
     }
 
 @router.get("/pipeline-logs")
-def get_pipeline_logs(session: Session = Depends(get_session)):
+def get_pipeline_logs(session: Session = Depends(get_api_session)):
     return session.exec(select(PipelineStatus).order_by(PipelineStatus.updated_at.desc()).limit(50)).all()
 
 @router.get("/investigations", response_model=List[InvestigationResponse])
-def get_investigations(session: Session = Depends(get_session)):
+def get_investigations(session: Session = Depends(get_api_session)):
     return session.exec(select(InvestigationRecord).order_by(InvestigationRecord.created_at.desc())).all()
 
 def run_investigation_task(query: str):

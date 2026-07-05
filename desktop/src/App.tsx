@@ -5,9 +5,10 @@ import {
 } from '@mantine/core';
 import { 
   LayoutDashboard, Satellite, Settings as SettingsIcon, ShieldAlert, BookOpen, Coins, Sun, Moon,
-  PanelLeftClose, PanelLeftOpen, Sparkles, Rss, Globe, Database
+  PanelLeftClose, PanelLeftOpen, Sparkles, Rss, Globe, Database, Radar as RadarIcon
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
+import Radar from './pages/Radar';
 import Discovery from './pages/Discovery';
 import Subscriptions from './pages/Subscriptions';
 import Settings from './pages/Settings';
@@ -44,7 +45,7 @@ const theme = createTheme({
   },
 });
 
-type PageName = 'dashboard' | 'briefing' | 'factcheck' | 'billing' | 'trackers' | 'monitors' | 'sources' | 'settings';
+type PageName = 'dashboard' | 'radar' | 'briefing' | 'factcheck' | 'billing' | 'trackers' | 'monitors' | 'sources' | 'settings';
 type StartupStage = 'info' | 'checking' | 'success' | 'warning' | 'error';
 
 type BackendStartupStatus = {
@@ -450,6 +451,7 @@ function MainAppShell() {
 
   const navItems = [
     { labelKey: 'nav_dashboard', page: 'dashboard', icon: LayoutDashboard },
+    { labelKey: 'nav_radar', page: 'radar', icon: RadarIcon },
     { labelKey: 'nav_briefing', page: 'briefing', icon: BookOpen },
     { labelKey: 'nav_factcheck', page: 'factcheck', icon: ShieldAlert },
     { labelKey: 'nav_billing', page: 'billing', icon: Coins },
@@ -470,6 +472,8 @@ function MainAppShell() {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard appMode={appMode} />;
+      case 'radar':
+        return <Radar />;
       case 'briefing':
         return <Briefing />;
       case 'factcheck':

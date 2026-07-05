@@ -1,18 +1,33 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import Session, select
-from typing import List
-from db.database import get_session
+from typing import List, Optional
+from pydantic import BaseModel
+from db.database import get_session, get_api_session
 from db.models import Tracker, TaskRequest
 from backend.schemas import TrackerCreate, TrackerResponse, AdHocRouteTestRequest, RouteTestResponse, PipelineRunResponse
 
 router = APIRouter(prefix="/trackers", tags=["trackers"])
 
 @router.get("/", response_model=List[TrackerResponse])
-def get_trackers(session: Session = Depends(get_session)):
+def get_trackers(session: Session = Depends(get_api_session)):
     return session.exec(select(Tracker)).all()
 
+
+class PlanRequest(BaseModel):
+    name: str
+    intent_text: Optional[str] = ""
+    use_llm: bool = True
+
+@router.post("/plan")
+def plan_watch_target(req: PlanRequest):
+    """Propose a source portfolio for a watch target BEFORE creating it, so the
+    user sees which sources will be watched and why (愿景: 选源可解释). The
+    returned fetch_policy can be passed straight into tracker creation."""
+    from services.portfolio_planner import plan_portfolio
+    return plan_portfolio(req.name, req.intent_text or "", use_llm=req.use_llm)
+
 @router.post("/", response_model=TrackerResponse)
-def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_session)):
+def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
     from services.intent_normalizer import generate_tracker_normalized_intent
     data = tracker_in.model_dump()
     data["normalized_intent"] = generate_tracker_normalized_intent(
@@ -28,7 +43,7 @@ def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_ses
     return db_tracker
 
 @router.delete("/{tracker_id}")
-def delete_tracker(tracker_id: int, session: Session = Depends(get_session)):
+def delete_tracker(tracker_id: int, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
@@ -37,7 +52,7 @@ def delete_tracker(tracker_id: int, session: Session = Depends(get_session)):
     return {"message": f"Tracker {tracker_id} deleted successfully"}
 
 @router.post("/{tracker_id}/toggle", response_model=TrackerResponse)
-def toggle_tracker(tracker_id: int, session: Session = Depends(get_session)):
+def toggle_tracker(tracker_id: int, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
@@ -48,7 +63,7 @@ def toggle_tracker(tracker_id: int, session: Session = Depends(get_session)):
     return tracker
 
 @router.post("/{tracker_id}/run")
-def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_session)):
+def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
@@ -81,7 +96,7 @@ def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_sessi
     return {"message": "Scrape and AI process tasks queued successfully"}
 
 @router.put("/{tracker_id}", response_model=TrackerResponse)
-def update_tracker(tracker_id: int, tracker_in: TrackerCreate, session: Session = Depends(get_session)):
+def update_tracker(tracker_id: int, tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
@@ -105,7 +120,7 @@ def update_tracker(tracker_id: int, tracker_in: TrackerCreate, session: Session 
     return tracker
 
 @router.post("/test-route", response_model=RouteTestResponse)
-def test_ad_hoc_route(req: AdHocRouteTestRequest, session: Session = Depends(get_session)):
+def test_ad_hoc_route(req: AdHocRouteTestRequest, session: Session = Depends(get_api_session)):
     from services.scraper_service import run_route_test
     try:
         return run_route_test(
@@ -119,7 +134,7 @@ def test_ad_hoc_route(req: AdHocRouteTestRequest, session: Session = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{tracker_id}/test-route", response_model=RouteTestResponse)
-def test_existing_tracker_route(tracker_id: int, session: Session = Depends(get_session)):
+def test_existing_tracker_route(tracker_id: int, session: Session = Depends(get_api_session)):
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
@@ -137,7 +152,7 @@ def test_existing_tracker_route(tracker_id: int, session: Session = Depends(get_
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/test-resolve-intent", response_model=RouteTestResponse)
-def test_resolve_intent(req: AdHocRouteTestRequest, session: Session = Depends(get_session)):
+def test_resolve_intent(req: AdHocRouteTestRequest, session: Session = Depends(get_api_session)):
     from services.scraper_service import run_route_test
     try:
         return run_route_test(
@@ -151,7 +166,7 @@ def test_resolve_intent(req: AdHocRouteTestRequest, session: Session = Depends(g
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{tracker_id}/run-trace", response_model=PipelineRunResponse)
-def run_tracker_trace(tracker_id: int, session: Session = Depends(get_session)):
+def run_tracker_trace(tracker_id: int, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
@@ -185,7 +200,7 @@ def run_tracker_trace(tracker_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{tracker_id}/traces", response_model=List[PipelineRunResponse])
-def get_tracker_traces(tracker_id: int, limit: int = 20, session: Session = Depends(get_session)):
+def get_tracker_traces(tracker_id: int, limit: int = 20, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     runs = session.exec(
         select(PipelineRun)
@@ -207,7 +222,7 @@ def get_tracker_traces(tracker_id: int, limit: int = 20, session: Session = Depe
     return results
 
 @router.get("/traces/{run_id}/export")
-def export_tracker_trace(run_id: int, session: Session = Depends(get_session)):
+def export_tracker_trace(run_id: int, session: Session = Depends(get_api_session)):
     from db.models import PipelineRun, PipelineEvent
     from datetime import datetime, timezone
     run = session.get(PipelineRun, run_id)
