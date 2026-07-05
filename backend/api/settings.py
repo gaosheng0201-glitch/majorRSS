@@ -89,6 +89,16 @@ def get_app_logs(lines: int = 200):
         "lines": tail_log(lines),
     }
 
+@router.get("/account-guards")
+def get_account_guards(session: Session = Depends(get_api_session)):
+    """Per-authorized-account protection state (愿景 #10): budget/utilization,
+    circuit status, and the two-sided health signals — over-protection
+    (under-used + queued) is surfaced as loudly as risk."""
+    from db.models import AccountGuardState
+    from services.account_guard import account_status
+    rows = session.exec(select(AccountGuardState)).all()
+    return [account_status(r.account_key) for r in rows]
+
 @router.get("/token-usage")
 def get_token_usage(session: Session = Depends(get_api_session)):
     usages = session.exec(select(TokenUsage).order_by(TokenUsage.created_at.desc())).all()

@@ -60,6 +60,7 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
   const [submitting, setSubmitting] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerState | null>(null);
+  const [accountGuards, setAccountGuards] = useState<any[]>([]);
   const [devMode, setDevMode] = useState(() => localStorage.getItem('developer_mode') === 'true');
 
   // Database settings states
@@ -97,6 +98,10 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
     } catch (err) {
       console.error("Failed to fetch engine status:", err);
     }
+    try {
+      const g = await client.get<any[]>('/settings/account-guards');
+      setAccountGuards(g.data || []);
+    } catch { /* optional */ }
   };
 
   const fetchApiKeyStatus = async () => {
@@ -311,6 +316,53 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
                     {lang === 'zh' ? '下次：' : 'Next: '}
                     {job.next_run_time ? new Date(job.next_run_time).toLocaleTimeString() : '—'}
                   </Text>
+                </Paper>
+              ))}
+            </SimpleGrid>
+          )}
+        </Stack>
+      </Paper>
+
+      {/* Authorized account protection (愿景 #10) */}
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Stack gap="sm">
+          <Group gap="xs">
+            <ShieldAlert size={18} className="text-indigo-400" />
+            <Text size="md" fw={700} className="title-text-color">
+              {lang === 'zh' ? '授权账号保护' : 'Account Protection'}
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {lang === 'zh'
+              ? '用你的社媒账号抓取时，系统按每账号预算限速、拟人化节奏、风控熔断，尽量像真人以保护账号。'
+              : 'When scraping with your social accounts, the radar rations per-account budget, paces humanly, and trips a circuit on risk signals to protect the account.'}
+          </Text>
+          {accountGuards.length === 0 ? (
+            <Text size="xs" c="dimmed">
+              {lang === 'zh' ? '尚无授权账号。授权某个平台后，其保护状态会显示在这里。' : 'No authorized accounts yet. Once you authorize a platform, its protection status appears here.'}
+            </Text>
+          ) : (
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+              {accountGuards.map((g) => (
+                <Paper key={g.account_key} p="sm" radius="sm" withBorder style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#f8f9fa' }}>
+                  <Group justify="space-between" mb={4}>
+                    <Text size="xs" fw={700}>{g.account_key}</Text>
+                    <Badge size="xs" color={g.circuit_state === 'closed' ? 'teal' : g.circuit_state === 'open' ? 'red' : 'yellow'}>
+                      {g.circuit_state === 'closed' ? (lang === 'zh' ? '正常' : 'OK')
+                        : g.circuit_state === 'open' ? (lang === 'zh' ? '已熔断' : 'Tripped')
+                        : (lang === 'zh' ? '探测中' : 'Probing')}
+                    </Badge>
+                  </Group>
+                  <Text size="10px" c="dimmed">
+                    {lang === 'zh' ? '本时预算：' : 'Hourly: '}{g.window_count}/{g.hourly_budget}
+                    {' · '}{lang === 'zh' ? '利用率' : 'util'} {Math.round((g.utilization || 0) * 100)}%
+                  </Text>
+                  {g.underused_warning && (
+                    <Text size="10px" c="yellow">{lang === 'zh' ? '⚠ 利用率偏低，可能保护过度' : '⚠ Under-used — possibly over-protecting'}</Text>
+                  )}
+                  {g.stale_yield_warning && (
+                    <Text size="10px" c="orange">{lang === 'zh' ? '⚠ 一周无产出，检查授权' : '⚠ No yield in a week — check auth'}</Text>
+                  )}
                 </Paper>
               ))}
             </SimpleGrid>
