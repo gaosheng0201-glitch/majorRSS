@@ -127,6 +127,7 @@ export default function Radar() {
   const [threads, setThreads] = useState<StoryThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [catchup, setCatchup] = useState<CatchUp | null>(null);
+  const [focusOnly, setFocusOnly] = useState(false);
   const [sinceAnchor] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_KEY));
 
   const fetchThreads = async () => {
@@ -161,11 +162,15 @@ export default function Radar() {
 
   // A reading feed: most-recent first, but surface confirmed/resonant within
   // each time bucket. Grouped by time so it reads as "what happened, when".
-  const sorted = [...threads].sort((a, b) => {
-    const ta = a.last_update_at ? new Date(a.last_update_at).getTime() : 0;
-    const tb = b.last_update_at ? new Date(b.last_update_at).getTime() : 0;
-    return tb - ta;
-  });
+  const isFocus = (t: StoryThread) => t.lifecycle === 'CONFIRMED' || t.is_resonant || t.alert_reasons.length > 0;
+  const focusCount = threads.filter(isFocus).length;
+  const sorted = [...threads]
+    .filter(t => !focusOnly || isFocus(t))
+    .sort((a, b) => {
+      const ta = a.last_update_at ? new Date(a.last_update_at).getTime() : 0;
+      const tb = b.last_update_at ? new Date(b.last_update_at).getTime() : 0;
+      return tb - ta;
+    });
   const buckets = (['today', 'week', 'older'] as const)
     .map(key => ({ key, items: sorted.filter(t => bucketOf(t.last_update_at) === key) }))
     .filter(b => b.items.length > 0);
@@ -185,9 +190,27 @@ export default function Radar() {
             <Text size="sm" c="dimmed">{lang === 'zh' ? '你关注的事，按时间读下来' : 'What you follow, read down by time'}</Text>
           )}
         </Stack>
-        <UnstyledButton onClick={fetchThreads} title={lang === 'zh' ? '刷新' : 'Refresh'}>
-          <RefreshCw size={16} className="text-indigo-400" />
-        </UnstyledButton>
+        <Group gap="md">
+          {/* Quiet focus filter — surface just the signal when noise is high. */}
+          {focusCount > 0 && (
+            <Group gap={4}>
+              <UnstyledButton onClick={() => setFocusOnly(false)}>
+                <Text size="sm" c={focusOnly ? 'dimmed' : undefined} fw={focusOnly ? 400 : 700}>
+                  {lang === 'zh' ? '全部' : 'All'}
+                </Text>
+              </UnstyledButton>
+              <Text size="sm" c="dimmed">/</Text>
+              <UnstyledButton onClick={() => setFocusOnly(true)}>
+                <Text size="sm" c={focusOnly ? undefined : 'dimmed'} fw={focusOnly ? 700 : 400}>
+                  {lang === 'zh' ? `重点 ${focusCount}` : `Focus ${focusCount}`}
+                </Text>
+              </UnstyledButton>
+            </Group>
+          )}
+          <UnstyledButton onClick={fetchThreads} title={lang === 'zh' ? '刷新' : 'Refresh'}>
+            <RefreshCw size={16} className="text-indigo-400" />
+          </UnstyledButton>
+        </Group>
       </Group>
 
       {loading && threads.length === 0 ? (
