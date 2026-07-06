@@ -63,3 +63,7 @@ config.dat
 *_cookies.dat
 *_cookies.json
 major_rss.db
+
+# but DO track the real test suite
+!tests/
+!tests/**
