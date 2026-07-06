@@ -323,6 +323,38 @@ function MainAppShell() {
     }
   }, [isTauri]);
 
+  // R5 alert delivery: poll for thread-level alerts the backend hasn't pushed
+  // yet, fire an OS notification with the "why", then mark delivered so each
+  // alert notifies exactly once. Default-quiet: only genuine increments become
+  // RadarAlerts server-side, so this rarely fires. Tauri-only (no-op in browser).
+  useEffect(() => {
+    if (!isTauri || !isBackendReady) return;
+    let cancelled = false;
+    const deliver = async () => {
+      try {
+        const res = await client.get<any[]>('/intelligence/radar-alerts/undelivered');
+        const alerts = res.data || [];
+        if (!alerts.length) return;
+        const { sendNotification, isPermissionGranted } = await import('@tauri-apps/plugin-notification');
+        const granted = await isPermissionGranted();
+        for (const a of alerts) {
+          if (cancelled) break;
+          if (granted) {
+            sendNotification({
+              title: a.title || (lang === 'zh' ? '雷达提醒' : 'Radar alert'),
+              body: (a.summary || '').split('\n')[0].slice(0, 160),
+            });
+          }
+          // Mark delivered regardless, so a permission-off user isn't spammed later.
+          await client.post(`/intelligence/radar-alerts/${a.id}/delivered`).catch(() => {});
+        }
+      } catch { /* transient */ }
+    };
+    deliver();
+    const t = setInterval(deliver, 60000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [isTauri, isBackendReady, lang]);
+
   if (!isBackendReady) {
     const elapsedSeconds = Math.max(0, Math.round((Date.now() - startupStartedAt) / 1000));
     const statusColor = startupStatus.stage === 'success'
