@@ -86,16 +86,56 @@ if is_windows:
         return result
 
 else:
-    # Fallback implementation for developer testing on Linux/macOS
+    # macOS / Linux: real symmetric encryption (Fernet/AES) with a per-install
+    # key stored 0600 in the app data dir — replaces the old reversible base64
+    # "developer only" fallback. (True OS-Keychain storage via `keyring` is a
+    # future hardening; a 0600 key file is already a real improvement and needs
+    # no extra PyInstaller-bundled dependency.)
     import base64
-    print("[WARNING] Non-Windows OS detected. Using base64 encoding fallback for developer testing ONLY.")
-    
+    from cryptography.fernet import Fernet, InvalidToken
+
+    _KEY_CACHE = {}
+
+    def _key_path() -> str:
+        # Lazy import: db.config imports this module, so importing it at module
+        # load time would be circular.
+        from db.config import get_app_data_dir
+        return os.path.join(get_app_data_dir(), ".enckey")
+
+    def _get_key() -> bytes:
+        if "k" in _KEY_CACHE:
+            return _KEY_CACHE["k"]
+        path = _key_path()
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                key = f.read().strip()
+        else:
+            key = Fernet.generate_key()
+            with open(path, "wb") as f:
+                f.write(key)
+            try:
+                os.chmod(path, 0o600)
+            except Exception:
+                pass
+        _KEY_CACHE["k"] = key
+        return key
+
     def encrypt_data(data: str) -> bytes:
         if not data:
             return b""
-        return base64.b64encode(data.encode('utf-8'))
-        
+        return Fernet(_get_key()).encrypt(data.encode("utf-8"))
+
     def decrypt_data(encrypted_bytes: bytes) -> str:
         if not encrypted_bytes:
             return ""
-        return base64.b64decode(encrypted_bytes).decode('utf-8')
+        # Current scheme: Fernet.
+        try:
+            return Fernet(_get_key()).decrypt(encrypted_bytes).decode("utf-8")
+        except (InvalidToken, Exception):
+            pass
+        # Legacy: base64 (old fallback) then raw plaintext, so pre-upgrade
+        # cookie/config files still open once, then get re-saved encrypted.
+        try:
+            return base64.b64decode(encrypted_bytes).decode("utf-8")
+        except Exception:
+            return encrypted_bytes.decode("utf-8")

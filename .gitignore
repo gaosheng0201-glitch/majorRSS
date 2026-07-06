@@ -56,3 +56,10 @@ __pycache__/
 # macOS + local IDE config
 .DS_Store
 .claude/settings.local.json
+
+# Local secrets (dev-mode app data in repo root)
+.enckey
+config.dat
+*_cookies.dat
+*_cookies.json
+major_rss.db
