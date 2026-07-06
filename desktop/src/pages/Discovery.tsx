@@ -98,7 +98,23 @@ export default function Discovery() {
   // Form states
   const [name, setName] = useState('');
   const [intensity, setIntensity] = useState<'strict' | 'balanced' | 'broad'>('balanced');
-  
+  // Portfolio planning preview (R4): show which sources will be watched & why.
+  const [plan, setPlan] = useState<any>(null);
+  const [planning, setPlanning] = useState(false);
+
+  const handlePreviewPlan = async () => {
+    if (!name.trim()) return;
+    setPlanning(true);
+    try {
+      const res = await client.post('/trackers/plan', { name, intent_text: name, use_llm: true });
+      setPlan(res.data);
+    } catch (e) {
+      console.error('plan failed', e);
+    } finally {
+      setPlanning(false);
+    }
+  };
+
   // Flat Signals lists
   const [keywords, setKeywords] = useState('');
   const [accounts, setAccounts] = useState('');
@@ -625,6 +641,31 @@ export default function Discovery() {
                 onChange={(e) => setSection(e.target.value)}
                 styles={modalInputStyles}
               />
+
+              {/* Portfolio preview — "选源可解释": see which sources will be
+                  watched and why, before creating the target. */}
+              <div>
+                <Button variant="light" size="xs" color="indigo" loading={planning}
+                        disabled={!name.trim()} onClick={handlePreviewPlan}>
+                  预览会监听哪些源
+                </Button>
+                {plan && (
+                  <Paper withBorder p="sm" radius="md" mt="xs" style={{ background: 'rgba(99,102,241,0.04)' }}>
+                    <Text size="xs" c="dimmed" mb={4}>
+                      识别领域：<Text span fw={600} c="indigo">{plan.detected_domain}</Text>
+                      {plan.planner_used === 'fallback' ? '（关键词匹配，未配模型）' : `（${plan.planner_used} 规划）`}
+                    </Text>
+                    {plan.entities?.length > 0 && (
+                      <Text size="xs" mb={4}>实体：{plan.entities.slice(0, 8).join('、')}</Text>
+                    )}
+                    <Text size="xs" mb={4}>
+                      将监听 <Text span fw={700} c="indigo">{plan.selected_collections?.length || 0}</Text> 个源集合：
+                      {(plan.selected_collections || []).join('、') || '（无匹配，用通用基座）'}
+                    </Text>
+                    {plan.rationale && <Text size="10px" c="dimmed">{plan.rationale}</Text>}
+                  </Paper>
+                )}
+              </div>
             </Stack>
           </Stepper.Step>
 
