@@ -1,58 +1,86 @@
-# MajorRSS 📡 `v1.2.0`
+# MajorRSS 📡
 
-MajorRSS is an intelligent, automated intelligence-gathering and AI-denoising platform. It transforms raw, chaotic information streams (from RSS, web pages, to headless browser scraping) into a highly structured, high-value intelligence dashboard using Google's Gemini models.
+A **local, personal intelligence radar**. You set what you care about; MajorRSS
+scrapes the sources, de-noises and clusters what comes in, and surfaces only the
+genuine increments — *what happened, when* — instead of a bottomless feed. It
+runs entirely on your machine: your keys, your cookies, your data.
 
-## Features ✨
-- **Interactive Cookie Auth**: Authenticate seamlessly via a real browser UI; state (including LocalStorage) is saved and injected into headless scrapers to bypass tough anti-bot checks (e.g., Twitter/X).
-- **Multi-Tier Scraping Architecture**: From simple RSS parsing to advanced headless browser (Playwright) agentic scraping, bypassing complex anti-bot measures.
-- **AI-Powered Denoising**: Uses Google Gemini 3 Flash for high-frequency text cleaning, translation, and entity extraction.
-- **Automated Daily Briefings**: Uses Gemini 3.1 Pro to synthesize massive amounts of daily intelligence into a concise, readable global briefing.
-- **Supabase-Style Dashboard**: A beautiful, minimalist Streamlit frontend featuring an icon-centric persistent sidebar and real-time monitoring.
-- **Built-in Token Billing**: Locally tracks exact LLM token usage and estimated costs so you never face surprise bills.
-- **Multi-Language Support**: Fully localized in English, Simplified Chinese, Japanese, Korean, and Russian, with automatic browser language detection.
+Not an aggregator. The goal isn't more information — it's **less noise and less
+time spent**. Most content is organized and de-duplicated by cheap embeddings
+and never reaches a generation model.
 
-## Tech Stack 🛠️
-- **Frontend**: Streamlit
-- **Database**: PostgreSQL with SQLModel
-- **AI Engine**: Google Gemini API (`google-generativeai`)
-- **Scraping**: `feedparser`, `BeautifulSoup4`, `Playwright`
-- **Routing**: [RSSHub](https://github.com/DIYgod/RSSHub) (Auto-converts social media URLs to clean RSS feeds)
-- **Task Scheduling**: `schedule`
+## How it works
 
-## Acknowledgments 🤝
-- **Powered by RSSHub**: This project leverages the URL routing capabilities of the MIT-licensed [RSSHub](https://github.com/DIYgod/RSSHub) project to bypass anti-bot mechanisms on major social media platforms. All generated RSS endpoints default to the public instance, but users are encouraged to self-host.
+```
+Watch Target ──► source portfolio (planned once)
+   │
+   ▼  fetch runtime (conditional GET · browser pool · per-source backoff · account protection)
+Unified SourceItem ──► semantic layer (embed · relevance gate · dedup · cluster)
+   │
+   ▼  Story Threads:  LEAD ──► CORROBORATED ──► CONFIRMED  (+ resonance)
+   ▼
+Radar (reading feed) · quiet alerts on real increments · daily briefing
+```
 
-## Quick Start 🚀
+- **Radar** — a reading feed of events grouped by time (*today / this week*),
+  each with its sources traceable to origin. One click filters to just the
+  signal (confirmed / resonant / alerted).
+- **Story threads** — the same event across languages and outlets is merged into
+  one thread; lifecycle tracks LEAD → CORROBORATED → CONFIRMED, and cross-source
+  **resonance** ("everyone is talking about it") is the key importance signal.
+- **Account protection** — scraping with your own social logins is rationed
+  per-account with humanized pacing and a risk circuit-breaker, so a busy radar
+  doesn't get your account limited.
+- **BYOK / local models** — bring your own Gemini key, point at any
+  OpenAI-compatible endpoint (Ollama / LM Studio / vLLM), or run key-free: a
+  fallback embedder keeps relevance and dedup working with no model at all.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/majorRSS.git
-   cd majorRSS
-   ```
+## Tech stack
 
-2. **Install Dependencies**
-   We use `pip-tools` to manage dependencies. `requirements.txt` contains pinned versions.
-   ```bash
-   pip install -r requirements.txt
-   playwright install chromium
-   ```
-   *Note: If you add new dependencies to `requirements.in`, generate the lockfile via `pip-compile requirements.in`.*
+- **Desktop**: Tauri 2 (Rust shell) + React 19 + Mantine, talking to a local
+  FastAPI backend over HTTP (`127.0.0.1:8765`).
+- **Backend**: FastAPI + SQLModel (SQLite by default at `~/.majorss/`, optional
+  Postgres) + APScheduler. Playwright for JS/anti-bot pages; feedparser + lxml
+  for feeds and readability extraction.
+- **AI**: pluggable `LLMProvider` (Gemini / OpenAI-compatible / fallback
+  embedder). Semantic ops are engine-agnostic cosine, no vector DB required.
 
-3. **Configure Environment**
-   Create a `.env` file in the root directory (or configure via the UI later):
-   ```env
-   GEMINI_API_KEY=your_google_gemini_api_key_here
-   ```
+## Run it (dev)
 
-4. **Run the System**
-   ```bash
-   # Windows:
-   start_major_rss.bat
-   
-   # Linux / macOS:
-   python scheduler.py &
-   streamlit run ui/app.py
-   ```
+```bash
+# Backend (Python 3.10+)
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+python backend/main.py                 # serves 127.0.0.1:8765
 
-## Disclaimer ⚠️
-This project is for educational and personal intelligence-gathering purposes only. Please respect the `robots.txt` and Terms of Service of the websites you scrape. The author is not responsible for any misuse.
+# Desktop (in another shell)
+cd desktop && npm install
+npx tauri dev                          # or `npm run dev` to open the UI in a browser
+```
+
+A Gemini key (or any OpenAI-compatible endpoint) enables AI summaries, briefings
+and semantic relevance filtering. Without one, MajorRSS still fetches,
+de-duplicates, and clusters locally (pure-RSS mode). Configure keys and mode in
+**Settings** (no `.env` required).
+
+Package the desktop app with `cd desktop && npm run tauri:build` (bundles the
+Python backend as a sidecar via PyInstaller).
+
+## Tests
+
+```bash
+pytest -q
+```
+
+## Status
+
+Actively evolving from a v2.x RSS aggregator into the radar described above.
+Design intent and the current engineering state live in [`docs/`](docs/)
+(`vision_and_blueprint.md`, `engineering_baseline.md`).
+
+## Disclaimer
+
+For personal, educational intelligence-gathering. Respect the `robots.txt` and
+Terms of Service of the sites you scrape, and use your own authenticated
+accounts responsibly. The author is not responsible for misuse.
