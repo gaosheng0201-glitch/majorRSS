@@ -223,3 +223,62 @@ cd desktop
 npx tauri build
 # 产物在 desktop/src-tauri/target/release/bundle/
 ```
+
+---
+
+## macOS 分发与签名（2026-07-06）：没有 Apple 开发者账号能做什么
+
+> 简答：**没有 Apple 账号不影响你构建和自用，也不影响防篡改更新的核心安全**。只有"让别人的 Mac 打开时不弹警告"这一件事需要 $99/年的账号。
+
+### 现在就能做（免费，无需任何账号）
+
+1. **构建可用的 .app / .dmg**
+   ```bash
+   cd desktop && npm run tauri:build
+   # 产物：desktop/src-tauri/target/release/bundle/{macos/*.app, dmg/*.dmg}
+   ```
+   `bundle.targets` 已设为 `"all"`——在 macOS 上产出 .app + .dmg，在 Windows 上产出 nsis。图标 icon.icns 已就位。产物**未签名**，在你自己的机器上直接能跑。
+
+2. **分发未签名版给别人**（会遇到 Gatekeeper 警告，但能打开）
+   - 对方右键点 App → **打开**（而不是双击），首次会有"未识别开发者"确认，之后正常。
+   - 或对方执行 `xattr -cr /Applications/MajorRSS.app` 清除隔离属性。
+   - 官网下载页公示每个包的 SHA256，让人能核对没被篡改。
+
+3. **签名更新（防木马的核心安全，愿景 #9）——完全免费，与 Apple 无关**
+   Tauri updater 用它自己的 ed25519 密钥，跟 Apple 签名是两回事：
+   ```bash
+   # 生成密钥对（一次性）
+   npx tauri signer generate -w ~/.tauri/majorss.key
+   # 私钥 + 口令存进密码管理器，永不进仓库、永不上传
+   ```
+   然后在 `tauri.conf.json` 里：
+   ```jsonc
+   "plugins": { "updater": {
+     "pubkey": "<粘贴 signer generate 输出的公钥>",
+     "endpoints": ["https://你的域名/updates/{{target}}/{{arch}}/{{current_version}}"]
+   }},
+   "bundle": { "createUpdaterArtifacts": true }
+   ```
+   并安装插件：`npm i @tauri-apps/plugin-updater` + Cargo.toml 加 `tauri-plugin-updater`，在 lib.rs 注册。
+   CI 出包时用 `TAURI_SIGNING_PRIVATE_KEY` / `..._PASSWORD` 环境变量注入。
+   **这样即使更新服务器被攻破，客户端也会因验签失败拒绝安装被篡改的包**——不需要 Apple 账号。
+
+### 只有这一件事需要 $99/年 Apple 开发者账号
+
+**Developer ID 签名 + 公证（notarization）**——目的是让**别人的 Mac** 双击就能打开、没有任何 Gatekeeper 警告。拿到账号后（Tauri 内置支持，无需改代码，只加环境变量）：
+```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: 你的名字 (TEAMID)"
+export APPLE_ID="你的AppleID" APPLE_PASSWORD="app-专用密码" APPLE_TEAM_ID="TEAMID"
+npm run tauri:build   # Tauri 自动签名 + 提交公证
+```
+
+### 结论
+
+| 能力 | 需要 Apple 账号？ |
+|---|---|
+| 自己构建、自己用 | ❌ 不需要 |
+| 防篡改的签名更新（核心安全） | ❌ 不需要（Tauri 自有 ed25519） |
+| 发给别人（可接受一次右键"打开"） | ❌ 不需要 |
+| 别人双击零警告打开 | ✅ 需要（$99/年） |
+
+Windows 同理：NSIS 包免费可发（有 SmartScreen 警告），去掉警告需 Authenticode 证书（另付费，与 Apple 无关）。
