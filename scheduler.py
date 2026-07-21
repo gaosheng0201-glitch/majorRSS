@@ -162,6 +162,19 @@ def run_semantic_job():
     except Exception as e:
         logger.error(f"Alert evaluation failed: {e}", exc_info=e)
 
+def run_publish_job():
+    # R7 Form A ("desktop push"): build the compliance-gated public digest and
+    # write site/data/digest.json + generated RSS. Opt-in via PUBLISH_ENABLED so
+    # a private radar never publishes by accident.
+    if os.environ.get("PUBLISH_ENABLED", "0") not in ("1", "true", "True"):
+        return
+    try:
+        from services.publish_service import write_site_digest
+        res = write_site_digest()
+        logger.info(f"Published digest: {res}")
+    except Exception as e:
+        logger.error(f"Publish job failed: {e}", exc_info=e)
+
 def run_processing_job():
     if is_pure_rss_mode():
         logger.info("Skipping Intelligence Fusion job because APP_MODE=pure_rss.")
@@ -236,6 +249,12 @@ def start_scheduler(block: bool = True):
                           name="trend_scan")
         scheduler.add_job(run_subscription_job, 'interval', minutes=5, next_run_time=now,
                           name="subscription_check")
+        # R7 public digest (opt-in via PUBLISH_ENABLED). Low-frequency: official
+        # feeds are daily/weekly-grade. Delayed first run so it publishes after
+        # the startup scrape+cluster has something to publish.
+        scheduler.add_job(run_publish_job, 'interval', hours=6,
+                          next_run_time=now + timedelta(minutes=10),
+                          name="publish_digest")
         # Daily retention for user data (per settings) and telemetry tables
         # (PipelineRun/Event, PageSnapshot) which otherwise grow unbounded.
         # First run is delayed so it never competes with the startup scrape.

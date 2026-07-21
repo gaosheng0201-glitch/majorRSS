@@ -69,3 +69,7 @@ major_rss.db
 !tests/**
 # ...except its bytecode cache (the !tests/** above would otherwise re-include it)
 tests/__pycache__/
+
+# R7 generated publish artifacts (runtime output; sample stays tracked)
+site/data/digest.json
+site/data/feed.xml

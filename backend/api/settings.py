@@ -89,6 +89,18 @@ def get_app_logs(lines: int = 200):
         "lines": tail_log(lines),
     }
 
+@router.post("/publish")
+def trigger_publish(window_hours: int = 168):
+    """Manually build the public digest (R7 Form A) — compliance-gated
+    PublishedDigest JSON + generated RSS written to site/data/. Bypasses the
+    PUBLISH_ENABLED gate (explicit user action)."""
+    from services.publish_service import write_site_digest
+    try:
+        res = write_site_digest(window_hours)
+        return {"status": "ok", **res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/account-guards")
 def get_account_guards(session: Session = Depends(get_api_session)):
     """Per-authorized-account protection state (愿景 #10): budget/utilization,

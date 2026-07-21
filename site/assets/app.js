@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var digest = window.__OFB_DIGEST__;
+  function boot(digest) {
   var streamEl = document.getElementById("stream");
   if (!digest || !Array.isArray(digest.threads)) {
     streamEl.innerHTML = '<p class="empty">暂无内容。</p>';
@@ -173,4 +173,12 @@
 
   renderNav();
   renderStream();
+  } // end boot
+
+  // Prefer the real exported digest.json (Form A push writes it); fall back to
+  // the bundled sample so the prototype still renders during design work.
+  fetch("data/digest.json", { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error("no digest.json"); return r.json(); })
+    .then(function (d) { boot(d); })
+    .catch(function () { boot(window.__OFB_DIGEST__); });
 })();
