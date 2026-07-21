@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 本地情报雷达重构 (Local Intelligence Radar rebuild, R1–R7) — 分支 `feat/local-intelligence-radar`
+
+> 把 RSS 聚合器重构为"事件线索雷达"：内容经 embedding 组织/去重/聚类，只呈现真实增量，多数内容不碰生成模型。设计见 `docs/vision_and_blueprint.md`，工程现状见 `docs/engineering_baseline.md`，测试/续作入口见 `docs/handoff_checklist.md`。当前状态：R1–R7 Phase 1 完成并经对抗审查加固；R7 Phase 2/3（Supabase 登录、多发布者、共享索引）未做。
+
+#### Added
+- **信任闭环/可观测性**：调度器心跳进 `/health` + Settings 引擎卡；滚动落盘日志 (`services/log_service.py`)；错误分类 (`services/error_classifier.py`)；统一 `PipelineTracer`（tracker + subscription 双管线合一，含 `NO_NEW_ITEMS` 语义）。
+- **R1 获取运行时**：条件 GET (`services/http_client.py`，304/hash)；源健康度退避隔离 (`services/source_health.py`，per-endpoint `route_key`)；账号守卫三支柱 (`services/account_guard.py`：每账号预算 + AIMD + 熔断/半开探测 + 拟人化节奏 `services/humanized.py`)；持久化线程本地浏览器池 (`services/browser_pool.py`，重新授权失效)；readability 正文提取 (`services/content_extract.py`，无依赖 lxml)。
+- **R3 语义层**：Provider 抽象 (`services/llm_provider.py`：Gemini / OpenAI 兼容[本地模型] / 无 key 兜底 embedder)；引擎无关余弦相关性门/去重/聚类/共振 (`services/semantic.py`)；线索模型 `StoryThread`（LEAD→CORROBORATED→CONFIRMED + resonance）+ `ArticleEmbedding` + `RawArticle.thread_id/relevance_gated`。
+- **R4 Watch Target**：portfolio 规划器 (`services/portfolio_planner.py`，从 18 预设集合选源) + `POST /trackers/plan` + 建目标表单"选源可解释"预览；resolver 消费 `source_scope` 展开预设源路由 + 预算封顶。
+- **R5 增量与告警**：`services/alert_engine.py`（共振/高关注触发，带"为什么提醒你"原因，幂等）+ `RadarAlert` 表 + `Tracker.is_high_attention` + `/intelligence/radar-alerts*`；Tauri 系统通知投递（App.tsx，isTauri 守卫）。
+- **R6 UI 换心脏**：新增雷达页（阅读式信息流，按时间分组、内容优先）+ 追赶横幅 + "重点"过滤；落地页从 Dashboard 切到雷达页；Dashboard 省时间 KPI；Settings 账号保护面板；`radar_digest`（`/radar-stats` + `/catchup`）。
+- **R7 Phase 1 发布层**：`services/publish_service.py` 发布导出器（本地线索 → 合规门 → PublishedDigest v0.1 JSON，契约 `docs/publish_contract.md`）+ `PUBLISH_ENABLED` 定时任务 + `POST /settings/publish` + generated RSS；公开分发站 `site/` 接真实 `digest.json`；`docs/official_feed_automation.md` 官方源自动化三形态。
+- **测试**：`tests/` pytest 套件 24 项（语义/账号守卫/源健康/加密/发布合规门/管线流程），从空到覆盖对抗审查触及的核心逻辑。
+
+#### Changed
+- `llm/processor.py` 四个生成站点全迁到 provider 抽象（BYOK/本地模型对摘要生效，无 key 优雅降级）。
+- `README.md` 重写为本地雷达（原为 Streamlit v1.2 时代）。
+- `bundle.targets` `["nsis"]` → `"all"`（macOS 可构建 .app/.dmg）；补 `docs/packaging_guide.md` macOS 分发/签名指南（无 Apple 账号可构建+防篡改签名更新）。
+
+#### Fixed
+- 16 项对抗式多智能体审查发现全部修复（`docs/engineering_baseline.md` §2.9）：**关键** migration 0006 给已升级库补新列（否则 LLM 管线崩）；account_guard/source_health 并发 TOCTOU（进程锁 + 原子 `try_consume`）；browser_pool 重新授权后 cookie 陈旧；`db_cleanup` 无界 `.in_()` 超 SQLite 变量限；worker_subscription 早期异常 NameError；resonance 不衰减；共享健康键致一搜索失败退避全部 tracker；等。
+
+#### Security
+- macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
+- 前端 feed 链接 `javascript:` XSS → `safeHref` 只放行 http(s)。
+- R7 发布合规门：摘要非全文、PII 清洗、授权（登录态）来源内容硬排除、溯源三件套、AI 诚实标注。
+
+#### Removed
+- 三代旧 UI 墓地（Streamlit `ui/`、Flet `flet_main.py`/`ui/flet_views/`、`worker.py` shim、`*.bat`）+ streamlit/flet 依赖。
+
 ### Added
 - **Source Preset Seed Library**:
   - Added an audited seed library in `docs/source_presets.seed.json` with broad baseline sources, regional perspectives, AI, developer tools, healthcare, academic research, policy, cybersecurity, finance, and crypto/Web3 collections.
