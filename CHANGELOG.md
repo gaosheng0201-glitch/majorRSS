@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **R6 UI 换心脏**：新增雷达页（阅读式信息流，按时间分组、内容优先）+ 追赶横幅 + "重点"过滤；落地页从 Dashboard 切到雷达页；Dashboard 省时间 KPI；Settings 账号保护面板；`radar_digest`（`/radar-stats` + `/catchup`）。
 - **R7 Phase 1 发布层**：`services/publish_service.py` 发布导出器（本地线索 → 合规门 → PublishedDigest v0.1 JSON，契约 `docs/publish_contract.md`）+ `PUBLISH_ENABLED` 定时任务 + `POST /settings/publish` + generated RSS；公开分发站 `site/` 接真实 `digest.json`；`docs/official_feed_automation.md` 官方源自动化三形态。
 - **测试**：`tests/` pytest 套件 24 项（语义/账号守卫/源健康/加密/发布合规门/管线流程），从空到覆盖对抗审查触及的核心逻辑。
+- **公开分发站上线（onlyforbots.com）**：`site/` 拆为两类读者两页——介绍页 `/`（面向机器/开发者，含接入说明）+ 信息页 `/radar`（人类阅读的去噪线索流）+ `/llms.txt`（机器可读站点说明，只列现有 endpoint、规划中项归 planned）；渲染逻辑与视觉 token 隔离（`site/assets/`），只消费 `docs/publish_contract.md`（PublishedDigest v0.1）契约。部署到 Cloudflare Pages（Git 集成，push `main` 自动部署；apex/www 绑定 + HTTPS）。`docs/publish_contract.md`（契约 + 三阶段共享层演进）、`docs/official_feed_automation.md`（官方源自动化：无头实例、NAS Docker vs GitHub Actions、生成/分发端拆分）。
 
 #### Changed
 - `llm/processor.py` 四个生成站点全迁到 provider 抽象（BYOK/本地模型对摘要生效，无 key 优雅降级）。
@@ -28,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 - 16 项对抗式多智能体审查发现全部修复（`docs/engineering_baseline.md` §2.9）：**关键** migration 0006 给已升级库补新列（否则 LLM 管线崩）；account_guard/source_health 并发 TOCTOU（进程锁 + 原子 `try_consume`）；browser_pool 重新授权后 cookie 陈旧；`db_cleanup` 无界 `.in_()` 超 SQLite 变量限；worker_subscription 早期异常 NameError；resonance 不衰减；共享健康键致一搜索失败退避全部 tracker；等。
+- **作者验证阶段回归修复（打包应用实测暴露；症状都表现为"关键词目标出来全是 Google News、AI 功能像没生效"）**：
+  - **Gemini 生成从未成功**（`services/llm_provider.py`）：`GeminiProvider.generate` 内联 `genai.Client().models.generate_content(...)`，临时 Client 无强引用、在阻塞 HTTP send 期间被 GC，其 `__del__` 关闭底层 httpx → 每次 "Cannot send a request, as the client has been closed."，静默退回无 AI（`embed()` 因把 client 绑到局部变量而幸免，掩盖了问题）。改：模块级按 key 缓存 Client（持强引用防 GC + 复用连接池）+ generate 显式持有引用；默认模型 `gemini-3-flash-preview` → `gemini-3.6-flash`（经 `models.list()` 对配置 key 核实）。**影响全部 AI 生成**：规划器/摘要/日报/趋势。
+  - **保存的 API key 重启即失效**（`backend/main.py`）：`save_api_key` 只把 key 注入当前进程 `os.environ`，而 provider 从环境解析、启动从不预载 config.dat → 每次重开应用 key 静默失效、退回无生成兜底。改：lifespan 启动 `load_dotenv` + 从 config.dat 预载 `GEMINI_API_KEY`/`LLM_*` 到环境。
+  - **关键词目标从不挂精选源**（`backend/api/trackers.py`）：创建目标时未持久化 `source_scope`（"预览会监听哪些源"是纯预览）→ 目标只跑关键词 OSINT、从不拉厂商一手 RSS/changelog/论文，塌缩成 Google News 元搜索。改：`create_tracker` 建目标时自动跑 portfolio 规划器补 `source_scope`。
+  - **无 key 兜底规划器过弱**（`services/portfolio_planner.py`）：token 重叠对 grok/xai 等具名实体匹配不到 AI 集合、只落 general_baseline。改：加实体→领域词典（grok/xai/gpt/claude/bitcoin/cve…→对应精选集合），兑现"纯 RSS 模式无 key 也有价值"。
+  - **溯源显示聚合器而非真实媒体**（`desktop/src/pages/Dashboard.tsx`）：原始流 Google News 条目显示 `news.google.com` 而非真实发布方。改：聚合器条目从标题后缀 "- Publisher" 提取真实媒体展示（图标仍按 host）。
+  - **启动加载页抖动**（`desktop/src/App.tsx`）：健康轮询每 ~1.5s 往轨迹追加一条 + 失败时把多行运行时快照塞进详情，在垂直居中布局里导致整屏上下弹跳。改：状态框/轨迹框固定高度内部滚动；轮询只更新实时状态、轨迹只记状态转变、快照只进一次。
+  - **新建探测向导步进错位**（`desktop/src/pages/Discovery.tsx`）：`handleNextStep` 在第 0 步就校验第 1 步的信号 → "下一步"永远报错无法前进。改：按步门控（第 0 步校验主题、第 1 步校验信号）。
+  - **试运行/诊断误报超时**（`desktop/src/pages/Discovery.tsx`）：`/test-resolve-intent` 同步逐源联网抓取实测 ~22s，超过 axios 全局 15s 超时 → 假"测试失败"（后端其实成功）。改：该慢调用单独放宽超时（试运行 60s、诊断 180s）+ 有用的超时提示。已知更深缺口（后端并发化/异步，`docs/engineering_baseline.md` §4.2）留待处理。
 
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
