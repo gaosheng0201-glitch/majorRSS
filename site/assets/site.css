@@ -1,0 +1,266 @@
+/* 结构与布局层。视觉值一律引用 tokens.css 的变量。 */
+* { box-sizing: border-box; }
+
+html { font-size: var(--text-base); }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.shell {
+  width: min(var(--measure), 100% - 2.5rem);
+  margin: 0 auto;
+}
+
+/* ---------- 头部：极简，信息是主角 ---------- */
+.masthead {
+  padding: 2.6rem 0 1.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: var(--font-ui);
+}
+
+.brand {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.brand a { color: inherit; }
+
+.masthead-links {
+  display: flex;
+  gap: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--ink-secondary);
+}
+
+.masthead-links a { color: var(--ink-secondary); }
+
+.edition {
+  margin-top: 1.1rem;
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  color: var(--ink-secondary);
+}
+
+.edition time { color: var(--ink); }
+
+/* 省时间的证明：一行安静的文字，不是卡片网格 */
+.stats-line {
+  margin-top: 0.35rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+/* ---------- 话题过滤：文字 tab，非按钮墙 ---------- */
+.topic-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  padding: 1rem 0 0.2rem;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+
+.topic-nav button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0.15rem 0;
+  font: inherit;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.topic-nav button:hover { color: var(--ink); }
+
+.topic-nav button[aria-pressed="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- 线索流 ---------- */
+.stream { padding: 1.6rem 0 3rem; }
+
+.thread + .thread {
+  margin-top: var(--gap-thread);
+  padding-top: var(--gap-thread);
+  border-top: 1px solid var(--line);
+}
+
+.thread-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  margin-bottom: 0.55rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.badge.lead        { color: var(--lead); background: var(--lead-bg); }
+.badge.corroborated{ color: var(--corroborated); background: var(--corroborated-bg); }
+.badge.confirmed   { color: var(--accent-ink); background: var(--confirmed-bg); }
+.badge.disputed    { color: var(--disputed); background: var(--disputed-bg); }
+
+.resonant-mark { color: var(--resonant); font-weight: 600; }
+
+.thread h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.32rem;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.thread-summary { margin: 0; color: var(--ink); }
+
+.summary-note {
+  margin-top: 0.45rem;
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+}
+
+.quote {
+  margin: 0.8rem 0 0;
+  padding: 0.15rem 0 0.15rem 0.9rem;
+  border-left: 2px solid var(--line-strong);
+  color: var(--ink-secondary);
+  font-size: 0.95rem;
+}
+
+.quote cite { font-style: normal; font-family: var(--font-ui); font-size: 0.78rem; }
+
+/* 增量：发生了什么变化 */
+.increments {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+}
+
+.increments li {
+  position: relative;
+  padding-left: 1.05rem;
+  margin-top: 0.3rem;
+}
+
+.increments li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.increments li:first-child::before { background: var(--accent); }
+
+.increments time { color: var(--ink-faint); margin-right: 0.45rem; }
+
+/* 溯源：默认折叠，一手来源置顶 */
+.sources {
+  margin-top: 1rem;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+.sources summary {
+  cursor: pointer;
+  color: var(--ink-secondary);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sources summary::-webkit-details-marker { display: none; }
+
+.sources summary::before {
+  content: "▸";
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  transition: transform 0.15s ease;
+}
+
+.sources[open] summary::before { transform: rotate(90deg); }
+
+.sources ol {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sources li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.32rem 0;
+}
+
+.source-kind {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  min-width: 2.6em;
+}
+
+.source-kind.first-party { color: var(--accent-ink); font-weight: 600; }
+
+.sources li time { color: var(--ink-faint); font-size: 0.74rem; }
+
+/* ---------- 页脚：合规与来路 ---------- */
+footer {
+  border-top: 1px solid var(--line);
+  padding: 1.6rem 0 3rem;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+footer p { margin: 0.3rem 0; }
+
+.empty {
+  padding: 3rem 0;
+  color: var(--ink-faint);
+  font-family: var(--font-ui);
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  html { font-size: 16px; }
+  .masthead { padding-top: 1.8rem; }
+  .thread h2 { font-size: 1.2rem; }
+}

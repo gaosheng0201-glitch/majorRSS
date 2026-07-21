@@ -1,0 +1,66 @@
+/* ============================================================
+   设计 token 层 —— 换皮只动这一个文件（+ 布局微调走 site.css）。
+   渲染逻辑（app.js）与数据契约（docs/publish_contract.md）不感知这里的任何值。
+   默认视觉是刻意"安静"的占位设计：低对比、少边框、多留白，
+   遵循蓝图信息设计纪律——打扰（高对比、徽章色）必须证明自己值得。
+   ============================================================ */
+:root {
+  color-scheme: light dark;
+
+  /* --- 字体 --- */
+  --font-body: "Source Han Serif SC", "Noto Serif CJK SC", Georgia, "Times New Roman", serif;
+  --font-ui: -apple-system, "PingFang SC", "Noto Sans CJK SC", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+
+  --text-base: 17px;
+  --leading-body: 1.75;
+
+  /* --- 基础色（浅色） --- */
+  --bg: #faf9f6;
+  --bg-raised: #ffffff;
+  --ink: #1f2320;
+  --ink-secondary: #55605a;
+  --ink-faint: #8a948d;
+  --line: #e5e3dc;
+  --line-strong: #cfccc2;
+
+  /* --- 强调与状态（稀缺资源，只给值得的元素） --- */
+  --accent: #1f6e4a;            /* 品牌绿：链接、证实 */
+  --accent-ink: #14523a;
+  --lead: #9a6a12;              /* 线报琥珀：未证实 */
+  --lead-bg: rgba(196, 141, 34, 0.12);
+  --confirmed-bg: rgba(31, 110, 74, 0.10);
+  --corroborated: #46584e;
+  --corroborated-bg: rgba(70, 88, 78, 0.09);
+  --disputed: #a04434;          /* 有分歧：唯一的暖红，最稀缺 */
+  --disputed-bg: rgba(160, 68, 52, 0.09);
+  --resonant: #7a5e1a;
+
+  /* --- 结构 --- */
+  --measure: 42rem;             /* 正文栏宽：阅读优先 */
+  --radius: 6px;
+  --gap-thread: 3.2rem;         /* 线索之间的呼吸 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161816;
+    --bg-raised: #1d201d;
+    --ink: #e8e6df;
+    --ink-secondary: #a7b0a9;
+    --ink-faint: #6f7972;
+    --line: #2a2e2a;
+    --line-strong: #3a403a;
+
+    --accent: #5fae87;
+    --accent-ink: #7fc4a0;
+    --lead: #d4a24a;
+    --lead-bg: rgba(212, 162, 74, 0.13);
+    --confirmed-bg: rgba(95, 174, 135, 0.12);
+    --corroborated: #9fb0a6;
+    --corroborated-bg: rgba(159, 176, 166, 0.10);
+    --disputed: #d07a68;
+    --disputed-bg: rgba(208, 122, 104, 0.11);
+    --resonant: #cfa94e;
+  }
+}

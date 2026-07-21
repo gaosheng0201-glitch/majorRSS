@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OnlyFourBot · 雷达日报</title>
+  <meta name="description" content="去噪后的信息线索：每条结论可追溯到源头，快与真分开标注。" />
+  <link rel="stylesheet" href="assets/tokens.css" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell">
+      <div class="masthead-row">
+        <span class="brand"><a href="./">OnlyFourBot</a></span>
+        <nav class="masthead-links">
+          <a href="#" title="generated RSS（R7 接入）">RSS</a>
+          <a href="#" title="关于本站与 MajorRSS">关于</a>
+        </nav>
+      </div>
+      <p class="edition" id="edition"></p>
+      <p class="stats-line" id="stats"></p>
+      <nav class="topic-nav" id="topic-nav" aria-label="话题"></nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="stream" id="stream"></div>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <p>本站只发布转述摘要与溯源链接，永不转载原文全文；短引用均已署名并链接出处。AI 归纳内容均有标注，结论以来源为准。</p>
+      <p>内容由 MajorRSS 本地雷达生成，发布前经过隐私过滤；登录态获取的内容不会出现在本站。来源方如需下架请联系：takedown@majoflow.com</p>
+    </div>
+  </footer>
+
+  <script src="data/digest.sample.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
