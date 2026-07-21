@@ -3,39 +3,1022 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OnlyFourBot · 雷达日报</title>
-  <meta name="description" content="去噪后的信息线索：每条结论可追溯到源头，快与真分开标注。" />
-  <link rel="stylesheet" href="assets/tokens.css" />
-  <link rel="stylesheet" href="assets/site.css" />
+  <title>OnlyFourBot - Trusted source network for people and agents</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f2;
+      --ink: #151713;
+      --muted: #667064;
+      --line: #dfe3d9;
+      --panel: #ffffff;
+      --panel-soft: #eef3e8;
+      --accent: #1f7a4f;
+      --accent-dark: #145c3b;
+      --signal: #e4a11b;
+      --danger: #b84a3b;
+      --blue: #2b6cb0;
+      --radius: 18px;
+      --shadow: 0 24px 70px rgba(35, 47, 32, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(246, 247, 242, 0.94), rgba(236, 241, 231, 0.96)),
+        radial-gradient(circle at 78% 4%, rgba(31, 122, 79, 0.13), transparent 34%),
+        radial-gradient(circle at 12% 18%, rgba(228, 161, 27, 0.12), transparent 28%);
+      color: var(--ink);
+      font-family: "Outfit", "Inter", "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(18px);
+      background: rgba(246, 247, 242, 0.78);
+      border-bottom: 1px solid rgba(21, 23, 19, 0.08);
+    }
+
+    .topbar-inner {
+      width: min(1180px, calc(100vw - 40px));
+      height: 72px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background:
+        linear-gradient(135deg, rgba(31, 122, 79, 0.95), rgba(20, 92, 59, 1));
+      position: relative;
+      box-shadow: 0 12px 30px rgba(31, 122, 79, 0.26);
+      flex: 0 0 auto;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      background: #f6f7f2;
+    }
+
+    .brand-mark::before {
+      width: 10px;
+      height: 10px;
+      left: 8px;
+      top: 8px;
+    }
+
+    .brand-mark::after {
+      width: 8px;
+      height: 8px;
+      right: 8px;
+      bottom: 8px;
+    }
+
+    .brand-title {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.05;
+    }
+
+    .brand-title strong {
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .brand-title span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 14px;
+      color: #3f493f;
+    }
+
+    nav a {
+      white-space: nowrap;
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .button {
+      height: 40px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(21, 23, 19, 0.14);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 14px 34px rgba(31, 122, 79, 0.2);
+    }
+
+    .hero {
+      min-height: calc(100dvh - 72px);
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(460px, 1.08fr);
+      align-items: center;
+      gap: 46px;
+      padding: 44px 0 34px;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(31, 122, 79, 0.24);
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--accent-dark);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 22px;
+    }
+
+    .kicker-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(48px, 6.2vw, 84px);
+      line-height: 0.96;
+      letter-spacing: 0;
+      max-width: 720px;
+    }
+
+    .hero-copy {
+      margin: 22px 0 0;
+      color: #4d574c;
+      font-size: 20px;
+      line-height: 1.58;
+      max-width: 630px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .hero-note {
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .mini-line {
+      width: 42px;
+      height: 1px;
+      background: rgba(21, 23, 19, 0.22);
+    }
+
+    .product-stage {
+      position: relative;
+    }
+
+    .network-panel {
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(21, 23, 19, 0.09);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px 12px;
+      border-bottom: 1px solid rgba(21, 23, 19, 0.08);
+      margin-bottom: 14px;
+    }
+
+    .panel-head strong {
+      font-size: 14px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--accent-dark);
+      background: rgba(31, 122, 79, 0.1);
+      padding: 7px 10px;
+      border-radius: 999px;
+    }
+
+    .status-pill i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: block;
+    }
+
+    .split-ui {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 14px;
+      min-height: 438px;
+    }
+
+    .source-column,
+    .agent-column {
+      border-radius: 20px;
+      background: #fbfcf8;
+      border: 1px solid rgba(21, 23, 19, 0.08);
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .column-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .column-title span {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .source-card {
+      padding: 13px;
+      border-radius: 15px;
+      background: white;
+      border: 1px solid rgba(21, 23, 19, 0.08);
+      margin-bottom: 10px;
+    }
+
+    .source-card strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .source-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag {
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #435040;
+      background: #eef2e8;
+    }
+
+    .tag.green {
+      color: var(--accent-dark);
+      background: rgba(31, 122, 79, 0.11);
+    }
+
+    .tag.gold {
+      color: #7a560b;
+      background: rgba(228, 161, 27, 0.16);
+    }
+
+    .digest-card {
+      border-radius: 18px;
+      background: #172016;
+      color: white;
+      padding: 16px;
+      min-height: 172px;
+      margin-bottom: 12px;
+    }
+
+    .digest-card small {
+      color: rgba(255, 255, 255, 0.66);
+      font-weight: 800;
+    }
+
+    .digest-card h3 {
+      margin: 12px 0 8px;
+      font-size: 22px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .digest-card p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .agent-box {
+      border-radius: 16px;
+      background: #0f1510;
+      color: #dce8d9;
+      padding: 14px;
+      font-family: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.65;
+      overflow: hidden;
+    }
+
+    .agent-box .comment {
+      color: #84a682;
+    }
+
+    .agent-box .key {
+      color: #f0c56b;
+    }
+
+    .agent-box .value {
+      color: #9ed6ff;
+    }
+
+    .floating-metric {
+      position: absolute;
+      right: -12px;
+      bottom: -16px;
+      width: 220px;
+      border-radius: 20px;
+      background: #ffffff;
+      border: 1px solid rgba(21, 23, 19, 0.1);
+      box-shadow: 0 22px 60px rgba(35, 47, 32, 0.16);
+      padding: 16px;
+    }
+
+    .floating-metric strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+      color: var(--accent-dark);
+      margin-bottom: 8px;
+    }
+
+    .floating-metric span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      display: block;
+    }
+
+    section {
+      padding: 76px 0;
+      border-top: 1px solid rgba(21, 23, 19, 0.08);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 0.92fr 1.08fr;
+      gap: 32px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 54px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.55;
+      max-width: 640px;
+    }
+
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .tile {
+      min-height: 220px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid rgba(21, 23, 19, 0.09);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .tile.wide {
+      grid-column: span 2;
+      background:
+        linear-gradient(135deg, rgba(31, 122, 79, 0.1), rgba(255, 255, 255, 0.88));
+    }
+
+    .tile.dark {
+      background: #172016;
+      color: white;
+    }
+
+    .tile.dark p {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .tile h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.52;
+      font-size: 15px;
+    }
+
+    .icon-chip {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: rgba(31, 122, 79, 0.1);
+      display: grid;
+      place-items: center;
+      color: var(--accent-dark);
+      font-weight: 900;
+      margin-bottom: 28px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .flow-step {
+      min-height: 170px;
+      border-radius: 16px;
+      background: var(--panel);
+      border: 1px solid rgba(21, 23, 19, 0.08);
+      padding: 15px;
+    }
+
+    .flow-step b {
+      display: block;
+      font-size: 13px;
+      color: var(--accent-dark);
+      margin-bottom: 38px;
+    }
+
+    .flow-step strong {
+      display: block;
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+
+    .flow-step span {
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .audience-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .audience-panel {
+      min-height: 360px;
+      border-radius: 24px;
+      border: 1px solid rgba(21, 23, 19, 0.09);
+      background: var(--panel);
+      padding: 22px;
+    }
+
+    .audience-panel.agent {
+      background: #121812;
+      color: white;
+    }
+
+    .audience-panel.agent p,
+    .audience-panel.agent li {
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .audience-panel h3 {
+      margin: 0 0 12px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    .audience-panel p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .audience-panel ul {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .audience-panel li {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(31, 122, 79, 0.08);
+      color: #394639;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .audience-panel.agent li {
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .manifesto {
+      border-radius: 28px;
+      background: #172016;
+      color: white;
+      padding: clamp(28px, 5vw, 58px);
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      gap: 34px;
+      align-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .manifesto h2 {
+      margin: 0;
+      font-size: clamp(36px, 5vw, 68px);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .manifesto p {
+      color: rgba(255, 255, 255, 0.72);
+      line-height: 1.6;
+      font-size: 18px;
+      margin: 0 0 22px;
+    }
+
+    .mini-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .mini-stat {
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 14px;
+    }
+
+    .mini-stat strong {
+      display: block;
+      font-size: 24px;
+      margin-bottom: 5px;
+    }
+
+    .mini-stat span {
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 13px;
+    }
+
+    footer {
+      padding: 34px 0 50px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border-top: 1px solid rgba(21, 23, 19, 0.1);
+      padding-top: 20px;
+    }
+
+    @media (max-width: 980px) {
+      nav {
+        display: none;
+      }
+
+      .hero,
+      .section-head,
+      .manifesto {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        padding-top: 34px;
+      }
+
+      .product-stage {
+        min-width: 0;
+      }
+
+      .split-ui,
+      .audience-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tiles,
+      .flow {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .tile.wide {
+        grid-column: span 2;
+      }
+
+      .floating-metric {
+        position: static;
+        width: auto;
+        margin-top: 14px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .shell,
+      .topbar-inner {
+        width: min(100% - 24px, 1180px);
+      }
+
+      .topbar-inner {
+        height: 64px;
+      }
+
+      .brand-title span,
+      .button.secondary {
+        display: none;
+      }
+
+      h1 {
+        font-size: 46px;
+      }
+
+      .hero-copy {
+        font-size: 17px;
+      }
+
+      .network-panel {
+        padding: 12px;
+        border-radius: 22px;
+      }
+
+      .tiles,
+      .flow,
+      .mini-stat-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tile.wide {
+        grid-column: span 1;
+      }
+
+      section {
+        padding: 54px 0;
+      }
+
+      .footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
 </head>
 <body>
-  <header class="masthead">
-    <div class="shell">
-      <div class="masthead-row">
-        <span class="brand"><a href="./">OnlyFourBot</a></span>
-        <nav class="masthead-links">
-          <a href="#" title="generated RSS（R7 接入）">RSS</a>
-          <a href="#" title="关于本站与 MajorRSS">关于</a>
-        </nav>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-title">
+          <strong>OnlyFourBot</strong>
+          <span>Trusted source network</span>
+        </span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#network">Source Network</a>
+        <a href="#digest">Digest</a>
+        <a href="#agents">Agents</a>
+        <a href="#governance">Trust</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="button secondary" href="#agents">MCP/API</a>
+        <a class="button primary" href="/radar">查看雷达日报</a>
       </div>
-      <p class="edition" id="edition"></p>
-      <p class="stats-line" id="stats"></p>
-      <nav class="topic-nav" id="topic-nav" aria-label="话题"></nav>
     </div>
   </header>
 
-  <main class="shell">
-    <div class="stream" id="stream"></div>
+  <main>
+    <div class="shell">
+      <section class="hero" aria-label="OnlyFourBot introduction">
+        <div>
+          <div class="kicker"><span class="kicker-dot"></span> For people, agents, and reusable AI work</div>
+          <h1>可信关注源网络，不是又一个新闻摘要站。</h1>
+          <p class="hero-copy">
+            OnlyFourBot lets the community publish verified source collections, official digests, and machine-readable updates that can be reused by humans, MajorRSS, and agents.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="/radar">查看雷达日报</a>
+            <a class="button" href="#agents">Use with Agent</a>
+          </div>
+          <div class="hero-note">
+            <span class="mini-line"></span>
+            <span>Sources are shared. Private prompts and API keys stay with the user.</span>
+          </div>
+        </div>
+
+        <div class="product-stage" aria-label="Product preview">
+          <div class="network-panel">
+            <div class="panel-head">
+              <strong>AI Infrastructure Radar</strong>
+              <span class="status-pill"><i></i> 96 Trust</span>
+            </div>
+            <div class="split-ui">
+              <div class="source-column">
+                <div class="column-title">
+                  <strong>Shared sources</strong>
+                  <span>human view</span>
+                </div>
+                <article class="source-card">
+                  <strong>OpenAI Blog</strong>
+                  <div class="source-meta">
+                    <span class="tag green">official</span>
+                    <span class="tag">low noise</span>
+                    <span class="tag gold">1.8k subs</span>
+                  </div>
+                </article>
+                <article class="source-card">
+                  <strong>Hugging Face Blog</strong>
+                  <div class="source-meta">
+                    <span class="tag green">healthy</span>
+                    <span class="tag">models</span>
+                    <span class="tag">infra</span>
+                  </div>
+                </article>
+                <article class="source-card">
+                  <strong>GitHub Changelog</strong>
+                  <div class="source-meta">
+                    <span class="tag green">verified</span>
+                    <span class="tag">developer tools</span>
+                  </div>
+                </article>
+                <article class="digest-card">
+                  <small>Official digest</small>
+                  <h3>Five verified updates, one disputed claim, zero private content.</h3>
+                  <p>Readable summary for lightweight users with source links, confidence labels, and rights boundaries.</p>
+                </article>
+              </div>
+              <div class="agent-column">
+                <div class="column-title">
+                  <strong>Agent endpoint</strong>
+                  <span>machine view</span>
+                </div>
+                <div class="agent-box" aria-label="JSON preview">
+                  <span class="comment">// MCP resource</span><br />
+                  onlyfourbot://collections/ai_infra<br /><br />
+                  {<br />
+                  &nbsp;&nbsp;<span class="key">"cursor"</span>: <span class="value">"cur_8x41"</span>,<br />
+                  &nbsp;&nbsp;<span class="key">"confidence"</span>: <span class="value">"verified"</span>,<br />
+                  &nbsp;&nbsp;<span class="key">"rights"</span>: <span class="value">"public_summary"</span>,<br />
+                  &nbsp;&nbsp;<span class="key">"updates"</span>: <span class="value">5</span>,<br />
+                  &nbsp;&nbsp;<span class="key">"rate_limit"</span>: <span class="value">"read_only"</span><br />
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="floating-metric">
+            <strong>128</strong>
+            <span>personal digests and agent workflows reused this collection this week.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section id="network">
+      <div class="shell">
+        <div class="section-head">
+          <h2>共享的是可信源，不是每个人的私有判断。</h2>
+          <p>
+            OnlyFourBot keeps the public layer clean: verified sources, collections, health scores, rights policies, and official digest. Users and agents build their own analysis on top.
+          </p>
+        </div>
+        <div class="tiles">
+          <article class="tile wide">
+            <div>
+              <div class="icon-chip">S</div>
+              <h3>SourcePreset</h3>
+              <p>Stable source identity with canonical URL, trust score, health score, noise level, rights boundary, and reuse metrics.</p>
+            </div>
+          </article>
+          <article class="tile">
+            <div>
+              <div class="icon-chip">C</div>
+              <h3>Collections</h3>
+              <p>Community-created source bundles that humans can follow and agents can subscribe to by stable ID.</p>
+            </div>
+          </article>
+          <article class="tile dark">
+            <div>
+              <div class="icon-chip">D</div>
+              <h3>Official digest</h3>
+              <p>Low-frequency public summaries for users who just want the signal without running their own agent.</p>
+            </div>
+          </article>
+          <article class="tile">
+            <div>
+              <div class="icon-chip">R</div>
+              <h3>Rights policy</h3>
+              <p>Every source declares whether it can be summarized, quoted, redistributed, cached, or used only as a link.</p>
+            </div>
+          </article>
+          <article class="tile wide">
+            <div>
+              <div class="icon-chip">A</div>
+              <h3>Agent-ready by default</h3>
+              <p>Cursor, ETag, since, MCP resources, REST API, signed requests, and scope-limited access are part of the product contract.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="digest">
+      <div class="shell">
+        <div class="section-head">
+          <h2>一次创建，持续复用。</h2>
+          <p>
+            A good source list, digest, diff, or analysis should not disappear after one token spend. It becomes a reusable asset that can power readers, workflows, and future agents.
+          </p>
+        </div>
+        <div class="flow">
+          <div class="flow-step">
+            <b>01</b>
+            <strong>Create</strong>
+            <span>MajorRSS users create private sources, collections, and digest outputs with their own API keys.</span>
+          </div>
+          <div class="flow-step">
+            <b>02</b>
+            <strong>Sign</strong>
+            <span>The client signs public submissions so the platform can verify that sources came from the app.</span>
+          </div>
+          <div class="flow-step">
+            <b>03</b>
+            <strong>Review</strong>
+            <span>Rules, AI risk review, health checks, and community feedback protect the shared network.</span>
+          </div>
+          <div class="flow-step">
+            <b>04</b>
+            <strong>Publish</strong>
+            <span>Trusted sources and digests become discoverable with facts, confidence labels, and rights policies.</span>
+          </div>
+          <div class="flow-step">
+            <b>05</b>
+            <strong>Compound</strong>
+            <span>Humans read the official digest. Agents reuse the source graph to create their own outputs.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="agents">
+      <div class="shell">
+        <div class="section-head">
+          <h2>一套底层对象，两种消费界面。</h2>
+          <p>
+            Humans need context, trust, and a clean daily view. Agents need stable IDs, schemas, scopes, and predictable update cursors.
+          </p>
+        </div>
+        <div class="audience-grid">
+          <article class="audience-panel">
+            <h3>For humans</h3>
+            <p>Explore collections, read official digest, inspect trust labels, subscribe with one click, and report noisy sources.</p>
+            <ul>
+              <li>Source pages explain health, noise, rights, creator trust, and recent updates.</li>
+              <li>Digest pages show observed, verified, disputed, and low-confidence claims.</li>
+              <li>Creator pages make contribution quality visible without turning the site into a content farm.</li>
+            </ul>
+          </article>
+          <article class="audience-panel agent">
+            <h3>For agents</h3>
+            <p>MCP, REST, CLI, and webhook surfaces expose the same network as structured data with rate limits and scopes.</p>
+            <ul>
+              <li>onlyfourbot://collections/ai_infra_radar</li>
+              <li>GET /v1/collections/{id}/updates?cursor=cur_8x41</li>
+              <li>Scopes: read:sources, read:digests, subscribe:collections</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="governance">
+      <div class="shell">
+        <div class="manifesto">
+          <div>
+            <h2>公共层可信，私有层自由。</h2>
+          </div>
+          <div>
+            <p>
+              Users can privately follow any source. Public sharing is signed, reviewed, scored, and continuously monitored. BYOK keeps personal model cost with the user, while official digest stays limited and cache-first.
+            </p>
+            <div class="mini-stat-grid">
+              <div class="mini-stat">
+                <strong>BYOK</strong>
+                <span>Private summaries use user keys.</span>
+              </div>
+              <div class="mini-stat">
+                <strong>Read-only</strong>
+                <span>Agents start with safe scopes.</span>
+              </div>
+              <div class="mini-stat">
+                <strong>Cached</strong>
+                <span>Public facts reuse fingerprints.</span>
+              </div>
+              <div class="mini-stat">
+                <strong>Rights</strong>
+                <span>Paid reports are links, not redistributed files.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
-    <div class="shell">
-      <p>本站只发布转述摘要与溯源链接，永不转载原文全文；短引用均已署名并链接出处。AI 归纳内容均有标注，结论以来源为准。</p>
-      <p>内容由 MajorRSS 本地雷达生成，发布前经过隐私过滤；登录态获取的内容不会出现在本站。来源方如需下架请联系：takedown@majoflow.com</p>
+    <div class="shell footer-inner">
+      <div>OnlyFourBot concept page for the decoupled web platform.</div>
+      <div>Trusted sources for people and agents.</div>
     </div>
   </footer>
-
-  <script src="data/digest.sample.js"></script>
-  <script src="assets/app.js"></script>
 </body>
 </html>

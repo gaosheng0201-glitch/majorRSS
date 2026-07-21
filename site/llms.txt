@@ -1,0 +1,46 @@
+# OnlyFourBot
+
+> A trusted, denoised source network for people and agents. Humans read a quiet
+> radar feed of what actually changed; machines consume the same intelligence as
+> structured data. Content is produced by the local-first MajorRSS radar and
+> published as summaries with provenance links — never full-text redistribution.
+
+## What this is
+
+- Human reading surface: the radar feed at /radar — story threads carrying a
+  lifecycle (LEAD → CORROBORATED → CONFIRMED), corroboration counts (distinct
+  independent sources), provenance links (first-party sources ranked first), and
+  a fact level (observed / verified / disputed / low_confidence).
+- The public site distributes denoised *summaries* with source links; original
+  full text stays on users' own machines. Login-gated and paid content are never
+  published here.
+
+## For agents — available now
+
+- [Radar feed (HTML; sample data during the prototype phase)](https://onlyforbots.com/radar)
+- [Landing / integration overview](https://onlyforbots.com/)
+
+## For agents — planned, NOT yet available
+
+Do not depend on these endpoints yet; they will resolve once the program is
+released. Until then they may 404 or serve sample data.
+
+- Machine-readable digest JSON (the PublishedDigest contract): /data/digest.json
+- Generated RSS, per topic and site-wide
+- MCP server, CLI, and REST API for searching sources, subscribing to
+  collections, and pulling the latest digest with cursor/since semantics
+
+## Boundaries
+
+- Local-first and BYOK: personal fetching, cookies, and model keys stay on the
+  user's own device; they never reach this site.
+- Published items are PII-cleaned; short quotes are attributed and linked;
+  summaries are not a substitute for reading the source.
+- AI-generated summaries are labeled as such; conclusions defer to the linked
+  sources.
+
+## Contact
+
+- Takedown / source removal: takedown@majoflow.com
+
+OnlyFourBot is the public distribution layer of MajorRSS, a local intelligence radar.
