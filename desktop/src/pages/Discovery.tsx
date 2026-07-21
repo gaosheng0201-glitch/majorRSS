@@ -349,13 +349,20 @@ export default function Discovery() {
   };
 
   const handleNextStep = () => {
+    // 门控按步校验：第 0 步只管"意图"，信号是第 1 步才填的，别在第 0 步就拦。
     if (activeStep === 0) {
-      if (!name) {
-        alert("Please enter a topic name");
+      if (!name.trim()) {
+        alert("请先填写探测主题");
         return;
       }
-      if (!keywords && !accounts && !websites) {
-        alert("Please enter at least one signal keyword, account, or website link");
+      if (!section.trim()) {
+        alert("请先填写雷达大屏板块");
+        return;
+      }
+    }
+    if (activeStep === 1) {
+      if (!keywords.trim() && !accounts.trim() && !websites.trim()) {
+        alert("请至少输入一个信号：关键词、账号或网站链接");
         return;
       }
     }

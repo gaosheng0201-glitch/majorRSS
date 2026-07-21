@@ -227,6 +227,7 @@ function MainAppShell() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
     let attempts = 0;
+    let slowStartLogged = false;
 
     setStartupStartedAt(startedAt);
     setHealthAttempt(0);
@@ -243,7 +244,9 @@ function MainAppShell() {
       attempts += 1;
       const attempt = attempts;
       setHealthAttempt(attempt);
-      pushStartupEvent({
+      // 每次轮询只更新顶部实时状态，不再往"启动跟踪"里追加——否则列表每
+      // ~1.5s 重排一次，整屏抖动。轨迹只记录真正的状态转变（见下）。
+      setStartupStatus({
         stage: 'checking',
         title: startupText('Waiting for backend HTTP service', '正在等待后台 HTTP 服务'),
         detail: startupText(
@@ -280,14 +283,28 @@ function MainAppShell() {
           timestamp: Date.now(),
         });
       } catch (err) {
-        const detail = `${describeHealthError(err)}${await getRuntimeSnapshotDetail()}`;
         console.warn('[Backend Health Check] Failed to connect:', err);
-        pushStartupEvent({
-          stage: Date.now() - startedAt > STARTUP_ERROR_AFTER_MS ? 'warning' : 'checking',
+        const crossedError = Date.now() - startedAt > STARTUP_ERROR_AFTER_MS;
+        // 常规"侧车还在起来"的失败：只更新顶部实时状态，短文案、不带那一大坨
+        // 运行时快照（快照会把行高撑爆、导致面板跳动）。
+        setStartupStatus({
+          stage: crossedError ? 'warning' : 'checking',
           title: startupText('Backend health check is still waiting', '后台健康检查仍在等待'),
-          detail,
+          detail: describeHealthError(err),
           timestamp: Date.now(),
         });
+        // 只有当启动真的偏慢（越过错误阈值）时，才把带快照的诊断往轨迹里追加
+        // 一次——进的是固定高度可滚动的轨迹区，不会撑动整屏。
+        if (crossedError && !slowStartLogged) {
+          slowStartLogged = true;
+          const snapshot = await getRuntimeSnapshotDetail();
+          pushStartupEvent({
+            stage: 'warning',
+            title: startupText('Backend is slow to start', '后台启动较慢'),
+            detail: `${describeHealthError(err)}${snapshot}`,
+            timestamp: Date.now(),
+          });
+        }
       }
 
       if (active) {
@@ -403,34 +420,36 @@ function MainAppShell() {
               </Group>
             </Stack>
 
-            <Paper withBorder radius="md" p="md" style={{ width: '100%', textAlign: 'left' }}>
-              <Stack gap={8}>
-                <Text size="sm" fw={700}>{startupStatus.title}</Text>
-                <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{startupStatus.detail}</Text>
-                <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
-                  {BACKEND_HEALTH_URL}
-                </Text>
-              </Stack>
+            {/* 固定高度 + 内部滚动：内容再变也不会撑动/收缩这个框，整屏不再弹跳。 */}
+            <Paper withBorder radius="md" p="md" style={{ width: '100%', textAlign: 'left', height: 116, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Text size="sm" fw={700} style={{ flex: '0 0 auto' }}>{startupStatus.title}</Text>
+              <Text size="sm" c="dimmed" style={{ flex: '1 1 auto', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 6 }}>{startupStatus.detail}</Text>
+              <Text size="xs" c="dimmed" style={{ flex: '0 0 auto', fontFamily: 'monospace', marginTop: 6 }}>
+                {BACKEND_HEALTH_URL}
+              </Text>
             </Paper>
 
             {startupEvents.length > 0 && (
               <Paper withBorder radius="md" p="md" style={{ width: '100%', textAlign: 'left' }}>
-                <Stack gap={8}>
-                  <Text size="xs" fw={700} c="dimmed">
-                    {startupText('Startup trace', '启动跟踪')}
-                  </Text>
-                  {startupEvents.slice(-6).map((event, index) => (
-                    <Group key={`${event.timestamp}-${index}`} align="flex-start" gap="xs" wrap="nowrap">
-                      <Badge size="xs" color={event.stage === 'error' ? 'red' : event.stage === 'warning' ? 'yellow' : event.stage === 'success' ? 'teal' : 'indigo'} variant="dot">
-                        {event.stage}
-                      </Badge>
-                      <Stack gap={2} style={{ minWidth: 0 }}>
-                        <Text size="xs" fw={600}>{event.title}</Text>
-                        <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{event.detail}</Text>
-                      </Stack>
-                    </Group>
-                  ))}
-                </Stack>
+                <Text size="xs" fw={700} c="dimmed" mb={8}>
+                  {startupText('Startup trace', '启动跟踪')}
+                </Text>
+                {/* 固定高度可滚动的轨迹区：追加事件时在内部滚动，不改变外层高度。 */}
+                <div style={{ height: 168, overflowY: 'auto' }}>
+                  <Stack gap={8}>
+                    {startupEvents.slice(-6).map((event, index) => (
+                      <Group key={`${event.timestamp}-${index}`} align="flex-start" gap="xs" wrap="nowrap">
+                        <Badge size="xs" color={event.stage === 'error' ? 'red' : event.stage === 'warning' ? 'yellow' : event.stage === 'success' ? 'teal' : 'indigo'} variant="dot">
+                          {event.stage}
+                        </Badge>
+                        <Stack gap={2} style={{ minWidth: 0 }}>
+                          <Text size="xs" fw={600}>{event.title}</Text>
+                          <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 52, overflow: 'auto' }}>{event.detail}</Text>
+                        </Stack>
+                      </Group>
+                    ))}
+                  </Stack>
+                </div>
               </Paper>
             )}
 
