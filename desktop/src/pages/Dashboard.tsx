@@ -591,6 +591,10 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
   } catch (e) {}
   // 显示真实发布方（聚合器条目从标题提取），图标仍按 host。
   const sourceLabel = displaySource(article.url, article.title) || domain;
+  // 开发者模式：显示真实获取渠道（清洗前的原始来源），便于发现内容是否经聚合器
+  // 二次转手——避免"美化后"的显示掩盖问题（作者要求）。
+  const devMode = localStorage.getItem('developer_mode') === 'true';
+  const rawChannel = domain && sourceLabel !== domain.replace(/^www\./, '');
 
   const displayTime = article.published_at || article.created_at;
 
@@ -646,6 +650,12 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
           {article.title}
           <span style={{ fontSize: '11px', color: 'var(--accent-link-color)', marginLeft: 4 }}>↗</span>
         </Anchor>
+
+        {devMode && (
+          <Text size="10px" c="dimmed" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            渠道 {domain || '—'}{rawChannel ? `（显示为 ${sourceLabel}）` : ''} · {article.url}
+          </Text>
+        )}
 
         {article.content && (
           <Stack gap="xs">

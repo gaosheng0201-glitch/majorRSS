@@ -70,7 +70,7 @@ type BackendRuntimeSnapshot = {
 
 const BACKEND_HEALTH_URL = 'http://127.0.0.1:8765/api/settings/health';
 const STARTUP_ERROR_AFTER_MS = 45000;
-const HEALTH_RETRY_MS = 1500;
+const HEALTH_RETRY_MS = 700;
 
 function MainAppShell() {
   const { lang, changeLanguage, t } = useLanguage();
