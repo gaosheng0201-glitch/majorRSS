@@ -50,6 +50,45 @@ def _tokens(text: str) -> set:
     return {t.lower() for t in _TOKEN_RE.findall(text or "")}
 
 
+# High-signal token → preset collection ids. Bridges the gap where a target names
+# a specific entity (grok, xai, bitcoin, cve...) that isn't literally present in a
+# collection's title/keywords, so the no-model fallback still routes to the right
+# curated first-party sources instead of collapsing to a keyword Google search
+# (愿景: 纯 RSS 模式无 key 也要有价值). Ids not present at runtime are ignored.
+_ENTITY_LEXICON = {
+    # frontier AI / models
+    "ai": ["frontier_model_labs", "ai_infra_radar"],
+    "llm": ["frontier_model_labs", "ai_papers"],
+    "agi": ["frontier_model_labs"], "model": ["frontier_model_labs"],
+    "openai": ["frontier_model_labs", "ai_infra_radar"], "gpt": ["frontier_model_labs"],
+    "anthropic": ["frontier_model_labs"], "claude": ["frontier_model_labs"],
+    "gemini": ["frontier_model_labs"], "deepmind": ["frontier_model_labs"],
+    "grok": ["frontier_model_labs"], "xai": ["frontier_model_labs"],
+    "grokai": ["frontier_model_labs"], "spacexai": ["frontier_model_labs"],
+    "llama": ["frontier_model_labs"], "mistral": ["frontier_model_labs"],
+    "huggingface": ["ai_infra_radar"], "inference": ["ai_infra_radar"],
+    "gpu": ["ai_infra_radar"], "nvidia": ["ai_infra_radar"],
+    "paper": ["ai_papers"], "arxiv": ["ai_papers"], "research": ["academic_research"],
+    "api": ["developer_tools_changelog"], "changelog": ["developer_tools_changelog"],
+    "sdk": ["developer_tools_changelog"], "developer": ["developer_tools_changelog"],
+    # crypto
+    "crypto": ["crypto_web3_watch", "crypto_people_radar"], "bitcoin": ["crypto_web3_watch"],
+    "btc": ["crypto_web3_watch"], "eth": ["crypto_web3_watch"], "ethereum": ["crypto_web3_watch"],
+    "web3": ["crypto_web3_watch"], "defi": ["crypto_web3_watch"], "solana": ["crypto_web3_watch"],
+    # security
+    "security": ["cybersecurity_watch"], "cve": ["cybersecurity_watch"],
+    "vulnerability": ["cybersecurity_watch"], "exploit": ["cybersecurity_watch"],
+    "breach": ["cybersecurity_watch"], "malware": ["cybersecurity_watch"],
+    # finance / policy / health
+    "market": ["market_and_economy_baseline"], "economy": ["market_and_economy_baseline"],
+    "stock": ["market_and_economy_baseline"], "fed": ["market_and_economy_baseline"],
+    "policy": ["policy_international_orgs", "regulatory_radar"],
+    "regulation": ["regulatory_radar"], "regulatory": ["regulatory_radar"],
+    "health": ["healthcare_medicine"], "medical": ["healthcare_medicine"],
+    "disease": ["healthcare_medicine"], "drug": ["healthcare_medicine"],
+}
+
+
 def _load_collections() -> List[dict]:
     """All preset collections as dicts (id, title, description, keywords)."""
     from db.database import get_session
@@ -77,10 +116,20 @@ def _load_collections() -> List[dict]:
 def _fallback_plan(name: str, intent_text: str, collections: List[dict], max_collections: int = 4) -> PortfolioPlan:
     """Deterministic: score each collection by token overlap with the target."""
     target_tokens = _tokens(f"{name} {intent_text}")
+    valid_ids = {c["id"] for c in collections}
+
+    # 1) Entity lexicon: map named entities/topics to their curated collections.
+    lexicon_hits: dict = {}
+    for tok in target_tokens:
+        for cid in _ENTITY_LEXICON.get(tok, []):
+            if cid in valid_ids:
+                lexicon_hits[cid] = lexicon_hits.get(cid, 0) + 3  # weight over raw overlap
+
+    # 2) Token overlap against each collection's title/description/keywords.
     scored = []
     for c in collections:
         blob = " ".join([c["title"], c["description"], " ".join(map(str, c["categories"])), " ".join(map(str, c["keywords"]))])
-        overlap = len(target_tokens & _tokens(blob))
+        overlap = len(target_tokens & _tokens(blob)) + lexicon_hits.get(c["id"], 0)
         if overlap > 0:
             scored.append((overlap, c["id"]))
     scored.sort(reverse=True)

@@ -60,6 +60,23 @@ interface Stats {
   latest_alerts: Alert[];
 }
 
+// Aggregators (Google News etc.) redirect through their own domain, so the item
+// URL's hostname is the aggregator, not the real publisher. The real outlet is in
+// the title suffix ("Headline - The Register"). Surface the real publisher so the
+// feed shows who reported it, not "news.google.com" (愿景: 一手来源/溯源).
+const AGGREGATOR_HOSTS = ['news.google.com', 'google.com', 'bing.com'];
+const publisherFromTitle = (host: string, title: string): string | null => {
+  const h = (host || '').replace(/^www\./, '');
+  if (!AGGREGATOR_HOSTS.some(a => h === a || h.endsWith('.' + a))) return null;
+  const m = (title || '').match(/[\s]+[-–—][\s]+([^-–—]{2,42})\s*$/);
+  return m ? m[1].trim() : null;
+};
+const displaySource = (url: string, title: string): string => {
+  let host = '';
+  try { host = new URL(url).hostname; } catch { return ''; }
+  return publisherFromTitle(host, title) || host.replace(/^www\./, '');
+};
+
 const getDisplayTitleForUrl = (url: string) => {
   try {
     const parsed = new URL(url);
@@ -572,6 +589,8 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
   try {
     domain = new URL(article.url).hostname;
   } catch (e) {}
+  // 显示真实发布方（聚合器条目从标题提取），图标仍按 host。
+  const sourceLabel = displaySource(article.url, article.title) || domain;
 
   const displayTime = article.published_at || article.created_at;
 
@@ -601,7 +620,7 @@ function RawArticleCard({ article }: { article: RawArticleResponse }) {
             <SourceIcon domain={domain} type="original" />
           </div>
           <Text size="xs" c="dimmed" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {domain}
+            {sourceLabel}
           </Text>
           {article.tracker_name && article.tracker_name !== "Unknown" && (
             <Badge color="pink" variant="light" size="xs">

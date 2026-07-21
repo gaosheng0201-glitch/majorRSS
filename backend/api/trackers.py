@@ -26,10 +26,52 @@ def plan_watch_target(req: PlanRequest):
     from services.portfolio_planner import plan_portfolio
     return plan_portfolio(req.name, req.intent_text or "", use_llm=req.use_llm)
 
+def _ensure_source_scope(name: str, target: str, fetch_policy_json: Optional[str]) -> Optional[str]:
+    """Guarantee a target watches curated first-party sources, not just a keyword
+    meta-search. If the client didn't attach a source_scope (chosen preset
+    collections), plan one now so the resolver pulls real vendor RSS / changelogs
+    / papers — otherwise a keyword target collapses into a Google-News-only feed.
+    No-op (returns input) when a scope is already present or planning fails."""
+    import json
+    try:
+        policy = json.loads(fetch_policy_json) if fetch_policy_json else {}
+    except Exception:
+        return fetch_policy_json
+    if policy.get("source_scope"):
+        return fetch_policy_json  # user/preview already chose sources
+
+    # Build intent text from the target's keyword signals so the planner has
+    # something richer than the bare name.
+    intent = name or ""
+    try:
+        tgt = json.loads(target) if target else {}
+        kws = [s.get("value", "") for s in (tgt.get("signals") or []) if s.get("type") == "keyword"]
+        if kws:
+            intent = f"{name} {' '.join(kws)}".strip()
+    except Exception:
+        pass
+
+    try:
+        from services.portfolio_planner import plan_portfolio
+        plan = plan_portfolio(name or intent, intent, use_llm=True)
+        scope = plan.get("source_scope") or plan.get("selected_collections") or []
+        if scope:
+            policy["source_scope"] = scope
+            if plan.get("keep_keywords") and not policy.get("keep_keywords"):
+                policy["keep_keywords"] = plan["keep_keywords"]
+            return json.dumps(policy)
+    except Exception:
+        pass
+    return fetch_policy_json
+
+
 @router.post("/", response_model=TrackerResponse)
 def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
     from services.intent_normalizer import generate_tracker_normalized_intent
     data = tracker_in.model_dump()
+    # R4: a Watch Target is planned once at creation — attach curated sources.
+    data["fetch_policy"] = _ensure_source_scope(
+        data.get("name", ""), data.get("target", ""), data.get("fetch_policy"))
     data["normalized_intent"] = generate_tracker_normalized_intent(
         name=data["name"],
         source_intent=data["source_intent"],
