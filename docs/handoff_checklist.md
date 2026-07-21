@@ -1,8 +1,9 @@
 # 工作交接与测试清单
 
-> 最后更新：2026-07-06 · 分支 `feat/local-intelligence-radar`（领先 main 13 个提交，工作树干净）
+> 最后更新：2026-07-21 · 分支 `feat/local-intelligence-radar`（已与 main 对齐，工作树干净）
 >
-> 这份文档用于：作者亲自测试已完成的工作后，再决定继续哪部分。开新会话时从这里接上即可。
+> 这份文档用于：作者亲自体验几天测试后，再决定继续哪部分。开新会话时从这里接上即可。
+> 2026-07-21 收尾：完成 R7 Phase 1 发布导出器（本地线索→合规公开 digest→公开站）+ 测试债还清（24 项 pytest）。
 
 ## 怎么把它跑起来
 
@@ -16,6 +17,14 @@ python backend/main.py                    # 127.0.0.1:8765
 cd desktop && npm install
 npx tauri dev                             # 真机完整体验（含系统通知）
 # 或只看前端：npm run dev → 浏览器开 localhost:5173（Tauri 专有功能会自动跳过）
+
+# 公开分发站（R7）：先让后端生成 digest，再起静态站
+curl -X POST http://127.0.0.1:8765/api/settings/publish   # 生成 site/data/digest.json + feed.xml
+python3 -m http.server 4173 -d site                        # 浏览器开 localhost:4173
+# 或让后端自动定时发布：设环境变量 PUBLISH_ENABLED=1（默认关，私人雷达不会误发布）
+
+# 测试
+pytest -q                                 # 24 项，~0.4s
 ```
 
 配 API key / 选模型 / 切模式：应用内 **系统设置** 页（不需要 .env）。
@@ -50,13 +59,24 @@ npx tauri dev                             # 真机完整体验（含系统通知
 - **无 key 时日志有 "No generation model configured" traceback**：这是融合的优雅降级，已被捕获，不是崩溃。
 - **雷达页 `in` 属性 React 警告**：预先存在（来自 Mantine 某组件），非本次改动引入，无害。
 
-## 已完成并提交（13 个提交，见 `git log main..HEAD`）
-R1–R6 后端全部（获取运行时/账号守卫/语义层/线索/告警/portfolio），经 16 个发现的对抗审查加固；前端雷达阅读页+追赶+重点过滤+高关注+账号保护面板+portfolio 预览+通知投递；Fernet 加密；pytest 16 项；README 重写；macOS bundle targets 修复 + 打包/签名指南。详见 `docs/engineering_baseline.md`（2.9 节列了 16 个修复）。
+### E. 公开分发站（R7 Phase 1，新完成）
+- [ ] 建几个真实目标、跑一阵有内容后，`POST /settings/publish` → 开 `localhost:4173` 看公开站
+- [ ] 确认合规门：摘要非全文、每条来源可点到源头、页脚有下架邮箱；**授权（登录态）平台来源的线索不出现在站上**（保守按域名排除，见下方预期行为）
+- [ ] 无 key 时摘要走抽取式、标注"置信不足"；配 key 后应是 AI 合成摘要
+- [ ] generated RSS：`localhost:4173/data/feed.xml`
+
+## 已知预期行为（补充）
+- **公开站授权内容排除偏保守**：Phase 1 按"来源域名匹配 AUTH_PLATFORMS 即整条线索不发布"实现（安全优先，会连带排除该平台的公开内容）。后续可加 per-article 授权标记精细化。
+- **公开站 digest 是运行产物**：`site/data/digest.json` / `feed.xml` 已 gitignore，由 `POST /settings/publish` 或 `PUBLISH_ENABLED=1` 定时任务生成；仓库里只有样例 `digest.sample.js`。
+
+## 已完成并提交（见 `git log`）
+R1–R6 后端全部（获取运行时/账号守卫/语义层/线索/告警/portfolio），经 16 个发现的对抗审查加固；前端雷达阅读页+追赶+重点过滤+高关注+账号保护面板+portfolio 预览+通知投递；Fernet 加密；README 重写；macOS bundle targets 修复 + 打包/签名指南。**2026-07-21 收尾**：R7 Phase 1 发布导出器（services/publish_service.py，合规门全过 → PublishedDigest v0.1 → 公开站接真实数据 + generated RSS，scheduler publish_digest 任务 + POST /settings/publish）；pytest 扩到 24 项（含发布合规门/语义流程）。详见 `docs/engineering_baseline.md`、`docs/publish_contract.md`（数据契约）、`docs/official_feed_automation.md`（官方源自动化三形态）。
 
 ## 真正剩余（多数卡在作者侧）
-- **R7 共享层**（OnlyFourBot / 发布站 / 共享 token 索引）：需 Supabase 实例 + 域名
+- **R7 Phase 2/3 共享层**：Supabase 登录（已接 MCP，可做）+ 多发布者签名 + 共享 token 索引（"先查再开火"）。契约 §8 定了三阶段演进，Phase 1 已通，Phase 2 是独立大特性（不是收尾项）
+- **官方源无人值守发布**：`official_feed_automation.md` 形态 B（GitHub Actions）/ C（VPS）——需作者选托管环境
 - **Tauri 签名更新插件实际接入**：需作者 `tauri signer generate` 生成密钥（步骤见 packaging_guide.md）
-- **macOS 零警告分发 / Windows 代码签名**：需 Apple 开发者账号（$99/年）/ Authenticode 证书——**其余打包已就绪，见 packaging_guide.md**
+- **macOS 零警告分发 / Windows 代码签名**：需 Apple 开发者账号（$99/年）/ Authenticode 证书——**其余打包已就绪**
 - **11 平台 auth 真账号实测**（见 B）
 - **页面 diff 并入统一 SourceItem**：蓝图故意延后到语义层稳定后
 - **真 OS Keychain**（当前 Fernet+0600 文件已是真加密）：需 keyring 依赖决策
