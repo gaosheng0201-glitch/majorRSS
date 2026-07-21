@@ -67,3 +67,5 @@ major_rss.db
 # but DO track the real test suite
 !tests/
 !tests/**
+# ...except its bytecode cache (the !tests/** above would otherwise re-include it)
+tests/__pycache__/
