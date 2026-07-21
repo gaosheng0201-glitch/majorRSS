@@ -31,6 +31,13 @@ logger = get_logger("llm_provider")
 _FALLBACK_DIM = 256
 _TOKEN_RE = re.compile(r"[0-9a-zA-Z一-鿿぀-ヿ가-힣]+")
 
+# One genai Client per api_key, held at module scope. Keeping a strong reference
+# is not an optimization — it's required: an inline `genai.Client().models.
+# generate_content(...)` let the temporary Client be garbage-collected during the
+# blocking HTTP send, and its __del__ closed the underlying httpx client, so every
+# generation failed with "Cannot send a request, as the client has been closed."
+_GEMINI_CLIENTS: dict = {}
+
 
 def _l2_normalize(vec: List[float]) -> List[float]:
     norm = math.sqrt(sum(x * x for x in vec))
@@ -82,15 +89,19 @@ class GeminiProvider(LLMProvider):
     name = "gemini"
     supports_generation = True
 
-    def __init__(self, api_key: str, model: str = "gemini-3-flash-preview",
+    def __init__(self, api_key: str, model: str = "gemini-3.6-flash",
                  embed_model: str = "text-embedding-004"):
         self.api_key = api_key
         self.model = model
         self.embed_model = embed_model
 
     def _client(self):
-        from google import genai
-        return genai.Client(api_key=self.api_key)
+        c = _GEMINI_CLIENTS.get(self.api_key)
+        if c is None:
+            from google import genai
+            c = genai.Client(api_key=self.api_key)
+            _GEMINI_CLIENTS[self.api_key] = c
+        return c
 
     def generate(self, prompt, *, system=None, schema=None, temperature=0.2, model=None):
         from google.genai import types
@@ -100,7 +111,8 @@ class GeminiProvider(LLMProvider):
         if schema is not None:
             cfg["response_mime_type"] = "application/json"
             cfg["response_schema"] = schema
-        resp = self._client().models.generate_content(
+        client = self._client()  # hold a ref through the blocking send (see _client)
+        resp = client.models.generate_content(
             model=model or self.model, contents=prompt,
             config=types.GenerateContentConfig(**cfg))
         usage = {}
@@ -196,7 +208,7 @@ def get_provider() -> LLMProvider:
         return FallbackEmbedder()
     return GeminiProvider(
         api_key=api_key,
-        model=os.environ.get("LLM_MODEL", "gemini-3-flash-preview"),
+        model=os.environ.get("LLM_MODEL", "gemini-3.6-flash"),
         embed_model=os.environ.get("LLM_EMBED_MODEL", "text-embedding-004"),
     )
 
