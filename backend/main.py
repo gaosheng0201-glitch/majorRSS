@@ -21,10 +21,35 @@ from db.database import create_db_and_tables
 from scheduler import start_scheduler
 from backend.api import trackers, intelligence, briefing, monitors, settings, auth, source_presets
 
+def _preload_persisted_config():
+    """Load persisted config into os.environ at startup.
+
+    The API key is saved (encrypted) to config.dat and providers resolve it from
+    os.environ. save_api_key only injects it into the *saving* process, so after
+    any restart the key was silently dropped and generation fell back to "no
+    model" — breaking the planner/summaries every time the app was reopened.
+    Re-inject it here so a saved key survives restarts.
+    """
+    try:
+        from dotenv import load_dotenv
+        from db.config import get_env_path, load_secure_config
+        load_dotenv(get_env_path())
+        for _k in ("GEMINI_API_KEY", "LLM_API_KEY", "LLM_PROVIDER",
+                   "LLM_BASE_URL", "LLM_MODEL", "LLM_EMBED_MODEL"):
+            _v = load_secure_config(_k)
+            if _v and not os.environ.get(_k):
+                os.environ[_k] = _v
+        logger.info("Persisted config loaded (generation key present: %s).",
+                    bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("LLM_API_KEY")))
+    except Exception as e:
+        logger.warning(f"Config preload skipped: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
     logger.info("Starting local backend services...")
+    _preload_persisted_config()
     create_db_and_tables()
 
     # Start scheduler in a background daemon thread. block=False: the thread
