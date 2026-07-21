@@ -333,15 +333,20 @@ export default function Discovery() {
     setTestResult(null);
     
     try {
+      // 试运行会逐个源联网抓取，正常就要 20~40s；全局 15s 超时太短会误报"失败"。
+      // 给这个慢操作单独放宽到 60s。
       const res = await client.post('/trackers/test-resolve-intent', {
         target: getTargetPayload(),
         source_intent: 'HYBRID',
         fetch_policy: getFetchPolicy()
-      });
+      }, { timeout: 60000 });
       setTestResult(res.data);
     } catch (err: any) {
+      const isTimeout = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
       setTestResult({
-        error_message: err.response?.data?.detail || err.message
+        error_message: isTimeout
+          ? '试运行耗时较长仍未返回：所选信号解析出的源较多、逐个联网抓取偏慢。可减少关键词或降低探测强度后重试。也可以直接“保存并开启探测”——后台会按计划自动抓取，不受此预览影响。'
+          : (err.response?.data?.detail || err.message)
       });
     } finally {
       setTesting(false);
@@ -446,7 +451,8 @@ export default function Discovery() {
     if (!selectedTracker) return;
     setRunningTrace(true);
     try {
-      const res = await client.post<PipelineRun>(`/trackers/${selectedTracker.id}/run-trace`);
+      // 完整抓取诊断更慢（可达一两分钟），单独放宽超时。
+      const res = await client.post<PipelineRun>(`/trackers/${selectedTracker.id}/run-trace`, {}, { timeout: 180000 });
       // Refresh trace runs list
       const freshRuns = await client.get<PipelineRun[]>(`/trackers/${selectedTracker.id}/traces`);
       setTraceRuns(freshRuns.data);
