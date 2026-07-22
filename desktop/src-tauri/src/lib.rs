@@ -296,8 +296,13 @@ pub fn run() {
         Some("Resolving backend-sidecar from the installed application resources.".to_string()),
         "info",
       );
-      match app.shell().sidecar("backend-sidecar") {
-        Ok(sidecar) => {
+      // Resolve the packaged backend from the bundled onedir resource.
+      let backend_path = app.path().resource_dir().map(|d| {
+        let name = if cfg!(windows) { "backend-sidecar.exe" } else { "backend-sidecar" };
+        d.join("backend-bundle").join(name)
+      });
+      match backend_path {
+        Ok(path) => {
           emit_backend_status(
             app.handle(),
             "sidecar_command_ready",
@@ -305,7 +310,7 @@ pub fn run() {
             Some("The packaged backend-sidecar executable was found.".to_string()),
             "success",
           );
-          match sidecar.spawn() {
+          match app.shell().command(path.to_string_lossy().to_string()).spawn() {
             Ok((mut rx, child)) => {
               let pid = child.pid();
               println!("[Tauri] Backend sidecar spawned successfully.");

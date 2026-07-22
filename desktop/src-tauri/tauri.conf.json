@@ -35,8 +35,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "bin/backend-sidecar"
+    "resources": [
+      "backend-bundle/**/*"
     ],
     "windows": {
       "nsis": {

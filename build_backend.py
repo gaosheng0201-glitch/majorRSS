@@ -43,7 +43,12 @@ def build_backend():
         pyinstaller_exe,
         "--clean",
         "--name", "backend-sidecar",
-        "--onefile",
+        # onedir (not onefile): onefile re-extracts the whole ~85MB bundle to a
+        # temp dir on EVERY launch (~13s cold). onedir ships the files unpacked,
+        # so startup is just interpreter + imports (~0.6s measured) ≈ a few
+        # seconds cold. Bundled into the app as a Tauri resource (see
+        # tauri.conf.json bundle.resources + lib.rs resource spawn), not externalBin.
+        "--onedir",
         "--noconfirm",
         "--paths", ".",
         # Third-party packages
@@ -103,21 +108,38 @@ def build_backend():
         sys.exit(1)
         
     print("[SUCCESS] PyInstaller compilation finished.")
-    
-    # 4. Copy to Tauri sidecars folder
-    os.makedirs(sidecar_dir, exist_ok=True)
-    compiled_file = os.path.join("dist", "backend-sidecar.exe" if os.name == 'nt' else "backend-sidecar")
-    destination = os.path.join(sidecar_dir, sidecar_name)
-    
-    if not os.path.exists(compiled_file):
-        print(f"[ERROR] Compiled binary not found at {compiled_file}!")
+
+    # 4. Copy the onedir output folder into the Tauri resource dir. onedir puts
+    #    the executable + _internal/ under dist/backend-sidecar/; the whole folder
+    #    ships as a bundled resource (desktop/src-tauri/backend-bundle/), and
+    #    lib.rs spawns <resource>/backend-bundle/backend-sidecar[.exe] at runtime.
+    compiled_dir = os.path.join("dist", "backend-sidecar")
+    bundle_dir = os.path.join("desktop", "src-tauri", "backend-bundle")
+
+    if not os.path.isdir(compiled_dir):
+        print(f"[ERROR] Compiled onedir folder not found at {compiled_dir}!")
         sys.exit(1)
-        
-    print(f"Copying {compiled_file} to {destination}...")
-    shutil.copy2(compiled_file, destination)
-    print(f"[SUCCESS] Sidecar binary is ready at: {destination}")
-    
-    # 5. Cleanup build files
+
+    if os.path.isdir(bundle_dir):
+        shutil.rmtree(bundle_dir)
+    print(f"Copying {compiled_dir}/ -> {bundle_dir}/ ...")
+    shutil.copytree(compiled_dir, bundle_dir)
+    # Ensure the launcher stays executable after the copy (macOS/Linux).
+    if os.name != 'nt':
+        exe = os.path.join(bundle_dir, "backend-sidecar")
+        if os.path.exists(exe):
+            os.chmod(exe, 0o755)
+    print(f"[SUCCESS] Backend bundle is ready at: {bundle_dir}")
+
+    # Remove any stale onefile externalBin artifact so it can't shadow the bundle.
+    stale = os.path.join(sidecar_dir, sidecar_name)
+    if os.path.exists(stale):
+        try:
+            os.remove(stale)
+        except Exception:
+            pass
+
+    # 5. Cleanup PyInstaller temporary build artifacts (keep the copied bundle).
     print("Cleaning up PyInstaller temporary build artifacts...")
     try:
         shutil.rmtree("build")
@@ -126,7 +148,7 @@ def build_backend():
         print("[SUCCESS] Cleanup completed.")
     except Exception as e:
         print(f"[WARNING] Cleanup failed slightly: {e}")
-        
+
     print("\nAll done! You can now run 'npx tauri dev' inside the desktop/ folder.")
 
 if __name__ == "__main__":
