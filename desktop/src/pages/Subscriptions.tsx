@@ -379,10 +379,11 @@ export default function Subscriptions() {
       });
 
       if (subType === 'diff') {
+        // 试运行会同步联网抓取，正常就要 20~40s；全局 15s 超时太短会误报"失败"。
         const res = await client.post('/monitors/test-diff-route-trace', {
           target_url: target,
           diff_policy: policy
-        });
+        }, { timeout: 60000 });
         setTestResult(res.data);
       } else {
         // Trackers resolution
@@ -396,13 +397,16 @@ export default function Subscriptions() {
           target: target.includes('\n') ? JSON.stringify(target.split('\n').map(x => x.trim()).filter(Boolean)) : JSON.stringify([target.trim()]),
           source_intent: subType === 'rss' ? 'RSS_FEED' : 'ACCOUNT_TRACKING',
           fetch_policy: trPolicy
-        });
+        }, { timeout: 60000 });
         setTestResult(res.data);
       }
     } catch (err: any) {
+      const isTimeout = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
       setTestResult({
         status: 'FAILED',
-        error_summary: err.response?.data?.detail || err.message
+        error_summary: isTimeout
+          ? '试运行耗时较长仍未返回：目标较慢或需渲染。可稍后重试，或直接保存——后台会按计划自动抓取，不受此预览影响。'
+          : (err.response?.data?.detail || err.message)
       });
     } finally {
       setTesting(false);

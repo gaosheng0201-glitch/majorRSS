@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **启动加载页抖动**（`desktop/src/App.tsx`）：健康轮询每 ~1.5s 往轨迹追加一条 + 失败时把多行运行时快照塞进详情，在垂直居中布局里导致整屏上下弹跳。改：状态框/轨迹框固定高度内部滚动；轮询只更新实时状态、轨迹只记状态转变、快照只进一次。
   - **新建探测向导步进错位**（`desktop/src/pages/Discovery.tsx`）：`handleNextStep` 在第 0 步就校验第 1 步的信号 → "下一步"永远报错无法前进。改：按步门控（第 0 步校验主题、第 1 步校验信号）。
   - **试运行/诊断误报超时**（`desktop/src/pages/Discovery.tsx`）：`/test-resolve-intent` 同步逐源联网抓取实测 ~22s，超过 axios 全局 15s 超时 → 假"测试失败"（后端其实成功）。改：该慢调用单独放宽超时（试运行 60s、诊断 180s）+ 有用的超时提示。已知更深缺口（后端并发化/异步，`docs/engineering_baseline.md` §4.2）留待处理。
+- **同类设计审计的后续修复（按上面这批 bug 的特征回扫全库）**：
+  - **订阅页"试运行 diff"同款超时**（`desktop/src/pages/Subscriptions.tsx`）：`test_diff_route_trace` 同步抓取 + 前端全局 15s 超时，与 tracker 试运行是同一个 bug，之前只修了 tracker 一半。改：同样放宽到 60s + 友好提示。
+  - **Investigator 绕过 provider 抽象**（`llm/investigator.py`）：情报溯源两条流水线都硬走 `genai.Client(GEMINI_API_KEY)`、硬编码 `gemini-2.5-flash`、独立 token 记账 → 对本地/OpenAI 兼容模型用户完全不可用（违反愿景 #3 BYOK），且是 R3 provider 迁移的遗漏。改：自建漏斗（DDG→triage→抓取→verdict）的 LLM 调用改走 `get_provider().generate()`（任意后端可用）；原生 Google Search grounding 是 Gemini 专属，加守卫（非 Gemini 时给出改用漏斗的提示而非报错）；token 统一走 `_record_usage`（预算刹车可见）。
 
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
