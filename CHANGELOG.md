@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **公开分发站上线（onlyforbots.com）**：`site/` 拆为两类读者两页——介绍页 `/`（面向机器/开发者，含接入说明）+ 信息页 `/radar`（人类阅读的去噪线索流）+ `/llms.txt`（机器可读站点说明，只列现有 endpoint、规划中项归 planned）；渲染逻辑与视觉 token 隔离（`site/assets/`），只消费 `docs/publish_contract.md`（PublishedDigest v0.1）契约。部署到 Cloudflare Pages（Git 集成，push `main` 自动部署；apex/www 绑定 + HTTPS）。`docs/publish_contract.md`（契约 + 三阶段共享层演进）、`docs/official_feed_automation.md`（官方源自动化：无头实例、NAS Docker vs GitHub Actions、生成/分发端拆分）。
 
 #### Changed
+- **桌面端启动速度重构（22s → 3.7s 冷启动，作者反馈"不可接受"后）**：先测量定位——重库导入合计仅 0.59s，**冷启动几乎全是 PyInstaller `--onefile` 每次把 ~85MB 解压到临时目录的 I/O**（直接连跑 onefile sidecar：冷 ~13s、热 ~4s）。
+  - **`--onefile` → `--onedir`**（`build_backend.py`）：解释器+依赖以解包形态随 app 打包（Tauri `bundle.resources` 的 `backend-bundle/`，替代 `externalBin`），启动不再解压。`lib.rs` 从 `resource_dir()/backend-bundle/backend-sidecar` 启动。实测打包后冷启动 **3.7s**。
+  - **后端托盘常驻**（`lib.rs`）：关窗口本就隐藏到托盘；补上 Cmd+Q/退出也默认隐藏保活后端（`ReallyExitState`），仅托盘"退出应用"真退出。雷达持续在后台转，再开窗口连已运行后端 → 瞬间。
+  - 跳过"懒加载重库"优化：测量显示导入非瓶颈（0.59s），不值改动风险。
 - `llm/processor.py` 四个生成站点全迁到 provider 抽象（BYOK/本地模型对摘要生效，无 key 优雅降级）。
 - `README.md` 重写为本地雷达（原为 Streamlit v1.2 时代）。
 - `bundle.targets` `["nsis"]` → `"all"`（macOS 可构建 .app/.dmg）；补 `docs/packaging_guide.md` macOS 分发/签名指南（无 Apple 账号可构建+防篡改签名更新）。
