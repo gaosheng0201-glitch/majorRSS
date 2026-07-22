@@ -16,6 +16,9 @@ use std::{
 struct ChildState(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 struct TrayNoticeState(AtomicBool);
 struct BackendStartupState(Mutex<Vec<BackendStartupStatus>>);
+// The radar is a background service: quitting the window keeps the backend alive
+// so reopening is instant. Only the tray "退出应用" sets this, causing a real exit.
+struct ReallyExitState(AtomicBool);
 
 #[derive(Clone, serde::Serialize)]
 struct BackendStartupStatus {
@@ -183,6 +186,7 @@ pub fn run() {
     .manage(ChildState(Mutex::new(None)))
     .manage(TrayNoticeState(AtomicBool::new(false)))
     .manage(BackendStartupState(Mutex::new(Vec::new())))
+    .manage(ReallyExitState(AtomicBool::new(false)))
     .invoke_handler(tauri::generate_handler![
       get_backend_startup_statuses,
       get_backend_runtime_snapshot,
@@ -247,6 +251,7 @@ pub fn run() {
               }
             }
             "exit" => {
+              app.state::<ReallyExitState>().0.store(true, Ordering::SeqCst);
               shutdown_backend_sidecar(app);
               app.exit(0);
             }
@@ -408,7 +413,20 @@ pub fn run() {
     .expect("error while running tauri application");
 
   app.run(|app_handle, event| match event {
-    tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+    tauri::RunEvent::ExitRequested { api, .. } => {
+      // Stay resident unless the user explicitly chose 退出应用: hide to tray and
+      // keep the backend warm so the next open is instant (radar keeps running).
+      let really = app_handle.state::<ReallyExitState>().0.load(Ordering::SeqCst);
+      if really {
+        return;
+      }
+      api.prevent_exit();
+      if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.hide();
+      }
+      notify_hidden_to_tray(app_handle);
+    }
+    tauri::RunEvent::Exit => {
       shutdown_backend_sidecar(app_handle);
     }
     _ => {}
