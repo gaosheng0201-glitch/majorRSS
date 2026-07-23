@@ -104,7 +104,7 @@
 | **P0.3** ✅ | 修向量层卡死（9%→全量） | **P2 的硬前提**：无覆盖谈不上"冲合并"；也是真正的去重主力 | 使能 |
 | **P0.4** ✅ | 真实出版方计数 + source_tiering 捕获 | **P1.1 的硬前提**：无信号则门控失效 | 使能 |
 | **P0.5** ⚪ | 脚本近重去重（+身份护栏） | 廉价安全网、非成本杠杆（实测仅~3.3%）；低急 | ~0 |
-| **P1.1** | 融合按渠道分层/共振门控 | 摄入省钱、反馈前置（依赖 P0.4） | ↓↓↓ |
+| **P1.1** ✅ | 融合按渠道分层/共振门控 | 摄入省钱、反馈前置 | ↓↓↓ |
 | **P1.2** | 每目标成本可视化 + 本地嵌入文档化 | 成本护栏收口 | ↓ |
 | **P2.1** ✅ | 融合改作用于线索、智能摘要与雷达合一（方案 A：`StoryThread.summary`） | 给反馈一个唯一可信基准 | ↓ + 消除债 |
 | **P3.1** | 打分反馈 → 调画像向量/来源权重/静音 | **必须在上游可信之后**，否则污染基准 | — |
@@ -201,6 +201,18 @@
 - **#5 旧 TrendAlert** 的 `related_article_ids` 存的是 IntelReport id（会被误读成线程 id）→ 迁移 0008 清空；改 docstring。
 - **#6 重融不降级**：不把已 VALID 的线程降成 NOISE、保留最高 importance、保证原始 lead 进入摘要。
 - **#9 `summarized_at` 索引**：迁移 0008 补 `CREATE INDEX`（升级库不再全表扫）。
+
+## H. P1.1 已实现（2026-07-23，接在 P2.1 gate hook 上）
+
+`services/processor_service.py:_thread_worth_summary` —— 渠道分层门控，在 `_fuse_thread` 入口决定线程是否值得烧 LLM：
+- **高权重(opt-in 即信号，直接过门)**：成员含 `source_tier` = primary/curated（精选源/追踪账号/一手）· 生命周期 CONFIRMED · `tracker.is_high_attention`。
+- **聚合消防栓(要挣)**：`is_resonant` 或 `distinct_source_count ≥ FUSION_MIN_SOURCES`(默认 3，用 P0.4 的真实出版方计数)。
+- 未过门 → 不烧 LLM、不标 processed，线程停在 lead（雷达仍显示标题+来源），下轮信号变了再评估。
+- 遗留 NULL tier(P0.4 前的旧文章)按 aggregated 保守处理。单元+集成测试覆盖全部路径。
+- **配合 P2.1 backfill**：部署后回填只摘"值得的"线程，聚合噪音不烧钱。
+- **小遗留(跟踪)**：被门控的 summary-NULL 线程会每轮被 backlog 查询廉价重评估（无 LLM），量大时可加 `last_fusion_at` 标记令其一次性；当前有 db_cleanup 按 retention 兜底，非阻塞。
+
+## §G 遗留
 
 **已知遗留（跟踪，非阻塞）**：#7 增量重融仍重发历史成员全文（已用 `FUSION_MAX_MEMBERS` 封顶，真增量=喂旧摘要+新成员 待做）；#8 未聚类文章（`thread_id` NULL）不会进 feed，需监控/单例兜底；#10 `export_rss.py` 仍读 IntelReport（未接调度，删或改指线程）；#11 回滚对窗口内已 `processed=True` 的文章不干净（需文档化）；#12 semantic/fusion 两个 5min 任务无互斥，偶发重复融合（重复花费，建议串联或加线程 claim）；#13 `raw_article_id` 暂填线程 id（潜在陷阱）；#14 IntelReport 仓库死方法待清；#15 naive/aware 时间比较（沿用旧模式）。
 

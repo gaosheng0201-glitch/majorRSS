@@ -21,6 +21,31 @@ MAX_CHARS_PER_BUNDLE = int(os.environ.get("LLM_MAX_CHARS_PER_BUNDLE", "36000"))
 # large accreting thread doesn't re-send everything each cycle (bounded cost).
 # Provenance/counts still reflect ALL members — only the LLM input is capped.
 FUSION_MAX_MEMBERS = int(os.environ.get("FUSION_MAX_MEMBERS", "12"))
+# P1.1 gate: an aggregator-only (firehose) thread must reach this many DISTINCT
+# publishers before it earns an LLM summary. Curated/first-party/high-attention
+# sources bypass the gate entirely (opt-in is itself a signal).
+FUSION_MIN_SOURCES = int(os.environ.get("FUSION_MIN_SOURCES", "3"))
+
+
+def _thread_worth_summary(thread, members, tracker):
+    """P1.1 channel-tiered gate: does this event-thread earn an LLM summary, or
+    stay a lead (title + sources, no generation model touched)? "The source you
+    opted into is itself a signal": curated presets, tracked accounts and
+    first-party sources always pass; the keyword firehose must earn it via
+    resonance or multi-source corroboration. Returns (worth: bool, reason: str)."""
+    from services.provenance import HIGH_WEIGHT
+    tiers = {getattr(m, "source_tier", None) for m in members}
+    if tiers & set(HIGH_WEIGHT):
+        return True, "high-weight source (curated/first-party/account)"
+    if thread.lifecycle == "CONFIRMED":            # a first-party source is present
+        return True, "CONFIRMED lifecycle"
+    if getattr(tracker, "is_high_attention", False):
+        return True, "high-attention target"
+    if thread.is_resonant:
+        return True, "resonant"
+    if (thread.distinct_source_count or 0) >= FUSION_MIN_SOURCES:
+        return True, f"{thread.distinct_source_count} distinct publishers"
+    return False, "aggregator-only, not resonant, < min distinct publishers"
 
 def get_todays_token_usage() -> int:
     """Total tokens spent today (UTC), across all models and actions."""
@@ -122,8 +147,15 @@ def _fuse_thread(tracker, thread_id: int):
         if not members:
             return
 
-        # P1.1 gate hook (task #4): decide HERE whether the thread earns an LLM
-        # summary or stays a lead. For now every clustered event is fused.
+        # P1.1 channel-tiered gate: only worthy threads earn an LLM summary; the
+        # rest stay leads (visible in the radar as title + sources, no generation
+        # model spent). Members are NOT marked processed on a gate miss, so the
+        # thread is re-evaluated next cycle — one that later gains resonance or a
+        # curated source gets summarized then.
+        worth, reason = _thread_worth_summary(thread, members, tracker)
+        if not worth:
+            logger.info(f"Thread {thread_id} gated — no summary ({reason}); stays a lead.")
+            return
 
         # What to SEND to the LLM: newest members (latest developments), capped for
         # cost (#7), PLUS the original lead (oldest) so re-fusion never summarizes
