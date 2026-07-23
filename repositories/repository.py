@@ -30,6 +30,19 @@ class DBRepository:
     def check_title_exists(self, tracker_id: int, title: str) -> bool:
         with get_session() as session:
             return session.exec(select(RawArticle).where(RawArticle.title == title).where(RawArticle.tracker_id == tracker_id)).first() is not None
+
+    def get_recent_titles(self, tracker_id: int, days: int = 3, limit: int = 500):
+        """Recent article titles for a tracker — the comparison set for the P0.5
+        near-duplicate pre-filter (bounded window + cap so it stays cheap)."""
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None)
+        with get_session() as session:
+            return list(session.exec(
+                select(RawArticle.title)
+                .where(RawArticle.tracker_id == tracker_id, RawArticle.created_at >= cutoff)
+                .order_by(RawArticle.created_at.desc())
+                .limit(limit)
+            ).all())
             
     def set_pipeline_status(self, tracker_name: str, action: str, detail: str):
         with get_session() as session:

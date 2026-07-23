@@ -47,9 +47,16 @@ class SourceNormalizer:
         saved = 0
         duplicates = 0
         filtered = 0
-        
+
         now = datetime.now(timezone.utc)
-        
+
+        # P0.5 near-duplicate pre-filter: recent titles for this tracker + titles
+        # accepted earlier in this batch, so near-verbatim re-syndication is
+        # dropped before it costs an embed + fusion. Identity-guarded (see dedup).
+        from services import dedup
+        recent_titles = self.db.get_recent_titles(tracker_id)
+        batch_titles = []
+
         for item in items:
             # 1. Age check
             if max_days > 0 and item.published_at:
@@ -82,7 +89,15 @@ class SourceNormalizer:
             if self.db.check_url_exists(canonical_url) or self.db.check_title_exists(tracker_id, item.title):
                 duplicates += 1
                 continue
-                
+
+            # P0.5: near-verbatim re-syndication (same headline across outlets),
+            # identity-guarded so serial/versioned siblings are NOT collapsed.
+            if any(dedup.is_near_duplicate(item.title, t) for t in recent_titles) or \
+               any(dedup.is_near_duplicate(item.title, t) for t in batch_titles):
+                duplicates += 1
+                continue
+            batch_titles.append(item.title)
+
             # Provenance tier (docs/source_tiering.md): the route stamped a base
             # tier on the item; refine it by the actual article URL so an opt-in
             # source whose article sits on a first-party domain becomes PRIMARY.

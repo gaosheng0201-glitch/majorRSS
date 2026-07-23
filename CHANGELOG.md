@@ -57,6 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **计费公式重构 + embedding 记账 + 真实模型名**（`services/pricing.py` + `Billing.tsx`）：此前成本 = `总 token × 单一混合费率`（前端硬编码 0.15 flash / 2.5 pro），忽略输出比输入贵数倍；`embed()` 从不记 token → embedding 消耗恒为 $0、预算刹车看不到；所有记录 model_name 都是 "gemini" 无法区分。改：后端按模型分输入/输出计价（官方价格，`ai.google.dev/gemini-api/docs/pricing`，2026-07-23 核实），embed 补估算记账，generate/embed 盖真实模型名。
   - **模型与后端配置 UI**（Settings「模型与后端」+ `/settings/llm-config`）：provider 抽象此前 env-only、打包用户改不到；新增 provider(Gemini/OpenAI 兼容/本地) + base_url + 生成/嵌入模型选择，落 `.env`（启动加载）。选「OpenAI 兼容」+ Base URL 即把生成与嵌入全走本地（Ollama/LM Studio/vLLM）——兑现愿景 #3 本地优先。
 
+#### 雷达质量与成本路线图执行（2026-07-23，`docs/radar_quality_roadmap.md`）
+
+> 北极星（成本梯度三段式）：以最低成本获得**广+深+新**的抓取 → **冲合并**（廉价向量把量坍缩成事件线索）→ **LLM 只处理合并后的线索**。终态：智能摘要与雷达合并为一——feed 卡片 = 每个事件线索上的一段摘要。实测对比与设计见 `docs/radar_quality_roadmap.md`、`docs/source_tiering.md`。
+
+- **P0.1 gnews 源头日期限定** (`services/source_resolver.py`)：查询拼 `when:{max_days}d`，源头拦截优于抓后过滤。新鲜度成为一等设置项、与探测强度解耦（`Discovery.tsx`）。
+- **P0.2 融合标签诚实化** (`services/processor_service.py`)：`摘要引用来源` / `重复·佐证来源`，不再把同事件他源报道误称"被过滤的噪音"。
+- **P0.3 修复向量层卡死** (`services/llm_provider.py` + `services/semantic_ingest.py`)：整批 embed 一次失败即整批回滚、什么都不落库 → 同一批永远重试，向量层冻结在 100/1101。改：`GeminiProvider.embed` 逐条节流+瞬时错误退避重试，永久失败项返回 `None` 由摄入跳过——一颗坏文章不再阻塞整批；致命鉴权错误照常抛出。实测越过 id-100 卡点。
+- **P0.4 真实出版方计数 + 来源分层捕获**：① `distinct_source_count` 改数**真实出版方**（从 Google News 标题 " - Publisher" 提取），不再数聚合器域名——此前 reddit/gnews 占 80% 语料全塌成 1 源，佐证/共振/生命周期信号 100% 死；实测线程 1→8 真实出版方，信号复活。② 新 `services/provenance.py`（共享 `Tier`/`is_first_party`/`real_publisher`），入库全链路盖来源层级章 `SourceRoute.tier → SourceItem.tier → RawArticle.source_tier`（迁移 0007），一手域名精修为 `primary`，raw-feed API 暴露。抽走 `semantic_ingest`/`publish_service` 各自复制的一手判定。
+- **P2.1 融合作用于事件线索（智能摘要与雷达合一）**：融合从"盲批 10 条 → IntelReport"改为"**每事件线索一次摘要 → `StoryThread.summary`**"（`services/processor_service.py`，迁移 0008）。消除同事件被切成多份、去掉跨报告去重机制（线索即去重单元）、强制"先聚类再 LLM"（无 `thread_id` 的文章等待语义层）。`/feed`、每日简报、趋势扫描、Dashboard、`radar_digest`、`cli.py get`(MIP/agent 面) 全部改读线索；`/feed` 响应结构不变，前端零改动。IntelReport 表与旧数据保留（休眠、可回滚）。经 4 路对抗式代码审查加固：backfill 折进融合查询（部署后 feed 自动回填、无死代码）；送 LLM 的成员（`FUSION_MAX_MEMBERS` 封顶）与 provenance/计数（全体成员）解耦（溢出成员不再被静默丢弃）；重融不降级已 VALID 线程、保留最高 importance、保证原始 lead 入摘要；`db_cleanup` 按 retention 清理 StoryThread（FK 安全）；旧 TrendAlert（存 IntelReport id）在 0008 清空；补 `summarized_at` 索引。
+- **P1.1 渠道分层/共振门控** (`services/processor_service.py:_thread_worth_summary`)：只有值得的线索才烧 LLM——高权重（`source_tier` primary/curated、CONFIRMED 生命周期、高关注目标）直接过门；聚合消防栓要靠**共振**或 `distinct_source_count ≥ FUSION_MIN_SOURCES`(默认 3) 挣得摘要。未过门线索停在 lead（不烧生成模型），信号变了下轮再评估。配合 P2.1 backfill：回填只摘"值得的"线索，聚合噪音不烧钱。
+- **P0.5 入库近重去重** (`services/dedup.py` + `services/source_normalizer.py`)：廉价确定性预过滤，剥掉近乎逐字的转载（同标题多站重发）以免白花 embed+fusion。**身份护栏**（版本号/日期周期/退化标题）杜绝把序列/版本兄弟误合并（月度 "Developer Update"、`v0.117.1` vs `.0`）——审计证明护栏而非阈值才是过度合并的控制点。约 3–4% 体积，安全网而非成本杠杆（真正的去重靠向量语义合并）。
+- **P1.2 Billing 按动作/目标拆分** (`backend/api/settings.py` + `desktop/src/pages/Billing.tsx`)：`/settings/token-usage` 新增 `by_category`（向量 vs 融合 vs 趋势 vs 简报）/`by_target`（每探测目标）/`by_action`，每类带真实费用；Billing 页新增两张卡（成本构成条形 + 按目标表）。实测拆解：融合 76% · 向量 8% · 趋势 10% · 简报 5%——省钱杠杆在融合、不在向量（向量还可切本地 Ollama 归零）。
+
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
 - 前端 feed 链接 `javascript:` XSS → `safeHref` 只放行 http(s)。

@@ -26,6 +26,16 @@ interface TokenUsageSummary {
   };
 }
 
+interface CostBucket {
+  [key: string]: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    calls: number;
+    estimated_cost_usd: number;
+  };
+}
+
 export default function Billing() {
   const { t } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
@@ -35,11 +45,15 @@ export default function Billing() {
   const [rawUsage, setRawUsage] = useState<TokenUsageRecord[]>([]);
   const [trendData, setTrendData] = useState<{ date: string; tokens: number }[]>([]);
   const [estCost, setEstCost] = useState(0);
+  const [byCategory, setByCategory] = useState<CostBucket>({});
+  const [byTarget, setByTarget] = useState<CostBucket>({});
 
   const fetchTokenUsage = async () => {
     try {
       const res = await client.get<{
         summary: TokenUsageSummary;
+        by_category: CostBucket;
+        by_target: CostBucket;
         raw_usage: TokenUsageRecord[];
         daily_trend: { date: string; tokens: number }[];
         estimated_cost_usd: number;
@@ -47,6 +61,8 @@ export default function Billing() {
       setTokenSummary(res.data.summary);
       setRawUsage(res.data.raw_usage);
       setTrendData(res.data.daily_trend || []);
+      setByCategory(res.data.by_category || {});
+      setByTarget(res.data.by_target || {});
       // Cost is computed backend-side per model (input/output priced separately,
       // embeddings included) — see services/pricing.py.
       setEstCost(res.data.estimated_cost_usd || 0);
@@ -73,6 +89,10 @@ export default function Billing() {
   });
 
   const maxTokens = Math.max(...trendData.map(d => d.tokens), 1);
+
+  const catRows = Object.entries(byCategory).sort((a, b) => b[1].estimated_cost_usd - a[1].estimated_cost_usd);
+  const targetRows = Object.entries(byTarget).sort((a, b) => b[1].estimated_cost_usd - a[1].estimated_cost_usd);
+  const maxCatCost = Math.max(...catRows.map(([, v]) => v.estimated_cost_usd), 0.000001);
 
   if (loading) {
     return (
@@ -185,6 +205,58 @@ export default function Billing() {
           </div>
         )}
       </Paper>
+
+      {/* Cost breakdown: by category (where the money goes) + by target (P1.2) */}
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+          <Text size="md" fw={700} className="title-text-color" mb="md">{t('bill_by_category')}</Text>
+          <Stack gap="sm">
+            {catRows.length === 0 ? (
+              <Text size="sm" c="dimmed">—</Text>
+            ) : catRows.map(([k, v]) => (
+              <div key={k}>
+                <Group justify="space-between" mb={4}>
+                  <Text size="sm" className="title-text-color">{k}</Text>
+                  <Text size="sm" fw={700} c={isDark ? 'teal.4' : 'teal.7'}>${v.estimated_cost_usd.toFixed(3)}</Text>
+                </Group>
+                <div style={{ height: 6, background: isDark ? 'rgba(255,255,255,0.06)' : '#eee', borderRadius: 3 }}>
+                  <div style={{
+                    height: 6,
+                    width: `${(v.estimated_cost_usd / maxCatCost) * 100}%`,
+                    background: 'linear-gradient(90deg, var(--mantine-color-indigo-6), var(--mantine-color-indigo-9))',
+                    borderRadius: 3,
+                  }} />
+                </div>
+                <Text size="xs" c="dimmed" mt={2}>{v.calls} calls · {(v.total_tokens / 1000).toFixed(0)}k tok</Text>
+              </div>
+            ))}
+          </Stack>
+        </Paper>
+
+        <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+          <Text size="md" fw={700} className="title-text-color" mb="md">{t('bill_by_target')}</Text>
+          <Table verticalSpacing="sm" style={{ color: isDark ? 'var(--mantine-color-gray-3)' : '#495057' }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>{t('bill_col_target')}</Table.Th>
+                <Table.Th>{t('bill_col_calls')}</Table.Th>
+                <Table.Th>{t('bill_col_cost')}</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {targetRows.length === 0 ? (
+                <Table.Tr><Table.Td colSpan={3}><Text c="dimmed" size="sm">—</Text></Table.Td></Table.Tr>
+              ) : targetRows.map(([k, v]) => (
+                <Table.Tr key={k}>
+                  <Table.Td>{k}</Table.Td>
+                  <Table.Td>{v.calls}</Table.Td>
+                  <Table.Td fw={700} c={isDark ? 'teal.4' : 'teal.7'}>${v.estimated_cost_usd.toFixed(3)}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Paper>
+      </SimpleGrid>
 
       {/* Recent Usage table */}
       <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>

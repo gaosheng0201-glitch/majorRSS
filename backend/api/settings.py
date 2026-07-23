@@ -148,48 +148,70 @@ def get_account_guards(session: Session = Depends(get_api_session)):
 
 @router.get("/token-usage")
 def get_token_usage(session: Session = Depends(get_api_session)):
+    from services.pricing import cost_usd
     usages = session.exec(select(TokenUsage).order_by(TokenUsage.created_at.desc())).all()
-    # Summarize stats
-    totals = {}
+
+    totals = {}        # by model (kept for frontend compatibility)
+    by_action = {}     # by exact action_type
+    by_category = {}   # coarse: Embedding / Fusion / TrendScan / Briefing / … — the "where's the money" view (P1.2)
+    by_target = {}     # per fusion target (action_type "FactCheck: <tracker>")
     daily_trend = {}
+    total_cost = 0.0
+
+    def _category(action: str) -> str:
+        a = action or ""
+        if a.startswith("Embedding"):     return "Embedding (向量)"
+        if a.startswith("FactCheck"):     return "Fusion (融合)"
+        if a.startswith("TrendScan"):     return "TrendScan (趋势)"
+        if a.startswith("DailyBriefing"): return "DailyBriefing (简报)"
+        if a.startswith("EventArbiter"):  return "EventArbiter (事件仲裁)"
+        if a.startswith("AlertSynthesis"):return "AlertSynthesis (告警合成)"
+        if a.startswith("PortfolioPlan"): return "PortfolioPlan (规划)"
+        return a or "Other"
+
+    def _acc(bucket: dict, key: str, u, cost: float):
+        e = bucket.setdefault(key, {"prompt_tokens": 0, "completion_tokens": 0,
+                                    "total_tokens": 0, "calls": 0, "estimated_cost_usd": 0.0})
+        e["prompt_tokens"] += u.prompt_tokens
+        e["completion_tokens"] += u.completion_tokens
+        e["total_tokens"] += u.total_tokens
+        e["calls"] += 1
+        e["estimated_cost_usd"] += cost
+
     for u in usages:
-        if u.model_name not in totals:
-            totals[u.model_name] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
-        totals[u.model_name]["prompt_tokens"] += u.prompt_tokens
-        totals[u.model_name]["completion_tokens"] += u.completion_tokens
-        totals[u.model_name]["total_tokens"] += u.total_tokens
-        totals[u.model_name]["calls"] += 1
-        
-        # Calculate daily trend on all records
+        cost = cost_usd(u.model_name, u.prompt_tokens, u.completion_tokens)
+        total_cost += cost
+        _acc(totals, u.model_name, u, cost)
+        _acc(by_action, u.action_type or "Other", u, cost)
+        _acc(by_category, _category(u.action_type), u, cost)
+        if (u.action_type or "").startswith("FactCheck:"):
+            target = (u.action_type.split(":", 1)[1].strip() or "unknown")
+            _acc(by_target, target, u, cost)
         if u.created_at:
-            # Format as M/D matching frontend
             date_str = u.created_at.strftime("%#m/%#d") if os.name == 'nt' else u.created_at.strftime("%-m/%-d")
             daily_trend[date_str] = daily_trend.get(date_str, 0) + u.total_tokens
-            
-    # Format daily_trend to a list of dicts for the frontend
-    # Sort dates chronologically (most recent last, up to 10 days)
+
+    # Round every bucket's accumulated cost.
+    for bucket in (totals, by_action, by_category, by_target):
+        for e in bucket.values():
+            e["estimated_cost_usd"] = round(e["estimated_cost_usd"], 6)
+
     def date_key(x):
         try:
             parts = [int(p) for p in x.split("/")]
             return parts[0], parts[1]
-        except:
+        except Exception:
             return 0, 0
-            
+
     sorted_dates = sorted(daily_trend.keys(), key=date_key)
     trend_list = [{"date": d, "tokens": daily_trend[d]} for d in sorted_dates[-10:]]
-
-    # Cost per model (input/output priced separately; embeddings included) so the
-    # frontend shows a real estimate instead of a blended hardcoded rate.
-    from services.pricing import cost_usd
-    total_cost = 0.0
-    for model, t in totals.items():
-        c = cost_usd(model, t["prompt_tokens"], t["completion_tokens"])
-        t["estimated_cost_usd"] = round(c, 6)
-        total_cost += c
 
     return {
         "raw_usage": usages[:100],  # Limit raw usage list
         "summary": totals,
+        "by_action": by_action,
+        "by_category": by_category,
+        "by_target": by_target,
         "daily_trend": trend_list,
         "estimated_cost_usd": round(total_cost, 4),
     }
