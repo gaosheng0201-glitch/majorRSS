@@ -127,10 +127,14 @@ export default function Discovery() {
   const [interval, setIntervalVal] = useState<number | string>(30);
   const [promptOverride, setPromptOverride] = useState('');
 
+  // Freshness = how recent content must be (its own first-class setting, NOT
+  // tied to probe intensity/source strategy). Drives both the source-level date
+  // window (Google News when:Nd) and the post-fetch age gate (max_days).
+  const [freshnessDays, setFreshnessDays] = useState<number>(7);
+
   // Developer Accordion Overrides
   const [devRouteStrategy, setDevRouteStrategy] = useState('default');
   const [devMaxItems, setDevMaxItems] = useState<number>(20);
-  const [devMaxDays, setDevMaxDays] = useState<number>(7);
 
   // Live Route Preview
   const [testing, setTesting] = useState(false);
@@ -156,18 +160,16 @@ export default function Discovery() {
     return () => window.removeEventListener('developer_mode_changed', handleDevModeChange);
   }, []);
 
-  // Sync intensity with defaults
+  // Probe intensity controls SOURCE BREADTH only (how many items per source);
+  // freshness is chosen independently (see freshnessDays).
   useEffect(() => {
     if (editingId) return; // Do not overwrite user custom edits during edit mode
     if (intensity === 'strict') {
       setDevMaxItems(10);
-      setDevMaxDays(3);
     } else if (intensity === 'balanced') {
       setDevMaxItems(20);
-      setDevMaxDays(7);
     } else {
       setDevMaxItems(50);
-      setDevMaxDays(14);
     }
   }, [intensity]);
 
@@ -253,7 +255,7 @@ export default function Discovery() {
         const p = JSON.parse(d.fetch_policy);
         setDevRouteStrategy(p.keyword_strategy || 'default');
         setDevMaxItems(p.max_items_per_route || 20);
-        setDevMaxDays(p.max_days || 7);
+        setFreshnessDays(p.max_days || 7);
         if (p.keyword_strategy === 'trusted_news_only') {
           setIntensity('strict');
         } else if (p.use_default_osint === true && p.max_items_per_route > 25) {
@@ -281,7 +283,7 @@ export default function Discovery() {
     setPromptOverride('');
     setDevRouteStrategy('default');
     setDevMaxItems(20);
-    setDevMaxDays(7);
+    setFreshnessDays(7);
     setKeepKeywords('');
     setIgnoreKeywords('');
     setTestResult(null);
@@ -310,7 +312,7 @@ export default function Discovery() {
     let policy: any = {
       keyword_strategy: devRouteStrategy,
       max_items_per_route: Number(devMaxItems),
-      max_days: Number(devMaxDays),
+      max_days: Number(freshnessDays),
       fallback_enabled: true,
       use_default_osint: true,
       keep_keywords: keepList,
@@ -655,6 +657,22 @@ export default function Discovery() {
                 styles={modalInputStyles}
               />
 
+              <Select
+                label="新鲜度 (Freshness) — 只关注多新的内容"
+                description="决定只看最近多久的内容：源头按此限定日期抓取（Google News），并过滤更旧的条目。与探测强度/源策略无关。"
+                data={[
+                  { value: '1', label: '最近 1 天（突发/快讯）' },
+                  { value: '3', label: '最近 3 天' },
+                  { value: '7', label: '最近 7 天（默认）' },
+                  { value: '14', label: '最近 14 天' },
+                  { value: '30', label: '最近 30 天（慢话题）' },
+                  { value: '0', label: '不限（含旧闻，谨慎：可能拉入历史）' },
+                ]}
+                value={String(freshnessDays)}
+                onChange={(v) => setFreshnessDays(Number(v ?? 7))}
+                styles={modalInputStyles}
+              />
+
               {/* Portfolio preview — "选源可解释": see which sources will be
                   watched and why, before creating the target. */}
               <div>
@@ -762,24 +780,15 @@ export default function Discovery() {
                           onChange={(v) => setDevRouteStrategy(v || 'default')}
                           styles={modalInputStyles}
                         />
-                        <SimpleGrid cols={2} spacing="sm">
-                          <NumberInput
-                            label="单源最大抓取条数 (Max Items per Route)"
-                            min={5}
-                            max={100}
-                            value={devMaxItems}
-                            onChange={(v) => setDevMaxItems(Number(v) || 20)}
-                            styles={modalInputStyles}
-                          />
-                          <NumberInput
-                            label="回溯时间跨度天数 (Max Days)"
-                            min={1}
-                            max={30}
-                            value={devMaxDays}
-                            onChange={(v) => setDevMaxDays(Number(v) || 7)}
-                            styles={modalInputStyles}
-                          />
-                        </SimpleGrid>
+                        <NumberInput
+                          label="单源最大抓取条数 (Max Items per Route)"
+                          min={5}
+                          max={100}
+                          value={devMaxItems}
+                          onChange={(v) => setDevMaxItems(Number(v) || 20)}
+                          styles={modalInputStyles}
+                        />
+                        {/* 新鲜度移到第 1 步的一等设置项，不再放在开发者设置里 */}
                       </Stack>
                     </Accordion.Panel>
                   </Accordion.Item>
