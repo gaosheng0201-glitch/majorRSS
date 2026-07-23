@@ -309,16 +309,31 @@ class SourceResolver:
         routes = []
         strategy = self.policy.get("keyword_strategy", "default")
         
+        # Source-level date window for the ONLY search route that pulls a wide
+        # historical window: Google News. Google News search supports `when:Nd`,
+        # so limit the query to the target's lookback window (max_days) instead of
+        # fetching everything and age-gating after download (愿景 line 87: 源头拦截
+        # 优于抓后过滤). This is the target's configured backfill window, not the
+        # poll interval. HN/Reddit are `newest`/`sort=new` (already latest-N,
+        # naturally bounded) and standard RSS feeds have no query date param, so
+        # the post-fetch age gate stays the right mechanism for those.
+        try:
+            max_days = int(self.policy.get("max_days", 7) or 0)
+        except Exception:
+            max_days = 7
+
         for idx, kw in enumerate(keywords):
             encoded_kw = urllib.parse.quote(kw)
-            
+            gnews_q = f"{kw} when:{max_days}d" if max_days > 0 else kw
+            gnews_encoded = urllib.parse.quote(gnews_q)
+
             # Default includes Google News, HN, and Reddit
             # trusted_news_only only includes Google News (and curated feeds when defined)
             if strategy in ["default", "news_only", "tech_sources", "trusted_news_only"]:
                 routes.append(SourceRoute(
                     route_id=f"gnews_{idx}",
                     adapter="RssAdapter",
-                    url_or_command=f"https://news.google.com/rss/search?q={encoded_kw}",
+                    url_or_command=f"https://news.google.com/rss/search?q={gnews_encoded}",
                     purpose="discovery",
                     requires_auth=False,
                     platform="gnews",
