@@ -18,6 +18,27 @@ from services.log_service import get_logger
 db = DBRepository()
 logger = get_logger("scraper")
 
+import re as _re
+_ACCT_TIER_RE = _re.compile(r"^(?:nitter|rsshub|agentic)_(twitter|bilibili|weibo)_(\d+)$")
+
+
+def _route_group(route_id: str) -> str:
+    """Group id for a route. Fallback tiers of ONE logical source share a group
+    (fetch stops at the first that works); independent sources get their own
+    group (all fetched). Derived from the resolver's route_id naming:
+      rss_feed_N / agentic_snapshot_N / rss_alternate_N  → one URL   → 'url_N'
+      nitter|rsshub|agentic_<plat>_N                     → one acct  → '<plat>_N'
+      gnews_N / hn_N / reddit_N / preset_* / rsshub_generic_N → independent."""
+    rid = route_id or ""
+    for prefix in ("rss_feed_", "agentic_snapshot_", "rss_alternate_"):
+        if rid.startswith(prefix):
+            return "url_" + rid.rsplit("_", 1)[-1]
+    m = _ACCT_TIER_RE.match(rid)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+    return rid  # independent source → its own group
+
+
 def print_safe(message: str):
     """Legacy shim: pipeline messages now go through the logging service
     (rotating file + encoding-safe console)."""
@@ -253,17 +274,22 @@ def scrape_single_tracker(tracker_id: int):
         # Write route resolution event
         tracer.event("RESOLVE", output_summary=f"Resolved {len(routes)} routes from signals")
 
-        # Discovery intents (keyword / hybrid / planned portfolio) fan out over
-        # MANY independent sources — Google News + HN + Reddit + the curated
-        # first-party feeds from source_scope — and must aggregate ALL of them.
-        # Only a single-source intent (one URL/feed with RSS→RssHub→Agentic
-        # fallbacks) stops at the first success. Without this distinction the
-        # highest-priority keyword route (Google News) delivered items and the
-        # `break` below skipped every curated preset source, so a planned
-        # portfolio only ever surfaced Google News.
-        fanout = (tracker.source_intent or "").upper() in ("KEYWORD_DISCOVERY", "HYBRID")
+        # Route grouping: fallback tiers of ONE logical source (a URL's RSS→
+        # RssHub→Agentic, or one account's nitter/rsshub/agentic) share a group
+        # and stop at the first that delivers; INDEPENDENT sources (each keyword
+        # channel, each curated preset, each account) are separate groups and are
+        # ALL fetched and aggregated. This replaces the old per-intent break,
+        # which either collapsed a discovery target to its first source (all
+        # Google News) or, if flipped to fan-out, re-hit an auth account through
+        # every fallback tier.
+        satisfied_groups = set()
 
         for route in routes:
+            grp = _route_group(route.route_id)
+            if grp in satisfied_groups:
+                # A higher-priority route in this source's fallback group already
+                # delivered — its remaining fallbacks are redundant.
+                continue
             route_start_time = time.time()
             adapter_name = route.adapter
             adapter = adapters.get(adapter_name)
@@ -348,12 +374,10 @@ def scrape_single_tracker(tracker_id: int):
 
                 if len(items) > 0:
                     content_delivered = True
+                    # Mark this source's group satisfied so its remaining fallback
+                    # tiers are skipped; independent sources keep being fetched.
+                    satisfied_groups.add(grp)
                     logger.info(f"Route {route.route_id} delivered {len(items)} items: saved {saved}, duplicates {dup}, filtered {filtered}")
-                    # Single-source intents stop at the first working route (its
-                    # fallbacks are alternatives for the SAME source). Discovery
-                    # intents keep going to aggregate every independent source.
-                    if not fanout:
-                        break
                 else:
                     logger.info(f"Route {route.route_id} reachable but returned 0 items. Trying next route...")
             except CookieExpiredException as ce:
