@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **同类设计审计的后续修复（按上面这批 bug 的特征回扫全库）**：
   - **订阅页"试运行 diff"同款超时**（`desktop/src/pages/Subscriptions.tsx`）：`test_diff_route_trace` 同步抓取 + 前端全局 15s 超时，与 tracker 试运行是同一个 bug，之前只修了 tracker 一半。改：同样放宽到 60s + 友好提示。
   - **Investigator 绕过 provider 抽象**（`llm/investigator.py`）：情报溯源两条流水线都硬走 `genai.Client(GEMINI_API_KEY)`、硬编码 `gemini-2.5-flash`、独立 token 记账 → 对本地/OpenAI 兼容模型用户完全不可用（违反愿景 #3 BYOK），且是 R3 provider 迁移的遗漏。改：自建漏斗（DDG→triage→抓取→verdict）的 LLM 调用改走 `get_provider().generate()`（任意后端可用）；原生 Google Search grounding 是 Gemini 专属，加守卫（非 Gemini 时给出改用漏斗的提示而非报错）；token 统一走 `_record_usage`（预算刹车可见）。
+- **语义/嵌入层深挖 + 债务清偿（2026-07-23，从"关键词目标全是 Google News、同一事件重复推送"一路挖到根）**。审计与收口计划见 `docs/semantic_layer_audit.md`：
+  - **根因链**：扇出（关键词目标只抓第一个源，抓到 Google News 就 `break`，精选一手源永远够不到）→ `create_tracker` 建目标时未持久化 `source_scope`（前已修）→ **embed 模型 `text-embedding-004` 已停服返回 404**，`run_semantic_ingest` 每 5 分钟静默抛异常，**整个语义层（embedding/聚类/去重/线索/告警）从打包第一天就 100% 死**，所有下游缺陷被掩盖。R3 当年只用 stub embedder 验证过，真实嵌入路径从未真跑。
+  - **扇出**（`services/scraper_service.py`）：区分"独立来源全抓"与"同源多方法组内首成即停"，先临时 fanout、后重构为**路由分组**（组间全抓、组内第一成功即停）——通用修复 ACCOUNT 多账号只抓第一个、HYBRID 授权账号回退冗余重打。
+  - **社交账号源路由**（`services/source_resolver.py`）：人物源 `source_type=account`（`x.com/<handle>`）此前落进 RSS 解析器每轮必败；改按账号走 RssHub twitter 路由 / 其他走 agentic 快照。
+  - **embed 模型 404**（`services/llm_provider.py`）：`text-embedding-004` → `gemini-embedding-2`（`models.list` 核实可用），语义层首次真正运转。
+  - **向量坍缩（各向异性）导致过度合并**（`services/semantic.py`）：真实嵌入挤在窄锥内（任意两条 AI 新闻余弦 0.6–0.9），阈值 0.62 把 44 篇不同事件揉成一条线索。改：聚类前**去均值**（各向异性校正，分离度约翻三倍）+ 候选地板（0.05，保证跨语言同事件成候选）。
+  - **LLM 事件仲裁**（`services/semantic_ingest.py`）：embedding 提合并、LLM 判"是否同一事件"——把最强实体的不同事件也分开（"Gemini 3.6 发布" vs "Gemini 星座运势"）。成本可控：仅灰区合并触发、仅配了生成模型时启用、每轮上限、进 token 记账。实测 17 篇实体大杂烩 → 12 条事件级线索；跨语言（中英日）同事件正确合并成一条。
+  - **fusion 唯一约束死循环**（`repositories/repository.py`）：`save_intel_report` 插入以 lead 文章 `raw_article_id`（唯一）为键的 IntelReport，若该文章已有报告（派生表被重置但 IntelReport 未清时）→ 唯一约束冲突 → 整批 rollback（含 `processed=True`）→ 文章保持未处理 → 每周期重试失败不止。改为幂等（存在则原地更新 + 始终标 processed）。
+  - **`Optional` 未导入致 sidecar 启动崩**（`backend/api/settings.py`）：新配置模型用了 `Optional[str]` 但只导入了 `List`，`ast` 语法检查通过但打包 sidecar 启动即 `NameError`。已改用"真实 import 全部改动模块"作为验证关口。
+  - **计费公式重构 + embedding 记账 + 真实模型名**（`services/pricing.py` + `Billing.tsx`）：此前成本 = `总 token × 单一混合费率`（前端硬编码 0.15 flash / 2.5 pro），忽略输出比输入贵数倍；`embed()` 从不记 token → embedding 消耗恒为 $0、预算刹车看不到；所有记录 model_name 都是 "gemini" 无法区分。改：后端按模型分输入/输出计价（官方价格，`ai.google.dev/gemini-api/docs/pricing`，2026-07-23 核实），embed 补估算记账，generate/embed 盖真实模型名。
+  - **模型与后端配置 UI**（Settings「模型与后端」+ `/settings/llm-config`）：provider 抽象此前 env-only、打包用户改不到；新增 provider(Gemini/OpenAI 兼容/本地) + base_url + 生成/嵌入模型选择，落 `.env`（启动加载）。选「OpenAI 兼容」+ Base URL 即把生成与嵌入全走本地（Ollama/LM Studio/vLLM）——兑现愿景 #3 本地优先。
 
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
