@@ -1,8 +1,8 @@
 import os
 from sqlmodel import select, func, text, Session
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import delete as sa_delete, update as sa_update
 from db.database import engine, get_db_url
-from db.models import RawArticle, IntelReport, DailyBriefing, TrendAlert, TokenUsage
+from db.models import RawArticle, IntelReport, DailyBriefing, TrendAlert, TokenUsage, StoryThread, RadarAlert
 from datetime import datetime, timezone, timedelta
 from services.log_service import get_logger
 
@@ -60,6 +60,7 @@ def get_db_status():
     with Session(engine) as session:
         raw_articles = session.exec(select(func.count(RawArticle.id))).one()
         intel_reports = session.exec(select(func.count(IntelReport.id))).one()
+        story_threads = session.exec(select(func.count(StoryThread.id))).one()
         daily_briefings = session.exec(select(func.count(DailyBriefing.id))).one()
         trend_alerts = session.exec(select(func.count(TrendAlert.id))).one()
         token_usages = session.exec(select(func.count(TokenUsage.id))).one()
@@ -86,6 +87,7 @@ def get_db_status():
         "row_counts": {
             "raw_articles": raw_articles,
             "intel_reports": intel_reports,
+            "story_threads": story_threads,
             "daily_briefings": daily_briefings,
             "trend_alerts": trend_alerts,
             "token_usages": token_usages
@@ -134,7 +136,16 @@ def run_db_cleanup():
             for tu in tokens_to_delete:
                 session.delete(tu)
             deleted_count += len(tokens_to_delete)
-            
+
+            # P2.1: StoryThread now holds the feed's summaries — prune stale threads
+            # too (else retention no longer bounds the feed). FK-safe order: drop
+            # their alerts, detach any surviving articles, then the threads.
+            old_threads = select(StoryThread.id).where(StoryThread.last_update_at < cutoff_naive)
+            session.execute(sa_delete(RadarAlert).where(RadarAlert.thread_id.in_(old_threads)))
+            session.execute(sa_update(RawArticle).where(RawArticle.thread_id.in_(old_threads)).values(thread_id=None))
+            res = session.execute(sa_delete(StoryThread).where(StoryThread.last_update_at < cutoff_naive))
+            deleted_count += res.rowcount or 0
+
             session.commit()
             
     # 2. Size-based Pruning
@@ -161,7 +172,19 @@ def run_db_cleanup():
                     for r in oldest_reports:
                         session.delete(r)
                     deleted_count += len(oldest_reports)
-                    
+
+                # P2.1: delete oldest 25% of StoryThreads (feed data lives here now).
+                # Subquery in .in_() (not a materialized id list) to stay under
+                # SQLite's bound-variable limit. FK-safe: alerts, then detach, then.
+                total_threads = session.exec(select(func.count(StoryThread.id))).one()
+                if total_threads > 50:
+                    limit_count = int(total_threads * 0.25)
+                    old_ids = select(StoryThread.id).order_by(StoryThread.last_update_at.asc()).limit(limit_count)
+                    session.execute(sa_delete(RadarAlert).where(RadarAlert.thread_id.in_(old_ids)))
+                    session.execute(sa_update(RawArticle).where(RawArticle.thread_id.in_(old_ids)).values(thread_id=None))
+                    res = session.execute(sa_delete(StoryThread).where(StoryThread.id.in_(old_ids)))
+                    deleted_count += res.rowcount or 0
+
                 session.commit()
 
     # 3. Vacuuming / Defragmentation

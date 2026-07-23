@@ -77,7 +77,7 @@ class TrendAlert(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     entity_name: str = Field(index=True)
     alert_summary: str
-    related_article_ids: str = Field(description="Comma separated IntelReport IDs")
+    related_article_ids: str = Field(description="Comma separated StoryThread IDs (P2.1; was IntelReport IDs pre-P2.1)")
     created_at: datetime = Field(default_factory=utc_now_naive)
 
 class PipelineStatus(SQLModel, table=True):
@@ -288,6 +288,17 @@ class StoryThread(SQLModel, table=True):
     is_resonant: bool = Field(default=False, description="crossed the resonance threshold (愿景 #2 alert signal)")
     first_seen_at: datetime = Field(default_factory=utc_now_naive)
     last_update_at: datetime = Field(default_factory=utc_now_naive)
+    # --- P2.1: the fused event summary lives on the thread (single source of
+    # truth; IntelReport deprecated). Written by process_tracker_fusion when the
+    # thread's members are worth summarizing — one summary per event, not per
+    # blind batch. Feed / briefing / trends / stats all read these. ---
+    summary: Optional[str] = Field(default=None, sa_column=Column(Text))
+    validity_category: Optional[str] = Field(default=None, description="[VALID_NEWS]/[NOISE]/... classified at fusion")
+    radar_section: Optional[str] = Field(default=None, description="denormalized from tracker for section filters")
+    key_entities: str = Field(default="[]", description="JSON list of extracted entities")
+    event_timestamp: Optional[str] = Field(default=None, description="ISO8601 of the underlying event")
+    source_url: Optional[str] = Field(default=None, description="'Fused from N sources (...)' descriptor for display")
+    summarized_at: Optional[datetime] = Field(default=None, index=True, description="when summary last (re)generated — feed ordering + incremental re-synth guard")
 
 class RadarAlert(SQLModel, table=True):
     """A thread-level alert. Default is a quiet dashboard; an alert is created

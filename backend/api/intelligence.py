@@ -23,16 +23,15 @@ def clean_summary_and_title(llm_summary: str, default_title: str):
     return llm_summary, cleaned_default_title
 
 def make_alert_response(a: TrendAlert, session: Session) -> TrendAlertResponse:
+    # P2.1: related_article_ids now holds StoryThread ids (trends scan threads).
+    from db.models import StoryThread
     rel_ids = [int(x.strip()) for x in a.related_article_ids.split(",") if x.strip()]
     sources_list = []
     if rel_ids:
-        reports_db = session.exec(select(IntelReport).where(IntelReport.id.in_(rel_ids))).all()
-        for r in reports_db:
-            raw = session.get(RawArticle, r.raw_article_id)
-            raw_title = raw.title if raw else "Untitled"
-            
-            clean_summary, title = clean_summary_and_title(r.llm_summary, raw_title)
-            
+        threads_db = session.exec(select(StoryThread).where(StoryThread.id.in_(rel_ids))).all()
+        for th in threads_db:
+            clean_summary, title = clean_summary_and_title(th.summary or "", th.title or "Untitled")
+
             desc = None
             if clean_summary:
                 summary_lines = [line.strip() for line in clean_summary.split("\n") if line.strip()]
@@ -40,7 +39,7 @@ def make_alert_response(a: TrendAlert, session: Session) -> TrendAlertResponse:
                     desc = summary_lines[0]
                     if len(desc) > 200:
                         desc = desc[:197] + "..."
-            sources_list.append(TrendAlertSource(title=title, url=r.source_url, description=desc))
+            sources_list.append(TrendAlertSource(title=title, url=th.source_url or "", description=desc))
     return TrendAlertResponse(
         id=a.id,
         entity_name=a.entity_name,
@@ -69,44 +68,46 @@ def get_dashboard_stats(session: Session = Depends(get_api_session)):
 
 @router.get("/feed", response_model=List[IntelReportResponse])
 def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_api_session)):
-    # Query reports and join raw article for the title
-    reports = session.exec(
-        select(IntelReport)
-        .where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
-        .order_by(IntelReport.created_at.desc())
+    # P2.1: the feed is built from StoryThreads now — ONE card per event, with the
+    # summary that lives on the thread — not from IntelReport blind batches. The
+    # response shape is unchanged, so the frontend is untouched.
+    from db.models import StoryThread
+    threads = session.exec(
+        select(StoryThread)
+        .where(StoryThread.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
+        .where(StoryThread.summary.is_not(None))
+        .order_by(StoryThread.summarized_at.desc())
         .limit(limit)
     ).all()
-    
+
     feed = []
-    for r in reports:
-        raw = session.get(RawArticle, r.raw_article_id)
-        title = raw.title if raw else "Untitled"
+    for th in threads:
         tracker_name = "Unknown"
-        if raw:
-            tracker = session.get(Tracker, raw.tracker_id)
+        if th.tracker_id:
+            tracker = session.get(Tracker, th.tracker_id)
             if tracker:
                 tracker_name = tracker.name
-        
+
         try:
-            entities = json.loads(r.key_entities)
+            entities = json.loads(th.key_entities or "[]")
             if not isinstance(entities, list):
                 entities = []
         except Exception:
             entities = []
-            
-        clean_summary, clean_title = clean_summary_and_title(r.llm_summary, title)
+
+        clean_summary, clean_title = clean_summary_and_title(th.summary, th.title or "Untitled")
         feed.append(IntelReportResponse(
-            id=r.id,
-            raw_article_id=r.raw_article_id,
-            source_url=r.source_url,
+            id=th.id,
+            raw_article_id=th.id,   # thread-based: no single lead article
+            source_url=th.source_url or "",
             title=clean_title,
-            validity_category=r.validity_category,
-            radar_section=r.radar_section,
+            validity_category=th.validity_category,
+            radar_section=th.radar_section,
             tracker_name=tracker_name,
             llm_summary=clean_summary,
-            importance_score=r.importance_score,
-            created_at=r.created_at,
-            event_timestamp=r.event_timestamp,
+            importance_score=th.importance_score,
+            created_at=th.summarized_at or th.last_update_at,
+            event_timestamp=th.event_timestamp,
             key_entities=entities
         ))
     return feed

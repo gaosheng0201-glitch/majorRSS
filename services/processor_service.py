@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import urllib.parse
+from datetime import datetime, timezone
 from repositories.repository import DBRepository
 from db.models import IntelReport
 from llm.processor import process_article
@@ -16,6 +17,10 @@ logger = get_logger("processor")
 # of prompt tokens on its own.
 MAX_CHARS_PER_ARTICLE = int(os.environ.get("LLM_MAX_CHARS_PER_ARTICLE", "6000"))
 MAX_CHARS_PER_BUNDLE = int(os.environ.get("LLM_MAX_CHARS_PER_BUNDLE", "36000"))
+# Cap how many of a thread's members are sent to the LLM per (re)fusion so a
+# large accreting thread doesn't re-send everything each cycle (bounded cost).
+# Provenance/counts still reflect ALL members — only the LLM input is capped.
+FUSION_MAX_MEMBERS = int(os.environ.get("FUSION_MAX_MEMBERS", "12"))
 
 def get_todays_token_usage() -> int:
     """Total tokens spent today (UTC), across all models and actions."""
@@ -43,42 +48,93 @@ def is_llm_budget_exhausted() -> bool:
     return False
 
 def process_tracker_fusion(tracker_id: int):
+    """P2.1: fuse per EVENT-THREAD, not blind 10-article batches. The semantic
+    layer already merged same-event articles into one StoryThread; fusion now
+    summarizes a thread's members into ONE summary on the thread. This fixes the
+    fragmentation (one event → one card, not N) and removes the cross-report dedup
+    machinery (the thread IS the dedup unit). Articles without a thread_id are NOT
+    fused — they wait for the semantic layer to cluster them (cluster-first, then
+    LLM). IntelReport is deprecated; the summary lives on StoryThread.summary."""
     if is_pure_rss_mode():
         return
 
     tracker = db.get_tracker(tracker_id)
-    if not tracker: return
+    if not tracker:
+        return
 
     import time
+    from db.database import get_session
+    from db.models import RawArticle, StoryThread
+    from sqlmodel import select
 
-    # Process unprocessed articles in batches of 10 in a sequential loop
-    batch_size = 10
+    with get_session() as s:
+        # Threads with NEW unprocessed (non-gated) members — fresh content.
+        rows = s.exec(
+            select(RawArticle.thread_id).where(
+                RawArticle.tracker_id == tracker_id,
+                RawArticle.processed == False,
+                RawArticle.relevance_gated == False,
+                RawArticle.thread_id.is_not(None),
+            ).distinct()
+        ).all()
+        # Threads never summarized yet (backlog / post-deploy transition): their
+        # members may already be processed, so normal fusion would skip them
+        # forever. Fold them in HERE — this IS the backfill, so the feed
+        # self-populates after deploy with no dead function or manual step. Once
+        # summarized they drop out unless new members arrive. (When the P1.1 gate
+        # lands it applies here too, so noise threads aren't backfilled.)
+        backlog = s.exec(
+            select(StoryThread.id).where(
+                StoryThread.tracker_id == tracker_id,
+                StoryThread.summary.is_(None),
+                StoryThread.member_count > 0,
+            )
+        ).all()
+    pending_thread_ids = list({tid for tid in rows if tid is not None} | set(backlog))
 
-    while True:
+    for thread_id in pending_thread_ids:
         if is_llm_budget_exhausted():
-            db.set_pipeline_status(tracker.name, "AI Fusion", "Daily LLM token budget exhausted; deferring processing to tomorrow.")
+            db.set_pipeline_status(tracker.name, "AI Fusion",
+                                   "Daily LLM token budget exhausted; deferring processing to tomorrow.")
             break
+        try:
+            _fuse_thread(tracker, thread_id)
+        except Exception as e:
+            logger.error(f"Fusion failed for thread {thread_id}: {e}", exc_info=e)
+        # Protect API RPM between per-thread summaries.
+        time.sleep(1.5)
 
-        unprocessed = db.get_unprocessed_articles(tracker_id, limit=batch_size)
-        if not unprocessed:
-            break
 
-        # 1. Fetch recent reports for deduplication context
-        recent_reports = db.get_recent_reports(tracker.radar_section, limit=8)
-        recent_context = ""
-        if recent_reports:
-            context_items = []
-            for r in recent_reports:
-                summary_text = r.llm_summary.split("\n\n---")[0] if "\n\n---" in r.llm_summary else r.llm_summary
-                context_items.append(f"Report ID: {r.id}\nCategory: {r.validity_category}\nSummary: {summary_text}")
-            recent_context = "\n\n".join(context_items)
+def _fuse_thread(tracker, thread_id: int):
+    """Summarize one event-thread's members into StoryThread.summary."""
+    from db.database import get_session
+    from db.models import RawArticle, StoryThread
+    from sqlmodel import select
 
-        # Bundle with per-article truncation and a total-size ceiling. Articles
-        # that do not fit stay processed=False and are picked up next loop.
-        selected = []
-        entries = []
-        total_chars = 0
-        for u in unprocessed:
+    with get_session() as session:
+        thread = session.get(StoryThread, thread_id)
+        if not thread:
+            return
+        members = session.exec(
+            select(RawArticle).where(RawArticle.thread_id == thread_id)
+            .order_by(RawArticle.created_at.desc())
+        ).all()
+        if not members:
+            return
+
+        # P1.1 gate hook (task #4): decide HERE whether the thread earns an LLM
+        # summary or stays a lead. For now every clustered event is fused.
+
+        # What to SEND to the LLM: newest members (latest developments), capped for
+        # cost (#7), PLUS the original lead (oldest) so re-fusion never summarizes
+        # off follow-up chatter alone (#6). Provenance/counts use ALL members (#2).
+        to_send = list(members[:FUSION_MAX_MEMBERS])
+        lead = members[-1]
+        if lead not in to_send:
+            to_send.append(lead)
+
+        selected, entries, total_chars = [], [], 0
+        for u in to_send:
             content = (u.content or "")
             if len(content) > MAX_CHARS_PER_ARTICLE:
                 content = content[:MAX_CHARS_PER_ARTICLE] + "\n[... content truncated ...]"
@@ -89,82 +145,66 @@ def process_tracker_fusion(tracker_id: int):
             selected.append(u)
             entries.append(entry)
             total_chars += len(entry)
-        unprocessed = selected
 
-        db.set_pipeline_status(tracker.name, "AI Fusion", f"Gemini is cross-validating a batch of {len(unprocessed)} sources...")
-
+        db.set_pipeline_status(tracker.name, "AI Fusion",
+                               f"Summarizing event thread ({len(members)} sources)...")
         bundled_text = f"=== OSINT FUSION FOR TARGET: {tracker.target} ===\n\n" + "".join(entries)
-            
         result = process_article(
-            bundled_text, 
-            tracker.radar_section, 
-            prompt_override=tracker.prompt_override, 
-            tracker_name=tracker.name,
-            recent_context=recent_context
+            bundled_text, tracker.radar_section,
+            prompt_override=tracker.prompt_override, tracker_name=tracker.name,
         )
-        
-        # Extract valid sources based on LLM relevant indices
-        if hasattr(result, 'relevant_source_indices') and result.relevant_source_indices:
-            valid_sources = [unprocessed[i-1] for i in result.relevant_source_indices if 1 <= i <= len(unprocessed)]
+
+        # Cited = sources the summary is based on; the rest are same-event
+        # corroboration (honest labels, per P0.2), not noise.
+        if getattr(result, "relevant_source_indices", None):
+            valid_sources = [selected[i - 1] for i in result.relevant_source_indices if 1 <= i <= len(selected)]
         else:
-            valid_sources = unprocessed
+            valid_sources = list(selected)
+        if not valid_sources:
+            valid_sources = list(selected)
+        valid_ids = {u.id for u in valid_sources}
+        # Corroboration = every OTHER member of the event, INCLUDING members past
+        # the char/count cap — so nothing is silently dropped from provenance (#2).
+        other_sources = [u for u in members if u.id not in valid_ids]
 
-        # 2. Check if this batch is a duplicate of a recent report
-        merged = False
-        if hasattr(result, 'duplicate_of_report_id') and result.duplicate_of_report_id is not None:
-            # Try to merge sources into existing report
-            merged = db.append_sources_to_report(result.duplicate_of_report_id, valid_sources, unprocessed)
-            if merged:
-                logger.info(f"Deduplication: Merged {len(unprocessed)} articles into existing IntelReport {result.duplicate_of_report_id}")
-                db.set_pipeline_status(tracker.name, "AI Fusion", f"Deduplication: Merged batch into existing report ID: {result.duplicate_of_report_id}")
-        
-        # 3. If not merged (either duplicate_of_report_id was null, or report was not found in DB)
-        if not merged:
-            lead_article = unprocessed[0]
-            if hasattr(result, 'relevant_source_indices') and result.relevant_source_indices:
-                # Pydantic 1-based index to 0-based Python list index
-                first_valid_idx = result.relevant_source_indices[0] - 1
-                if 0 <= first_valid_idx < len(unprocessed):
-                    lead_article = unprocessed[first_valid_idx]
-                    
-            composite_urls = ", ".join([urllib.parse.urlparse(u.url).netloc for u in unprocessed])
-            if len(composite_urls) > 80:
-                composite_urls = composite_urls[:77] + "..."
-                
-            # Cited = the sources the summary is actually based on. The rest of
-            # the bundle are OTHER reports of the SAME event (duplicates /
-            # corroboration), NOT noise — they were clustered together precisely
-            # because they're the same story from different outlets. Label them
-            # honestly instead of calling them "过滤的噪音".
-            cited_links = "\n".join([f"- [{u.title}]({u.url})" for u in valid_sources])
-            other_sources = [u for u in unprocessed if u not in valid_sources]
-            other_links = "\n".join([f"- [{u.title}]({u.url})" for u in other_sources])
+        cited_links = "\n".join([f"- [{u.title}]({u.url})" for u in valid_sources])
+        other_links = "\n".join([f"- [{u.title}]({u.url})" for u in other_sources])
+        dup_block = (
+            f"\n\n**:material/content_copy: 重复/佐证来源（同一事件的其他报道）:**\n{other_links}"
+            if other_sources else ""
+        )
+        final_summary = (
+            f"[TITLE: {result.title}]\n\n{result.llm_summary}\n\n---\n"
+            f"**:material/menu_book: 摘要引用来源:**\n{cited_links}"
+            f"{dup_block}"
+            f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`"
+        )
+        composite_urls = ", ".join([urllib.parse.urlparse(u.url).netloc for u in members])
+        if len(composite_urls) > 80:
+            composite_urls = composite_urls[:77] + "..."
 
-            dup_block = (
-                f"\n\n**:material/content_copy: 重复/佐证来源（同一事件的其他报道）:**\n{other_links}"
-                if other_sources else ""
-            )
-            final_summary = (
-                f"[TITLE: {result.title}]\n\n{result.llm_summary}\n\n---\n"
-                f"**:material/menu_book: 摘要引用来源:**\n{cited_links}"
-                f"{dup_block}"
-                f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`"
-            )
-            
-            report = IntelReport(
-                raw_article_id=lead_article.id,
-                source_url=f"Fused from {len(unprocessed)} sources ({composite_urls})",
-                validity_category=result.validity_category,
-                radar_section=tracker.radar_section,
-                llm_summary=final_summary,
-                importance_score=result.importance_score,
-                original_content_hash=hashlib.sha256(bundled_text.encode('utf-8')).hexdigest(),
-                key_entities=json.dumps(result.key_entities),
-                event_timestamp=result.event_timestamp
-            )
-            
-            db.save_intel_report(report, unprocessed)
-            logger.info(f"Fused {len(unprocessed)} articles into IntelReport: {report.validity_category} - Score {report.importance_score}")
-        
-        # Add 1.5s delay between batches to protect API RPM rate limits
-        time.sleep(1.5)
+        # Keep-best guard (#6): a low-value follow-up must not erase a surfaced
+        # event. Never demote an already-VALID thread to noise; keep max importance.
+        _VALID = ("[VALID_NEWS]", "VALID_NEWS")
+        new_validity = result.validity_category
+        if (thread.validity_category in _VALID) and (new_validity not in _VALID):
+            new_validity = thread.validity_category
+        thread.summary = final_summary
+        thread.validity_category = new_validity
+        thread.radar_section = tracker.radar_section
+        thread.importance_score = max(int(thread.importance_score or 0), int(result.importance_score or 0))
+        thread.key_entities = json.dumps(result.key_entities)
+        thread.event_timestamp = result.event_timestamp
+        thread.source_url = f"Fused from {len(members)} sources ({composite_urls})"
+        thread.summarized_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.add(thread)
+
+        # Mark every member processed (even those past the char budget — they are
+        # the same event, represented by this summary; must not be re-fused).
+        for u in members:
+            if not u.processed:
+                u.processed = True
+                session.add(u)
+        session.commit()
+        logger.info(f"Fused thread {thread_id}: {thread.validity_category} score {thread.importance_score} "
+                    f"({len(selected)} sent / {len(members)} members)")

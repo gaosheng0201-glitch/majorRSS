@@ -20,7 +20,8 @@ def run_migrations():
             "0004_subscription_diff_policy",
             "0005_pipeline_trace_tables",
             "0006_semantic_and_radar_columns",
-            "0007_source_tier"
+            "0007_source_tier",
+            "0008_thread_summary"
         ]
         
         for m in migrations:
@@ -197,6 +198,42 @@ def run_migrations():
                         ra_cols = [c["name"] for c in inspector.get_columns(ra_table)]
                         if "source_tier" not in ra_cols:
                             conn.execute(text(f"ALTER TABLE {ra_table} ADD COLUMN source_tier VARCHAR"))
+                    session.commit()
+
+                elif m == "0008_thread_summary":
+                    # P2.1: the fused event summary moves onto StoryThread (single
+                    # source of truth; IntelReport deprecated). Add the summary +
+                    # display/classification columns idempotently.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    st_table = "storythread"
+                    if st_table in inspector.get_table_names():
+                        st_cols = [c["name"] for c in inspector.get_columns(st_table)]
+                        for col, ddl in [
+                            ("summary", "TEXT"),
+                            ("validity_category", "VARCHAR"),
+                            ("radar_section", "VARCHAR"),
+                            ("key_entities", "TEXT DEFAULT '[]'"),
+                            ("event_timestamp", "VARCHAR"),
+                            ("source_url", "VARCHAR"),
+                            ("summarized_at", "DATETIME"),
+                        ]:
+                            if col not in st_cols:
+                                conn.execute(text(f"ALTER TABLE {st_table} ADD COLUMN {col} {ddl}"))
+                        # summarized_at is the hot feed ordering/filter key;
+                        # create_all only builds the index on fresh DBs, so add it
+                        # here for upgraded DBs (else every feed query full-scans).
+                        conn.execute(text(
+                            f"CREATE INDEX IF NOT EXISTS ix_storythread_summarized_at "
+                            f"ON {st_table} (summarized_at)"))
+                    # Legacy TrendAlert.related_article_ids held IntelReport ids;
+                    # make_alert_response now resolves them as StoryThread ids
+                    # (independent id spaces → wrong/empty sources). Purge pre-P2.1
+                    # alerts — they are transient and regenerate from live threads.
+                    ta_table = "trendalert"
+                    if ta_table in inspector.get_table_names():
+                        conn.execute(text(f"DELETE FROM {ta_table}"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

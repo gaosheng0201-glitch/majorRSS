@@ -42,7 +42,9 @@ def get_radar_stats(since_hours: int = 168) -> dict:
         resonant = s.exec(select(func.count(StoryThread.id)).where(
             StoryThread.first_seen_at >= since, StoryThread.is_resonant == True)).one() or 0
         alerts = s.exec(select(func.count(RadarAlert.id)).where(RadarAlert.created_at >= since)).one() or 0
-        reports = s.exec(select(func.count(IntelReport.id)).where(IntelReport.created_at >= since)).one() or 0
+        # P2.1: "reports" = event summaries produced in the window (now on threads).
+        reports = s.exec(select(func.count(StoryThread.id)).where(
+            StoryThread.summarized_at >= since, StoryThread.summary.is_not(None))).one() or 0
 
     # "Items you didn't have to read": noise filtered + duplicates merged.
     noise_removed = int(gated) + int(merged)

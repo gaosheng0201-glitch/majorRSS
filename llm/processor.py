@@ -3,7 +3,7 @@ import json
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone, timedelta
 from db.database import get_session
-from db.models import IntelReport, DailyBriefing, TokenUsage
+from db.models import IntelReport, DailyBriefing, TokenUsage, StoryThread
 from sqlmodel import select
 from typing import Optional
 from services.log_service import get_logger
@@ -162,10 +162,16 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
         # Default fallback to 24 hours ago
         start_time = now_utc - timedelta(days=1)
         
-    query = select(IntelReport).where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"])).where(IntelReport.created_at >= start_time)
+    # P2.1: the briefing synthesizes from event THREADS (one summary per event),
+    # not IntelReport batches.
+    query = select(StoryThread).where(
+        StoryThread.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]),
+        StoryThread.summary.is_not(None),
+        StoryThread.summarized_at >= start_time,
+    )
     if target_sections:
-        query = query.where(IntelReport.radar_section.in_(target_sections))
-        
+        query = query.where(StoryThread.radar_section.in_(target_sections))
+
     reports = session.exec(query).all()
     
     # Also fetch subscription updates
@@ -186,7 +192,7 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
     if reports:
         content_list.append("### [RSS INTEL REPORTS]")
     for r in reports:
-        content_list.append(f"Source: {r.source_url}\nSection: {r.radar_section}\nSummary: {r.llm_summary}\nImportance: {r.importance_score}/5\n")
+        content_list.append(f"Source: {r.source_url}\nSection: {r.radar_section}\nSummary: {r.summary}\nImportance: {r.importance_score}/5\n")
         
     master_text = "\n---\n".join(content_list)
     
@@ -233,31 +239,33 @@ def scan_trends(api_key: str = None):
     session = get_session()
     recent_time = datetime.now(timezone.utc) - timedelta(hours=12)
     
+    # P2.1: scan recent event THREADS for entity spikes.
     reports = session.exec(
-        select(IntelReport)
-        .where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
-        .where(IntelReport.created_at >= recent_time)
+        select(StoryThread)
+        .where(StoryThread.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
+        .where(StoryThread.summary.is_not(None))
+        .where(StoryThread.summarized_at >= recent_time)
     ).all()
-    
+
     if not reports:
         session.close()
         return
-        
+
     entity_to_reports = {}
     for r in reports:
         try:
-            entities = json.loads(r.key_entities)
+            entities = json.loads(r.key_entities or "[]")
             for e in entities:
                 e_norm = e.strip().upper()
                 if e_norm not in entity_to_reports:
                     entity_to_reports[e_norm] = {"name": e.strip(), "reports": []}
                 entity_to_reports[e_norm]["reports"].append(r)
         except Exception as e:
-            logger.warning(f"Failed to parse key_entities for report {r.id}: {e}")
-            
-    # Check for threshold (e.g. appeared in >= 2 distinct sources for testing)
+            logger.warning(f"Failed to parse key_entities for thread {r.id}: {e}")
+
+    # Trending = the entity appears in >= 2 distinct event threads.
     for e_norm, data in entity_to_reports.items():
-        unique_sources = set([r.source_url for r in data["reports"]])
+        unique_sources = set([r.id for r in data["reports"]])
         if len(unique_sources) >= 2:
             existing = session.exec(
                 select(TrendAlert)
@@ -270,7 +278,7 @@ def scan_trends(api_key: str = None):
                     session.close()
                     return
 
-                content_list = [f"Source: {r.source_url}\nSummary: {r.llm_summary}" for r in data["reports"]]
+                content_list = [f"Source: {r.source_url}\nSummary: {r.summary}" for r in data["reports"]]
                 master_text = "\n---\n".join(content_list)
 
                 target_lang = get_target_language()

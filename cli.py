@@ -7,36 +7,41 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from db.database import get_session
-from db.models import IntelReport, DailyBriefing, PipelineStatus
+from db.models import StoryThread, DailyBriefing, PipelineStatus
 from sqlmodel import select
 from datetime import datetime, timezone
 
 def get_news(section: str, format: str):
+    # P2.1: the MIP/agent surface reads event THREADS (StoryThread.summary), the
+    # same source the desktop /feed reads — not the deprecated IntelReport.
     session = get_session()
-    query = select(IntelReport).where(IntelReport.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
+    query = select(StoryThread).where(
+        StoryThread.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]),
+        StoryThread.summary.is_not(None),
+    )
     if section:
-        query = query.where(IntelReport.radar_section == section)
-    
-    reports = session.exec(query.order_by(IntelReport.created_at.desc()).limit(20)).all()
-    
+        query = query.where(StoryThread.radar_section == section)
+
+    reports = session.exec(query.order_by(StoryThread.summarized_at.desc()).limit(20)).all()
+
     if format == 'json':
         data = []
         for r in reports:
             try:
-                entities = json.loads(r.key_entities)
-            except:
+                entities = json.loads(r.key_entities or "[]")
+            except Exception:
                 entities = []
             data.append({
-                "id": r.original_content_hash,
+                "id": str(r.id),
                 "radar_section": r.radar_section,
                 "source_url": r.source_url,
                 "importance_score": r.importance_score,
                 "validity_category": r.validity_category,
                 "key_entities": entities,
-                "summary": r.llm_summary,
-                "scraped_at": r.created_at.isoformat()
+                "summary": r.summary,
+                "scraped_at": r.summarized_at.isoformat() if r.summarized_at else None
             })
-            
+
         output = {
             "mip_version": "1.0",
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -46,7 +51,7 @@ def get_news(section: str, format: str):
     else:
         for r in reports:
             print(f"[{r.importance_score}⭐] {r.radar_section}: {r.source_url}")
-            print(f"Summary: {r.llm_summary}\n")
+            print(f"Summary: {r.summary}\n")
 
 def get_status():
     session = get_session()
