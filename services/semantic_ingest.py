@@ -242,7 +242,10 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                     except Exception:
                         pass
 
-            tid, sim = sm.assign_thread(vec, centroids)
+            # Candidate = nearest thread above the low floor (positive-ish in the
+            # centered space); the arbiter judges it. The floor (not the old 0.18)
+            # keeps cross-language same-event pairs as candidates.
+            tid, sim = sm.assign_thread(vec, centroids, threshold=sm.THREAD_CANDIDATE_FLOOR)
             # Embedding proposes merging into `tid`. If it's not a high-confidence
             # (near-identical) match, ask the LLM whether it's really the same
             # event — embedding alone can't separate same-entity events. A "no"

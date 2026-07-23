@@ -32,6 +32,15 @@ THREAD_THRESHOLD_RAW = 0.62
 THREAD_THRESHOLD_CENTERED = 0.18
 DEFAULT_THREAD_THRESHOLD = THREAD_THRESHOLD_RAW  # back-compat for callers/tests
 
+# Candidate floor for LLM-arbitrated clustering (centered space). In the
+# mean-centered space, same-event pairs — INCLUDING cross-language (zh/en/ja)
+# reports of one event — are positive (~0.19–0.33) while different events are
+# negative (~-0.15…-0.48). So any positive-ish neighbour is a merge CANDIDATE the
+# arbiter should judge; a hard cosine threshold (0.18) wrongly excluded marginal
+# cross-language pairs (愿景 #6: cross-language same-event must merge). The
+# arbiter is the real decider; embedding only proposes candidates above this floor.
+THREAD_CANDIDATE_FLOOR = 0.05
+
 # Above this centered similarity a merge is near-identical — embedding is
 # confident enough to skip the LLM event-arbiter. Between the thread threshold
 # and this, a merge is plausible-but-risky (same entity, maybe different event),
