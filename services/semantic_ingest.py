@@ -176,7 +176,13 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     if gating_enabled:
         with get_session() as s:
             stored = []
-            for (vjson,) in s.exec(select(ArticleEmbedding.vector)).all():
+            # SQLModel session.exec(select(single_column)) yields SCALARS (the
+            # column value), not 1-tuples — so `for (vjson,) in ...` blew up with
+            # "too many values to unpack" and aborted the whole semantic run once
+            # ArticleEmbedding had rows (masked earlier while embedding was stalled
+            # and this line was never reached). Handle scalar or Row defensively.
+            for row in s.exec(select(ArticleEmbedding.vector)).all():
+                vjson = row if isinstance(row, str) else row[0]
                 try:
                     stored.append(json.loads(vjson))
                 except Exception:
