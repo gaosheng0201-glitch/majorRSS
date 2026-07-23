@@ -105,7 +105,22 @@ class SourceResolver:
                     if not preset or not preset.url or preset.url in existing_urls:
                         continue
                     stype = (preset.source_type or "rss").lower()
-                    if stype == "rsshub" or preset.url.startswith("rsshub:"):
+                    url = preset.url
+                    if stype == "account":
+                        # A social account (e.g. https://x.com/sama) can't be parsed
+                        # as RSS — the raw profile page is HTML. Route X/Twitter
+                        # accounts through RssHub's twitter feed; other hosts fall
+                        # back to an agentic page snapshot. (Previously "account"
+                        # fell through to RssAdapter and every people-radar source
+                        # failed on every scrape.)
+                        handle = url.rstrip("/").split("/")[-1]
+                        low = url.lower()
+                        if "x.com" in low or "twitter.com" in low:
+                            adapter, platform = "RssHubAdapter", "rsshub"
+                            url = f"rsshub:/twitter/user/{handle}"
+                        else:
+                            adapter, platform = "AgenticAdapter", "web"
+                    elif stype == "rsshub" or url.startswith("rsshub:"):
                         adapter, platform = "RssHubAdapter", "rsshub"
                     elif stype in ("web", "webpage", "html"):
                         adapter, platform = "AgenticAdapter", "web"
@@ -114,7 +129,7 @@ class SourceResolver:
                     added.append(SourceRoute(
                         route_id=f"preset_{pid}",
                         adapter=adapter,
-                        url_or_command=preset.url,
+                        url_or_command=url,
                         purpose="discovery",
                         requires_auth=False,
                         platform=platform,
