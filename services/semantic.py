@@ -32,6 +32,12 @@ THREAD_THRESHOLD_RAW = 0.62
 THREAD_THRESHOLD_CENTERED = 0.18
 DEFAULT_THREAD_THRESHOLD = THREAD_THRESHOLD_RAW  # back-compat for callers/tests
 
+# Above this centered similarity a merge is near-identical — embedding is
+# confident enough to skip the LLM event-arbiter. Between the thread threshold
+# and this, a merge is plausible-but-risky (same entity, maybe different event),
+# so an LLM confirms it's the same event (services/semantic_ingest).
+THREAD_HIGH_CONFIDENCE = 0.55
+
 # Global corpus mean for anisotropy correction, maintained by the ingest layer.
 _CORPUS_MEAN: Optional[List[float]] = None
 

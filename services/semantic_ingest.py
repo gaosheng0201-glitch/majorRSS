@@ -20,6 +20,36 @@ logger = get_logger("semantic")
 
 _MAX_TEXT_CHARS = 2000  # embedding input cap per article
 
+# LLM event arbiter: embedding proposes a thread merge; when it's not a
+# near-identical (high-confidence) match, an LLM confirms the two are the SAME
+# news event rather than merely the same entity — this is what separates
+# "Gemini 3.6 released" from "Gemini horoscope today", which collapse together in
+# embedding space no matter the threshold (愿景: 事件线索, not entity buckets).
+_EVENT_ARBITER_SYS = (
+    "You judge whether two news headlines report the SAME specific news event. "
+    "The same company or topic is NOT enough — it must be the same underlying "
+    "event/announcement. Reply with exactly one word: yes or no."
+)
+_ARBITER_CALLS_PER_CYCLE = 300  # cost/latency cap; excess falls back to embedding
+
+
+def _llm_same_event(provider, title_a, title_b):
+    """LLM arbitration: same news event? True/False, or None if the call failed
+    (caller then keeps the embedding decision). Cheap — a one-word completion."""
+    try:
+        text, usage = provider.generate(
+            f"Headline A: {title_a}\nHeadline B: {title_b}",
+            system=_EVENT_ARBITER_SYS, temperature=0.0)
+        try:
+            from llm.processor import _record_usage
+            _record_usage(getattr(provider, "name", "unknown"), "EventArbiter", usage)
+        except Exception:
+            pass
+        return text.strip().lower().startswith("y")
+    except Exception as e:
+        logger.warning(f"Event arbiter failed ({e}); keeping embedding decision.")
+        return None
+
 
 def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -167,6 +197,19 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     else:
         sm.set_corpus_mean(None)
 
+    # LLM event arbiter (see _llm_same_event): only when a generation model is
+    # configured; no-key users fall back to embedding-only clustering.
+    arbiter = None
+    if gating_enabled:
+        try:
+            from services.llm_provider import get_provider
+            _prov = get_provider()
+            if getattr(_prov, "supports_generation", False):
+                arbiter = _prov
+        except Exception:
+            arbiter = None
+    arb_budget = _ARBITER_CALLS_PER_CYCLE
+
     created = 0
     updated = 0
     gated = 0
@@ -200,6 +243,19 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                         pass
 
             tid, sim = sm.assign_thread(vec, centroids)
+            # Embedding proposes merging into `tid`. If it's not a high-confidence
+            # (near-identical) match, ask the LLM whether it's really the same
+            # event — embedding alone can't separate same-entity events. A "no"
+            # forces a new thread. Only merges, only the gray zone, only while
+            # budget remains; otherwise keep the embedding decision.
+            if (tid is not None and arbiter is not None and arb_budget > 0
+                    and sim < sm.THREAD_HIGH_CONFIDENCE):
+                arb_budget -= 1
+                rep_title = (thread_by_id[tid].title or "")
+                same = _llm_same_event(arbiter, rep_title, article.title or "")
+                if same is False:
+                    logger.info(f"Arbiter split: '{(article.title or '')[:40]}' ≠ event of thread {tid}")
+                    tid = None
             if tid is None:
                 # A brand-new thread from a first-party source is CONFIRMED
                 # outright (an official announcement); otherwise it starts LEAD.
