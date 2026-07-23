@@ -17,6 +17,9 @@ def _record_usage(model_name: str, action_type: str, usage: dict, session=None):
     swallow — accounting must stay visible."""
     if not usage:
         return
+    # Prefer the real model stamped by the provider (generate/embed) over the
+    # caller's generic provider name ("gemini"), so billing can price per model.
+    model_name = usage.get("model") or model_name
     try:
         row = TokenUsage(
             model_name=model_name,

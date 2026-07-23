@@ -34,17 +34,22 @@ export default function Billing() {
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary>({});
   const [rawUsage, setRawUsage] = useState<TokenUsageRecord[]>([]);
   const [trendData, setTrendData] = useState<{ date: string; tokens: number }[]>([]);
+  const [estCost, setEstCost] = useState(0);
 
   const fetchTokenUsage = async () => {
     try {
-      const res = await client.get<{ 
-        summary: TokenUsageSummary; 
+      const res = await client.get<{
+        summary: TokenUsageSummary;
         raw_usage: TokenUsageRecord[];
-        daily_trend: { date: string; tokens: number }[]
+        daily_trend: { date: string; tokens: number }[];
+        estimated_cost_usd: number;
       }>('/settings/token-usage');
       setTokenSummary(res.data.summary);
       setRawUsage(res.data.raw_usage);
       setTrendData(res.data.daily_trend || []);
+      // Cost is computed backend-side per model (input/output priced separately,
+      // embeddings included) — see services/pricing.py.
+      setEstCost(res.data.estimated_cost_usd || 0);
     } catch (err) {
       console.error("Failed to fetch token usage:", err);
     } finally {
@@ -56,7 +61,7 @@ export default function Billing() {
     fetchTokenUsage();
   }, []);
 
-  // Compute total tokens and estimated costs
+  // Split flash/pro token counts for the two headline tiles (display only).
   let flashTokens = 0;
   let proTokens = 0;
   Object.entries(tokenSummary).forEach(([model, data]) => {
@@ -66,8 +71,6 @@ export default function Billing() {
       proTokens += data.total_tokens;
     }
   });
-
-  const estCost = (flashTokens / 1000000) * 0.15 + (proTokens / 1000000) * 2.5;
 
   const maxTokens = Math.max(...trendData.map(d => d.tokens), 1);
 

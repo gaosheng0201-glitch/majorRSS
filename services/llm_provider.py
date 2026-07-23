@@ -39,6 +39,19 @@ _TOKEN_RE = re.compile(r"[0-9a-zA-Z一-鿿぀-ヿ가-힣]+")
 _GEMINI_CLIENTS: dict = {}
 
 
+def _record_embed_usage(model: str, texts) -> None:
+    """Embedding calls don't return token counts; estimate (~chars/4, input only)
+    so embedding spend is visible to billing and the daily-budget brake instead
+    of silently counting as $0 (docs/semantic_layer_audit.md §1.2)."""
+    try:
+        est = sum(max(1, len(t) // 4) for t in texts)
+        from llm.processor import _record_usage
+        _record_usage(model, "Embedding", {
+            "prompt_tokens": est, "completion_tokens": 0, "total_tokens": est, "model": model})
+    except Exception:
+        pass
+
+
 def _l2_normalize(vec: List[float]) -> List[float]:
     norm = math.sqrt(sum(x * x for x in vec))
     if norm == 0:
@@ -122,6 +135,7 @@ class GeminiProvider(LLMProvider):
                 "completion_tokens": resp.usage_metadata.candidates_token_count or 0,
                 "total_tokens": resp.usage_metadata.total_token_count or 0,
             }
+        usage["model"] = model or self.model  # so billing attributes the real model
         return resp.text, usage
 
     def embed(self, texts: List[str]) -> List[List[float]]:
@@ -132,6 +146,7 @@ class GeminiProvider(LLMProvider):
             r = client.models.embed_content(model=self.embed_model, contents=t)
             emb = r.embeddings[0].values if getattr(r, "embeddings", None) else r["embedding"]
             out.append(_l2_normalize(list(emb)))
+        _record_embed_usage(self.embed_model, texts)
         return out
 
 
@@ -170,10 +185,12 @@ class OpenAICompatibleProvider(LLMProvider):
         data = r.json()
         text = data["choices"][0]["message"]["content"]
         u = data.get("usage", {}) or {}
+        _mdl = model or self.model
         usage = {
             "prompt_tokens": u.get("prompt_tokens", 0),
             "completion_tokens": u.get("completion_tokens", 0),
             "total_tokens": u.get("total_tokens", 0),
+            "model": _mdl,
         }
         return text, usage
 
@@ -184,6 +201,7 @@ class OpenAICompatibleProvider(LLMProvider):
                           headers=self._headers(), timeout=120)
         r.raise_for_status()
         data = r.json()
+        _record_embed_usage(self.embed_model, texts)
         return [_l2_normalize(list(item["embedding"])) for item in data["data"]]
 
 

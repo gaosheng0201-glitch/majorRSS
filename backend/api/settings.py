@@ -142,11 +142,21 @@ def get_token_usage(session: Session = Depends(get_api_session)):
             
     sorted_dates = sorted(daily_trend.keys(), key=date_key)
     trend_list = [{"date": d, "tokens": daily_trend[d]} for d in sorted_dates[-10:]]
-    
+
+    # Cost per model (input/output priced separately; embeddings included) so the
+    # frontend shows a real estimate instead of a blended hardcoded rate.
+    from services.pricing import cost_usd
+    total_cost = 0.0
+    for model, t in totals.items():
+        c = cost_usd(model, t["prompt_tokens"], t["completion_tokens"])
+        t["estimated_cost_usd"] = round(c, 6)
+        total_cost += c
+
     return {
         "raw_usage": usages[:100],  # Limit raw usage list
         "summary": totals,
-        "daily_trend": trend_list
+        "daily_trend": trend_list,
+        "estimated_cost_usd": round(total_cost, 4),
     }
 
 @router.get("/pipeline-logs")
