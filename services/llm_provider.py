@@ -90,7 +90,7 @@ class GeminiProvider(LLMProvider):
     supports_generation = True
 
     def __init__(self, api_key: str, model: str = "gemini-3.6-flash",
-                 embed_model: str = "text-embedding-004"):
+                 embed_model: str = "gemini-embedding-001"):
         self.api_key = api_key
         self.model = model
         self.embed_model = embed_model
@@ -209,7 +209,7 @@ def get_provider() -> LLMProvider:
     return GeminiProvider(
         api_key=api_key,
         model=os.environ.get("LLM_MODEL", "gemini-3.6-flash"),
-        embed_model=os.environ.get("LLM_EMBED_MODEL", "text-embedding-004"),
+        embed_model=os.environ.get("LLM_EMBED_MODEL", "gemini-embedding-001"),
     )
 
 
