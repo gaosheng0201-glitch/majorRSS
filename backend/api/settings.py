@@ -60,6 +60,41 @@ def get_api_key_status():
         return {"has_key": True, "masked_key": masked_key}
     return {"has_key": False, "masked_key": ""}
 
+class LLMConfigUpdate(BaseModel):
+    provider: str = "gemini"           # gemini | openai_compatible
+    base_url: Optional[str] = ""       # OpenAI-compatible endpoint (Ollama/LM Studio/vLLM)
+    model: Optional[str] = ""          # generation model (blank = provider default)
+    embed_model: Optional[str] = ""    # embedding model (blank = provider default)
+    api_key: Optional[str] = ""        # for openai_compatible; blank keeps existing / none
+
+@router.get("/llm-config")
+def get_llm_config():
+    """Current model/backend selection so the user isn't stuck with a black-box
+    default (docs/semantic_layer_audit.md §2/§3). Defaults reflect what
+    get_provider() would use."""
+    return {
+        "provider": os.environ.get("LLM_PROVIDER", "gemini"),
+        "base_url": os.environ.get("LLM_BASE_URL", ""),
+        "model": os.environ.get("LLM_MODEL", ""),
+        "embed_model": os.environ.get("LLM_EMBED_MODEL", ""),
+        "defaults": {
+            "gemini": {"model": "gemini-3.6-flash", "embed_model": "gemini-embedding-2"},
+            "openai_compatible": {"model": "gpt-4o-mini", "embed_model": "text-embedding-3-small"},
+        },
+    }
+
+@router.post("/llm-config")
+def save_llm_config(req: LLMConfigUpdate):
+    """Persist model/backend choice to .env (loaded on startup). get_provider()
+    reads these per call, so it takes effect on the next AI operation."""
+    update_env_variable("LLM_PROVIDER", req.provider or "gemini")
+    update_env_variable("LLM_BASE_URL", (req.base_url or "").strip())
+    update_env_variable("LLM_MODEL", (req.model or "").strip())
+    update_env_variable("LLM_EMBED_MODEL", (req.embed_model or "").strip())
+    if req.api_key:
+        update_env_variable("LLM_API_KEY", req.api_key.strip())
+    return {"status": "ok", "message": "Model configuration saved"}
+
 class SystemLanguageUpdate(BaseModel):
     language: str
 

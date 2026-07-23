@@ -58,6 +58,13 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
   const [hasApiKey, setHasApiKey] = useState(false);
   const [maskedApiKey, setMaskedApiKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Model & backend selection (docs/semantic_layer_audit.md §2/§3)
+  const [llmProvider, setLlmProvider] = useState('gemini');
+  const [llmBaseUrl, setLlmBaseUrl] = useState('');
+  const [llmModel, setLlmModel] = useState('');
+  const [llmEmbedModel, setLlmEmbedModel] = useState('');
+  const [llmDefaults, setLlmDefaults] = useState<Record<string, { model: string; embed_model: string }>>({});
+  const [savingLlm, setSavingLlm] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerState | null>(null);
   const [accountGuards, setAccountGuards] = useState<any[]>([]);
@@ -133,9 +140,37 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
     }
   };
 
+  const fetchLlmConfig = async () => {
+    try {
+      const res = await client.get<any>('/settings/llm-config');
+      setLlmProvider(res.data.provider || 'gemini');
+      setLlmBaseUrl(res.data.base_url || '');
+      setLlmModel(res.data.model || '');
+      setLlmEmbedModel(res.data.embed_model || '');
+      setLlmDefaults(res.data.defaults || {});
+    } catch (err) {
+      console.error("Failed to fetch LLM config:", err);
+    }
+  };
+
+  const handleSaveLlm = async () => {
+    setSavingLlm(true);
+    try {
+      await client.post('/settings/llm-config', {
+        provider: llmProvider, base_url: llmBaseUrl, model: llmModel, embed_model: llmEmbedModel,
+      });
+      alert('模型配置已保存，下次 AI 操作生效');
+    } catch (err) {
+      alert('保存失败');
+    } finally {
+      setSavingLlm(false);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
     fetchApiKeyStatus();
+    fetchLlmConfig();
     fetchDbStatus();
     fetchEngineStatus();
     const interval = setInterval(() => {
@@ -505,6 +540,52 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
             )}
           </Stack>
         </form>
+      </Paper>
+
+      {/* Model & Backend selection */}
+      <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
+        <Stack gap="md">
+          <Text size="md" fw={700} className="title-text-color">模型与后端 (Model & Backend)</Text>
+          <Text size="xs" c="dimmed">
+            选择 AI 后端与生成/嵌入模型。可指向本地模型（Ollama / LM Studio / vLLM：选「OpenAI 兼容」+ 填 Base URL），隐私优先、免 token 费用。留空则用该后端默认模型。
+          </Text>
+          <Select
+            label="后端 (Provider)"
+            data={[
+              { value: 'gemini', label: 'Gemini（云端）' },
+              { value: 'openai_compatible', label: 'OpenAI 兼容 / 本地（Ollama · LM Studio · vLLM）' },
+            ]}
+            value={llmProvider}
+            onChange={(v) => setLlmProvider(v || 'gemini')}
+            styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+          />
+          {llmProvider === 'openai_compatible' && (
+            <TextInput
+              label="Base URL"
+              placeholder="http://localhost:11434/v1"
+              value={llmBaseUrl}
+              onChange={(e) => setLlmBaseUrl(e.target.value)}
+              styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+            />
+          )}
+          <TextInput
+            label="生成模型 (Generation Model)"
+            placeholder={llmDefaults[llmProvider]?.model || '默认'}
+            value={llmModel}
+            onChange={(e) => setLlmModel(e.target.value)}
+            styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+          />
+          <TextInput
+            label="嵌入模型 (Embedding Model)"
+            placeholder={llmDefaults[llmProvider]?.embed_model || '默认'}
+            value={llmEmbedModel}
+            onChange={(e) => setLlmEmbedModel(e.target.value)}
+            styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+          />
+          <Button color="indigo" loading={savingLlm} leftSection={<Save size={14} />} onClick={handleSaveLlm} style={{ alignSelf: 'flex-start' }}>
+            保存模型配置
+          </Button>
+        </Stack>
       </Paper>
 
       {/* Database & Storage Management */}
