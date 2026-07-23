@@ -67,7 +67,27 @@ class DBRepository:
             
     def save_intel_report(self, report: IntelReport, source_articles):
         with get_session() as session:
-            session.add(report)
+            # Idempotent on the lead's unique raw_article_id: if a report already
+            # exists (e.g. the article is re-fused after derived tables were reset
+            # but IntelReport wasn't), UPDATE it in place instead of inserting a
+            # duplicate. Previously the unique-constraint violation rolled the whole
+            # batch back, leaving the articles unprocessed → the fusion job retried
+            # and failed every cycle forever.
+            existing = session.exec(
+                select(IntelReport).where(IntelReport.raw_article_id == report.raw_article_id)
+            ).first()
+            if existing is None:
+                session.add(report)
+            else:
+                existing.source_url = report.source_url
+                existing.validity_category = report.validity_category
+                existing.radar_section = report.radar_section
+                existing.llm_summary = report.llm_summary
+                existing.importance_score = report.importance_score
+                existing.original_content_hash = report.original_content_hash
+                existing.key_entities = report.key_entities
+                existing.event_timestamp = report.event_timestamp
+                session.add(existing)
             for u in source_articles:
                 u.processed = True
                 session.add(u)
