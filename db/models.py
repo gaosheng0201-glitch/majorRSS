@@ -53,6 +53,11 @@ class RawArticle(SQLModel, table=True):
     # excluded from LLM fusion (token economy). Only set when a REAL embedder is
     # configured — the fallback bag-of-words must never silently drop content.
     relevance_gated: bool = Field(default=False, index=True)
+    # Provenance tier stamped at intake (docs/source_tiering.md): primary /
+    # curated / aggregated. Read by the fusion gate (P1.1), scoring, feedback and
+    # dev-mode display. Nullable: legacy rows are unknown → treated as aggregated
+    # (must earn a summary) by the gate.
+    source_tier: Optional[str] = Field(default=None, index=True)
 
 class IntelReport(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

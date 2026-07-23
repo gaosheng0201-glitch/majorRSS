@@ -3,6 +3,8 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import List, Optional
 
+from services.provenance import Tier
+
 @dataclass
 class SourceRoute:
     route_id: str
@@ -14,6 +16,10 @@ class SourceRoute:
     priority: int = 1
     auth_profile_id: Optional[int] = None
     auth_status: str = "none" # "none" | "matched" | "missing"
+    # Provenance tier (docs/source_tiering.md). Default CURATED (user opted-in:
+    # direct URLs, tracked accounts, portfolio presets); keyword firehoses stamp
+    # AGGREGATED. The normalizer refines CURATED→PRIMARY by the item's URL.
+    tier: str = Tier.CURATED
 
 class SourceResolver:
     def __init__(self, fetch_policy: Optional[str] = None, auth_profile_id: Optional[int] = None):
@@ -337,7 +343,8 @@ class SourceResolver:
                     purpose="discovery",
                     requires_auth=False,
                     platform="gnews",
-                    priority=1
+                    priority=1,
+                    tier=Tier.AGGREGATED,
                 ))
             if strategy in ["default", "tech_sources"]:
                 routes.append(SourceRoute(
@@ -347,7 +354,8 @@ class SourceResolver:
                     purpose="discovery",
                     requires_auth=False,
                     platform="hackernews",
-                    priority=1
+                    priority=1,
+                    tier=Tier.AGGREGATED,
                 ))
             if strategy in ["default", "social_forum"]:
                 routes.append(SourceRoute(
@@ -357,7 +365,8 @@ class SourceResolver:
                     purpose="discovery",
                     requires_auth=False,
                     platform="reddit",
-                    priority=1
+                    priority=1,
+                    tier=Tier.AGGREGATED,
                 ))
         return routes
 

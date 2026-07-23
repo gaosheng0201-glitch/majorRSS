@@ -160,6 +160,8 @@ class RawArticleResponse(BaseModel):
     content: str
     published_at: Optional[datetime] = None
     created_at: datetime
+    # Provenance tier (docs/source_tiering.md) for dev-mode "which channel" display.
+    source_tier: Optional[str] = None
 
     class Config:
         from_attributes = True

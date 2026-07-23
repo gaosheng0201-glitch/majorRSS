@@ -248,6 +248,7 @@ def get_raw_articles_feed(limit: int = 50, session: Session = Depends(get_api_se
             url=art.url,
             content=art.content,
             published_at=art.published_at,
-            created_at=art.created_at
+            created_at=art.created_at,
+            source_tier=art.source_tier,
         ))
     return feed

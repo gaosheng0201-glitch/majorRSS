@@ -15,6 +15,13 @@ from sqlmodel import select
 
 from services.log_service import get_logger
 from services import semantic as sm
+# Provenance (first-party detection, domain, real publisher) is shared infra —
+# one home, read by semantic_ingest + publish_service (docs/source_tiering.md).
+from services.provenance import (
+    domain as _domain,
+    is_first_party as _is_first_party,
+    real_publisher,
+)
 
 logger = get_logger("semantic")
 
@@ -58,33 +65,6 @@ def _now():
 def _embed_text(article) -> str:
     body = (article.content or "")[:_MAX_TEXT_CHARS]
     return f"{article.title or ''}\n{body}".strip()
-
-
-def _domain(url: str) -> str:
-    try:
-        return urllib.parse.urlparse(url).netloc.lower()
-    except Exception:
-        return url
-
-
-# First-party / authoritative source patterns → promote CORROBORATED → CONFIRMED.
-# Heuristic baseline: official primary sources (gov, standards, code, papers,
-# vendor newsrooms). R4's portfolio planner will supply each target's own
-# official domains for precise first-party detection; this is the floor.
-_FIRST_PARTY_SUFFIXES = (".gov", ".gov.cn", ".mil", ".edu")
-_FIRST_PARTY_DOMAINS = (
-    "arxiv.org", "github.com", "github.io", "openai.com", "anthropic.com",
-    "blog.google", "ai.googleblog.com", "developer.apple.com", "apple.com",
-    "microsoft.com", "nvidia.com", "sec.gov", "fda.gov", "who.int",
-    "clinicaltrials.gov", "europa.eu",
-)
-
-
-def _is_first_party(url: str) -> bool:
-    d = _domain(url)
-    if any(d.endswith(sfx) for sfx in _FIRST_PARTY_SUFFIXES):
-        return True
-    return any(d == fp or d.endswith("." + fp) for fp in _FIRST_PARTY_DOMAINS)
 
 
 def _profile_terms(tracker) -> list:
@@ -150,8 +130,22 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     if not pending:
         return {"embedded": 0, "threads_created": 0, "threads_updated": 0}
 
-    vectors = embedder.embed([_embed_text(a) for a in pending])
     model_name = getattr(embedder, "name", "unknown")
+
+    # Embed the batch. embed() returns None for any item that permanently failed
+    # (P0.3: one un-embeddable article or an exhausted-retry rate-limit must NOT
+    # abort the whole batch — that froze the layer at 100/1101). Skip the Nones;
+    # they carry no ArticleEmbedding row and are retried next cycle.
+    raw_vectors = embedder.embed([_embed_text(a) for a in pending])
+    embedded = [(a, v) for a, v in zip(pending, raw_vectors) if v is not None]
+    embed_skipped = len(pending) - len(embedded)
+    if embed_skipped:
+        logger.warning(f"Semantic ingest: {embed_skipped}/{len(pending)} articles "
+                       f"failed to embed this cycle; will retry next cycle.")
+    if not embedded:
+        return {"embedded": 0, "threads_created": 0, "threads_updated": 0,
+                "embed_skipped": embed_skipped}
+    vectors = [v for _, v in embedded]
 
     # Relevance gating acts (drops from LLM fusion) ONLY with a real embedder —
     # the fallback bag-of-words is too weak to safely reject content, so with it
@@ -169,7 +163,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
         with get_session() as s:
             tr = s.get(Tracker, tracker_id)
         terms = _profile_terms(tr) if tr else []
-        vecs = embedder.embed(terms) if terms else []
+        # embed() may return None per failed term (P0.3); drop them.
+        vecs = [v for v in embedder.embed(terms) if v is not None] if terms else []
         profile_cache[tracker_id] = vecs
         return vecs
 
@@ -215,7 +210,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     gated = 0
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
-        for article, vec in zip(pending, vectors):
+        for article, vec in embedded:
             # Relevance vs the tracker's topic profile.
             profile = _profile_vecs(article.tracker_id)
             relevance = sm.relevance_score(vec, profile) if profile else None
@@ -284,15 +279,21 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 th.member_count += 1
                 th.last_update_at = _now()
                 article.thread_id = th.id
-                # Distinct-source count drives corroboration: count unique
-                # domains among this thread's members (incl. the new one).
-                member_urls = session.exec(select(RawArticle.url).where(RawArticle.thread_id == th.id)).all()
-                domains = {_domain(u) for u in member_urls} | {_domain(article.url)}
-                th.distinct_source_count = len(domains)
+                # Distinct-source count drives corroboration. Count unique real
+                # PUBLISHERS, not URL domains: Google News links all share
+                # news.google.com, so domain-counting made this ≡ 1 for every
+                # gnews thread and nothing ever left LEAD (P0.4). real_publisher()
+                # recovers the outlet from the title's " - Publisher" suffix.
+                member_rows = session.exec(
+                    select(RawArticle.url, RawArticle.title).where(RawArticle.thread_id == th.id)
+                ).all()
+                pubs = {real_publisher(u, t) for (u, t) in member_rows} | \
+                       {real_publisher(article.url, article.title)}
+                th.distinct_source_count = len(pubs)
                 # Lifecycle: LEAD → CORROBORATED (≥2 independent sources) →
                 # CONFIRMED (a first-party/authoritative source present). A
                 # first-party source confirms directly, even with fewer sources.
-                member_urls_list = list(member_urls) + [article.url]
+                member_urls_list = [u for (u, _t) in member_rows] + [article.url]
                 has_first_party = any(_is_first_party(u) for u in member_urls_list)
                 if has_first_party and th.lifecycle != "CONFIRMED":
                     th.lifecycle = "CONFIRMED"
@@ -320,9 +321,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
             ))
             session.commit()
 
-    logger.info(f"Semantic ingest: embedded {len(pending)}, threads +{created} ~{updated}, gated {gated}")
-    return {"embedded": len(pending), "threads_created": created,
-            "threads_updated": updated, "relevance_gated": gated}
+    logger.info(f"Semantic ingest: embedded {len(embedded)}, threads +{created} ~{updated}, "
+                f"gated {gated}, embed_skipped {embed_skipped}")
+    return {"embedded": len(embedded), "threads_created": created,
+            "threads_updated": updated, "relevance_gated": gated,
+            "embed_skipped": embed_skipped}
 
 
 def refresh_resonance(window_days: int = 14) -> int:

@@ -6,6 +6,7 @@ from db.models import RawArticle
 from repositories.repository import DBRepository
 from scrapers.url_normalizer import auto_route
 from services.adapters import SourceItem
+from services.provenance import Tier, tier_for_url
 
 class SourceNormalizer:
     def __init__(self):
@@ -82,6 +83,12 @@ class SourceNormalizer:
                 duplicates += 1
                 continue
                 
+            # Provenance tier (docs/source_tiering.md): the route stamped a base
+            # tier on the item; refine it by the actual article URL so an opt-in
+            # source whose article sits on a first-party domain becomes PRIMARY.
+            # AGGREGATED (keyword firehose) never upgrades.
+            source_tier = tier_for_url(canonical_url, item.tier or Tier.CURATED)
+
             # Create RawArticle
             article = RawArticle(
                 tracker_id=tracker_id,
@@ -89,7 +96,8 @@ class SourceNormalizer:
                 url=canonical_url,
                 content=cleaned_content,
                 published_at=item.published_at.replace(tzinfo=None) if item.published_at else None,
-                processed=False
+                processed=False,
+                source_tier=source_tier,
             )
             
             # Save

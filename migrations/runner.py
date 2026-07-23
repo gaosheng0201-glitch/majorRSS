@@ -19,7 +19,8 @@ def run_migrations():
             "0003_task_retry_columns",
             "0004_subscription_diff_policy",
             "0005_pipeline_trace_tables",
-            "0006_semantic_and_radar_columns"
+            "0006_semantic_and_radar_columns",
+            "0007_source_tier"
         ]
         
         for m in migrations:
@@ -180,6 +181,22 @@ def run_migrations():
                         tr_cols = [c["name"] for c in inspector.get_columns(tr_table)]
                         if "is_high_attention" not in tr_cols:
                             conn.execute(text(f"ALTER TABLE {tr_table} ADD COLUMN is_high_attention BOOLEAN DEFAULT 0"))
+                    session.commit()
+
+                elif m == "0007_source_tier":
+                    # Provenance capture (docs/source_tiering.md / P0.4): stamp each
+                    # article's source tier at intake. Nullable — legacy rows stay
+                    # NULL (unknown → treated as aggregated by the fusion gate).
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    ra_table = "rawarticle"
+                    if ra_table not in inspector.get_table_names() and "raw_article" in inspector.get_table_names():
+                        ra_table = "raw_article"
+                    if ra_table in inspector.get_table_names():
+                        ra_cols = [c["name"] for c in inspector.get_columns(ra_table)]
+                        if "source_tier" not in ra_cols:
+                            conn.execute(text(f"ALTER TABLE {ra_table} ADD COLUMN source_tier VARCHAR"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

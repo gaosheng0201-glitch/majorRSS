@@ -24,6 +24,9 @@ class SourceItem:
     metrics: Optional[Dict[str, Any]] = None
     raw_payload: Optional[Dict[str, Any]] = None
     fingerprint: Optional[str] = None
+    # Provenance tier carried from the route (docs/source_tiering.md). The
+    # normalizer refines it by the item URL and writes RawArticle.source_tier.
+    tier: Optional[str] = None
 
 class BaseAdapter:
     def fetch(self, route: SourceRoute, auth_profile_id: Optional[int] = None) -> List[SourceItem]:
@@ -44,6 +47,7 @@ class RssAdapter(BaseAdapter):
             items.append(SourceItem(
                 source_id=f"{route.route_id}_{idx}",
                 platform=route.platform,
+                tier=getattr(route, "tier", None),
                 route=route.url_or_command,
                 title=entry.get("title", "No Title"),
                 url=entry.get("url", ""),
@@ -83,6 +87,7 @@ class RssHubAdapter(BaseAdapter):
             items.append(SourceItem(
                 source_id=f"{route.route_id}_{idx}",
                 platform=route.platform,
+                tier=getattr(route, "tier", None),
                 route=route.url_or_command,
                 title=entry.get("title", "No Title"),
                 url=entry.get("url", ""),
@@ -135,6 +140,7 @@ class AgenticAdapter(BaseAdapter):
         item = SourceItem(
             source_id=f"{route.route_id}_snapshot",
             platform=route.platform,
+            tier=getattr(route, "tier", None),
             route=route.url_or_command,
             title=f"Snapshot: {route.url_or_command}",
             url=route.url_or_command + f"#{content_hash}",

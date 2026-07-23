@@ -67,7 +67,9 @@ def _auth_platform_domains() -> set:
 
 
 def _source_kind(url: str) -> str:
-    from services.semantic_ingest import _is_first_party
+    # Provenance is shared infra now (docs/source_tiering.md §10): read
+    # first-party from services.provenance, not the semantic module.
+    from services.provenance import is_first_party as _is_first_party
     if _is_first_party(url):
         return "first_party"
     d = _domain(url)

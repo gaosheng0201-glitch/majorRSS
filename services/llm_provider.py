@@ -38,6 +38,31 @@ _TOKEN_RE = re.compile(r"[0-9a-zA-Z一-鿿぀-ヿ가-힣]+")
 # generation failed with "Cannot send a request, as the client has been closed."
 _GEMINI_CLIENTS: dict = {}
 
+# Embedding resilience (P0.3). google-genai embeds one content per call, so a
+# batch of N pending articles is N sequential HTTP calls. A rapid burst tripped
+# the embedding RPM quota; a single 429 aborted the whole batch and NOTHING was
+# persisted, so the same batch was retried every cycle forever — the semantic
+# layer froze at 100/1101 articles. Pace between calls, retry transient errors,
+# and skip (return None for) an item that permanently fails so one bad item never
+# blocks the rest. Surfacing fatal auth/config errors is intentional — those are
+# not "skip and continue" situations.
+_EMBED_PACING_S = float(os.environ.get("EMBED_PACING_SECONDS", "0.15"))
+_EMBED_RETRIES = int(os.environ.get("EMBED_RETRIES", "4"))
+_EMBED_BACKOFF_S = float(os.environ.get("EMBED_BACKOFF_SECONDS", "2.0"))
+
+
+def _embed_error_kind(msg: str) -> str:
+    """Classify an embedding error: 'fatal' (auth/config — raise), 'transient'
+    (rate/quota/network — retry), or 'item' (this content — skip just this one)."""
+    m = (msg or "").lower()
+    if any(s in m for s in ("api key", "api_key", "unauthenticated", "permission",
+                            "401", "403", "invalid api", "not found", "invalid argument model")):
+        return "fatal"
+    if any(s in m for s in ("429", "rate", "quota", "resource_exhausted", "exhausted",
+                            "timeout", "deadline", "unavailable", "503", "500", "internal")):
+        return "transient"
+    return "item"
+
 
 def _record_embed_usage(model: str, texts) -> None:
     """Embedding calls don't return token counts; estimate (~chars/4, input only)
@@ -138,14 +163,36 @@ class GeminiProvider(LLMProvider):
         usage["model"] = model or self.model  # so billing attributes the real model
         return resp.text, usage
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """Embed each text, one API call per text (google-genai simple API).
+        Resilient (P0.3): paces calls, retries transient errors, and returns
+        None for an item that permanently fails so one bad item can't abort the
+        batch. Fatal auth/config errors are raised (not masked). Callers MUST
+        tolerate None entries."""
+        import time
         client = self._client()
-        out = []
-        # google-genai embeds one content per call in the simple API.
-        for t in texts:
-            r = client.models.embed_content(model=self.embed_model, contents=t)
-            emb = r.embeddings[0].values if getattr(r, "embeddings", None) else r["embedding"]
-            out.append(_l2_normalize(list(emb)))
+        out: List[Optional[List[float]]] = []
+        for idx, t in enumerate(texts):
+            if idx:
+                time.sleep(_EMBED_PACING_S)
+            emb = None
+            for attempt in range(_EMBED_RETRIES):
+                try:
+                    r = client.models.embed_content(model=self.embed_model, contents=t)
+                    emb = r.embeddings[0].values if getattr(r, "embeddings", None) else r["embedding"]
+                    break
+                except Exception as e:
+                    kind = _embed_error_kind(str(e))
+                    if kind == "fatal":
+                        raise
+                    if kind == "transient" and attempt < _EMBED_RETRIES - 1:
+                        time.sleep(_EMBED_BACKOFF_S * (attempt + 1))
+                        continue
+                    logger.warning(f"Embedding skipped one item ({kind}) after {attempt + 1} tr"
+                                   f"ies: {str(e)[:160]}")
+                    emb = None
+                    break
+            out.append(_l2_normalize(list(emb)) if emb is not None else None)
         _record_embed_usage(self.embed_model, texts)
         return out
 
