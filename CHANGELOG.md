@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P0.5 入库近重去重** (`services/dedup.py` + `services/source_normalizer.py`)：廉价确定性预过滤，剥掉近乎逐字的转载（同标题多站重发）以免白花 embed+fusion。**身份护栏**（版本号/日期周期/退化标题）杜绝把序列/版本兄弟误合并（月度 "Developer Update"、`v0.117.1` vs `.0`）——审计证明护栏而非阈值才是过度合并的控制点。约 3–4% 体积，安全网而非成本杠杆（真正的去重靠向量语义合并）。
 - **P1.2 Billing 按动作/目标拆分** (`backend/api/settings.py` + `desktop/src/pages/Billing.tsx`)：`/settings/token-usage` 新增 `by_category`（向量 vs 融合 vs 趋势 vs 简报）/`by_target`（每探测目标）/`by_action`，每类带真实费用；Billing 页新增两张卡（成本构成条形 + 按目标表）。实测拆解：融合 76% · 向量 8% · 趋势 10% · 简报 5%——省钱杠杆在融合、不在向量（向量还可切本地 Ollama 归零）。
 
+##### 作者实测阶段的回归修复（2026-07-23 装包实跑暴露）
+
+- **去均值路径崩溃,整个语义层再度冻结**（`services/semantic_ingest.py`）：各向异性校正读存量向量时写的是 `for (vjson,) in s.exec(select(ArticleEmbedding.vector)).all()`，但 SQLModel 的 `session.exec(单列 select)` 返回的是**标量**而非 1-元组 → 一旦 `ArticleEmbedding` 有行就抛 `too many values to unpack`，**每轮 semantic 整个崩掉、什么都不落库**。此前被 P0.3 的批量嵌入卡死所掩盖（根本走不到这行）；P0.3 修好后执行推进到这里，症状换了根因不变：嵌入停在 100、线索冻在 10:43、feed 空。改为标量/Row 双兼容。**测试盲区归因**：集成测试用 fallback embedder，`gating_enabled=False` 恰好跳过该分支——此后动语义层必须专门跑一遍真 embedder 的 gating 路径。修复后实测解冻：嵌入 100→430+、线索时间戳恢复推进、生命周期出现 CORROBORATED(最高 11 个真实出版方)与 RESONANT。
+- **广告混入雷达：相关性门是"话题相关"不是"编辑价值"**（新增 `services/noise_filter.py` + `services/source_normalizer.py`）：reddit `r/DiscountOffer90` 的「[OFFER] Gemini Ai Pro 代金券 $4.99」广告，对 Gemini 目标的相关度高达 **0.648**（阈值 0.35）——因为它字面就是"关于 Gemini"。**向量无法区分"关于 X 的新闻"与"卖 X 的广告"**，调高阈值只会先杀死真新闻。故加一道**正交的确定性入库筛**：① 社区市场标签（`[OFFER]/[WTS]/[WTB]/[H]…[W]` 等结构化前缀）；② 促销子版块（`/r/<sub>` 名按 camelCase/数字分词后匹配 discount/deal/coupon/giveaway… ，故 `r/IdealSociety` 不会被 "Ideal" 里的 "deal" 误伤）。**刻意不用松散词**（coupon / "30% off" / cheap）——"Nvidia 降价 30% off"是真新闻；此处精度优先于召回：漏掉一条广告只是小烦扰，误杀一条独家是产品事故。在 embed/fusion 之前拦下，零成本。
+
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
 - 前端 feed 链接 `javascript:` XSS → `safeHref` 只放行 http(s)。

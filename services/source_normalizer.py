@@ -53,7 +53,7 @@ class SourceNormalizer:
         # P0.5 near-duplicate pre-filter: recent titles for this tracker + titles
         # accepted earlier in this batch, so near-verbatim re-syndication is
         # dropped before it costs an embed + fusion. Identity-guarded (see dedup).
-        from services import dedup
+        from services import dedup, noise_filter
         recent_titles = self.db.get_recent_titles(tracker_id)
         batch_titles = []
 
@@ -72,6 +72,14 @@ class SourceNormalizer:
                 
             # 3. Ignore keywords check
             if ignore_keywords and self.check_keywords_match(item.title, item.content, ignore_keywords):
+                filtered += 1
+                continue
+
+            # 3b. Promotional / marketplace posts (ads, voucher resales). The
+            # relevance gate can't catch these — they're topically ON-target (a
+            # "Gemini Pro voucher" ad scored 0.648 vs a Gemini tracker). Screened
+            # deterministically here, before any embed/fusion cost.
+            if noise_filter.is_promotional(item.title, item.url):
                 filtered += 1
                 continue
                 
