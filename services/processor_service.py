@@ -131,10 +131,25 @@ def process_tracker_fusion(tracker_id: int):
             if len(composite_urls) > 80:
                 composite_urls = composite_urls[:77] + "..."
                 
-            source_links = "\n".join([f"- [{u.title}]({u.url})" for u in valid_sources])
-            raw_urls_md = "\n".join([f"- {u.url}" for u in unprocessed])
-            
-            final_summary = f"[TITLE: {result.title}]\n\n{result.llm_summary}\n\n---\n**:material/menu_book: Source Evidence:**\n{source_links}\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`\n\n**:material/link: 本次融合的所有原始 URL (含被过滤的噪音):**\n{raw_urls_md}"
+            # Cited = the sources the summary is actually based on. The rest of
+            # the bundle are OTHER reports of the SAME event (duplicates /
+            # corroboration), NOT noise — they were clustered together precisely
+            # because they're the same story from different outlets. Label them
+            # honestly instead of calling them "过滤的噪音".
+            cited_links = "\n".join([f"- [{u.title}]({u.url})" for u in valid_sources])
+            other_sources = [u for u in unprocessed if u not in valid_sources]
+            other_links = "\n".join([f"- [{u.title}]({u.url})" for u in other_sources])
+
+            dup_block = (
+                f"\n\n**:material/content_copy: 重复/佐证来源（同一事件的其他报道）:**\n{other_links}"
+                if other_sources else ""
+            )
+            final_summary = (
+                f"[TITLE: {result.title}]\n\n{result.llm_summary}\n\n---\n"
+                f"**:material/menu_book: 摘要引用来源:**\n{cited_links}"
+                f"{dup_block}"
+                f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`"
+            )
             
             report = IntelReport(
                 raw_article_id=lead_article.id,
