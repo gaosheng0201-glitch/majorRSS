@@ -143,6 +143,30 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
         profile_cache[tracker_id] = vecs
         return vecs
 
+    # Anisotropy correction: set the corpus mean so thread clustering runs in a
+    # mean-centered space (real embeddings collapse into a narrow cone otherwise;
+    # see services/semantic.set_corpus_mean / assign_thread). Computed over all
+    # stored embeddings + this batch. None for the bag-of-words fallback, where
+    # centering doesn't apply and the raw threshold stays in effect.
+    if gating_enabled:
+        with get_session() as s:
+            stored = []
+            for (vjson,) in s.exec(select(ArticleEmbedding.vector)).all():
+                try:
+                    stored.append(json.loads(vjson))
+                except Exception:
+                    pass
+        allvecs = stored + [list(v) for v in vectors]
+        if allvecs:
+            dim = len(allvecs[0])
+            same = [v for v in allvecs if len(v) == dim]
+            mean = [sum(v[i] for v in same) / len(same) for i in range(dim)]
+            sm.set_corpus_mean(mean)
+        else:
+            sm.set_corpus_mean(None)
+    else:
+        sm.set_corpus_mean(None)
+
     created = 0
     updated = 0
     gated = 0

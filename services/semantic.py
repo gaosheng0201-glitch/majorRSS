@@ -19,7 +19,28 @@ from typing import List, Optional, Tuple
 # Tuning knobs (cosine similarity, 0..1 for normalized vectors).
 DEFAULT_RELEVANCE_THRESHOLD = 0.35
 DEFAULT_DUPLICATE_THRESHOLD = 0.90
-DEFAULT_THREAD_THRESHOLD = 0.62
+
+# Thread clustering runs in a MEAN-CENTERED space when a corpus mean is set (see
+# set_corpus_mean). Real embedding models are anisotropic — every same-entity
+# headline collapses into a narrow cone (raw cosine 0.6–0.9 for unrelated AI
+# news), so a raw-cosine threshold over-merges distinct events into one giant
+# thread. Subtracting the corpus mean removes that common component and spreads
+# events apart (measured: same-event ≈0.33 vs different-event ≈-0.16), which
+# needs a much lower threshold. The raw threshold is kept for the bag-of-words
+# fallback embedder (no mean set), where centering doesn't apply.
+THREAD_THRESHOLD_RAW = 0.62
+THREAD_THRESHOLD_CENTERED = 0.18
+DEFAULT_THREAD_THRESHOLD = THREAD_THRESHOLD_RAW  # back-compat for callers/tests
+
+# Global corpus mean for anisotropy correction, maintained by the ingest layer.
+_CORPUS_MEAN: Optional[List[float]] = None
+
+
+def set_corpus_mean(mean: Optional[List[float]]) -> None:
+    """Set (or clear with None) the corpus mean subtracted before thread-cosine.
+    The ingest layer recomputes it each cycle over all stored embeddings."""
+    global _CORPUS_MEAN
+    _CORPUS_MEAN = list(mean) if mean else None
 
 
 def cosine(a: List[float], b: List[float]) -> float:
@@ -69,15 +90,28 @@ def find_duplicate(vec: List[float], existing: List[Tuple[int, List[float]]],
 
 
 def assign_thread(vec: List[float], thread_centroids: List[Tuple[int, List[float]]],
-                  threshold: float = DEFAULT_THREAD_THRESHOLD) -> Tuple[Optional[int], float]:
-    """Nearest story thread whose centroid cosine ≥ threshold, else (None, best).
-    None means 'start a new thread'. Returns (thread_id_or_None, best_similarity)."""
+                  threshold: Optional[float] = None) -> Tuple[Optional[int], float]:
+    """Nearest story thread whose (centered) centroid cosine ≥ threshold, else
+    (None, best). None means 'start a new thread'. When a corpus mean is set the
+    comparison runs in the anisotropy-corrected space (both the article vector
+    and each centroid get the mean subtracted); centering is linear so a centroid
+    stored as the raw mean of raw members centers correctly. Threshold defaults
+    to the centered/raw knob matching the active space."""
+    m = _CORPUS_MEAN
+    centered = bool(m) and len(m) == len(vec)
+    thr = threshold if threshold is not None else (
+        THREAD_THRESHOLD_CENTERED if centered else THREAD_THRESHOLD_RAW)
+
+    def prep(v: List[float]) -> List[float]:
+        return [x - mx for x, mx in zip(v, m)] if (centered and len(v) == len(m)) else v
+
+    cv = prep(vec)
     best_id, best_sim = None, 0.0
     for tid, c in thread_centroids:
-        s = cosine(vec, c)
+        s = cosine(cv, prep(c))
         if s > best_sim:
             best_id, best_sim = tid, s
-    if best_sim >= threshold:
+    if best_sim >= thr:
         return best_id, best_sim
     return None, best_sim
 
