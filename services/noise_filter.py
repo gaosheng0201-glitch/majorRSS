@@ -38,6 +38,16 @@ _PROMO_WORDS = {
     "forsale", "flipping", "resell", "reselling",
 }
 
+# All-lowercase compound subreddit names (r/subscriptionsharing) can't be split
+# by the camelCase tokenizer, so also match a few HIGH-DISTINCTIVENESS substrings.
+# Only terms unlikely to appear inside an unrelated word — deliberately NOT
+# "deal"/"sale"/"share" (which would hit Ideal…, wholesale, sharing-economy).
+_PROMO_SUBSTRINGS = (
+    "discount", "coupon", "giveaway", "forsale", "cheap", "promo",
+    "subscriptionsharing", "accountsharing", "sharingaccount",
+    "subscriptionshare", "accountshare",
+)
+
 
 def subreddit_of(url: str):
     m = _SUB_RE.search(url or "")
@@ -59,6 +69,10 @@ def is_promotional(title: str, url: str = "") -> bool:
     if _MARKET_TAG.search(t) or _HAVE_WANT.search(t):
         return True
     sub = subreddit_of(url)
-    if sub and any(tok in _PROMO_WORDS for tok in _sub_tokens(sub)):
-        return True
+    if sub:
+        if any(tok in _PROMO_WORDS for tok in _sub_tokens(sub)):
+            return True
+        low = sub.lower()
+        if any(s in low for s in _PROMO_SUBSTRINGS):
+            return True
     return False
