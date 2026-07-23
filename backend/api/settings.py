@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlmodel import Session, select, func
-from typing import List
+from typing import List, Optional
 import os
 from pydantic import BaseModel
 from db.database import get_session, get_api_session
