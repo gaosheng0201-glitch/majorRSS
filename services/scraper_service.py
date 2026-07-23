@@ -253,6 +253,16 @@ def scrape_single_tracker(tracker_id: int):
         # Write route resolution event
         tracer.event("RESOLVE", output_summary=f"Resolved {len(routes)} routes from signals")
 
+        # Discovery intents (keyword / hybrid / planned portfolio) fan out over
+        # MANY independent sources — Google News + HN + Reddit + the curated
+        # first-party feeds from source_scope — and must aggregate ALL of them.
+        # Only a single-source intent (one URL/feed with RSS→RssHub→Agentic
+        # fallbacks) stops at the first success. Without this distinction the
+        # highest-priority keyword route (Google News) delivered items and the
+        # `break` below skipped every curated preset source, so a planned
+        # portfolio only ever surfaced Google News.
+        fanout = (tracker.source_intent or "").upper() in ("KEYWORD_DISCOVERY", "HYBRID")
+
         for route in routes:
             route_start_time = time.time()
             adapter_name = route.adapter
@@ -337,13 +347,15 @@ def scrape_single_tracker(tracker_id: int):
                              duration_ms=duration)
 
                 if len(items) > 0:
-                    # Route delivered content; whether anything was new is a
-                    # freshness question, not a routing one. Stop here.
                     content_delivered = True
                     logger.info(f"Route {route.route_id} delivered {len(items)} items: saved {saved}, duplicates {dup}, filtered {filtered}")
-                    break
+                    # Single-source intents stop at the first working route (its
+                    # fallbacks are alternatives for the SAME source). Discovery
+                    # intents keep going to aggregate every independent source.
+                    if not fanout:
+                        break
                 else:
-                    logger.info(f"Route {route.route_id} reachable but returned 0 items. Trying fallback route...")
+                    logger.info(f"Route {route.route_id} reachable but returned 0 items. Trying next route...")
             except CookieExpiredException as ce:
                 duration = int((time.time() - route_start_time) * 1000)
                 last_error = ce
