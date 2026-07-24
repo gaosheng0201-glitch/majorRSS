@@ -78,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **④门控线索永不 processed**：285 条被门线索成员永远 `processed=0` → Dashboard "pending" 永久虚高 301 且每 5 分钟全量重评（churn 随积压线性涨）。改：gate-miss 标记成员 processed + 盖 `gate_checked_at`（0009 新列），backlog 查询只重评 `last_update_at > gate_checked_at` 的线索——新成员到达自动重触发，静止线索零 churn。
 - **⑤共振=传播速度非独立确认**：P0.4 数了真实出版方，但同一通稿多家转载仍伪装成多源。改：`distinct_source_count = min(独立出版方, 近重标题家族)`（复用 P0.5 机器）。实测：67 条 dsc≥2 线索中 14 条虚高、8 条纯转载伪佐证正确降回单源（含审计点名的"马斯克谢美光"实体光环项），真佐证大事件（12→10）安然保级。
 - **⑥IntelReport 三个死方法删除**（save_intel_report/get_recent_reports/append_sources_to_report，grep 证实无调用者），防"IntelReport 还在写"的误导；表保留作回滚。
+- **实机部署验证（21:09 版装机后探针实测）**：迁移 0009 落库、3 索引建立、`gate_checked_at` 实时递增（61→67）、pending 从 313 开始排空、日志零错误。全部六项在真实运行中生效。
+- **中断纠偏记录**：实现过程中会话被中断，恢复后逐文件甄别半成品——迁移 0009/去均值结构/gate 列保留；**中断前定的阈值 0.10 被边际校准推翻**（会误杀 4 条已知信号，含 0.086 的 Gemini 3.6 上线与 0.066 的 xAI 诉讼）改为 0.05；③④⑤⑥ 从零补齐。全部单测+集成测试+实机验证后一次提交。
+- **元教训（今后的验证关口）**：①②同属"changelog 写着已做、现实中从未生效"——relevance 门跑了数月拦截数为 0、索引声明了却不存在。验证必须验**效果**（真拦到东西没有、索引真的在不在），不能只验**行为**（代码跑通不报错）。
 
 ##### 作者实测阶段的回归修复（2026-07-23 装包实跑暴露）
 
