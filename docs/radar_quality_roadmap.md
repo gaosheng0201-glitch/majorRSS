@@ -278,6 +278,39 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 
 ---
 
+# 附四：X/早期信号获取路径实调（2026-07-23，5 路并行研究 + 实地探测）
+
+> 起因：7 个追踪 X 账号 0 成功（附三 Q3）。研究结论**推翻了"授权登录态是唯一路径"的假设**。每条都经实地探测（HTTP 实测），非纯搜索。
+
+## 核心结论
+
+1. **`rsshub.app` 的 twitter 路由是永久死亡**：实测 302 跳转 `google.com/404`——公共实例主动禁用了整条路由。重试/换UA/代理都救不回。**直接删源。**
+2. **`nitter.net` 现在是活的**：自定义 UA 下 **7 个账号全部实测通过**，免费零凭证。⚠️ 两种同形失败态：脚本类 UA → 200+0字节；限流 → 429+0字节。解析器必须"重试后判 FAILED"，不能当"无新内容"。
+3. **X 官方 API 变天（2026-02-06）**：分级订阅取消 → 预付费按量（$0.005/返回条目，24h 去重）。配 `since_id` 轮询频率几乎不影响成本，7 账号估 $5–25/月，完全合规。⚠️ 未验证假设：空轮询是否 $0（文档未明说）+ 社区有超额扣费投诉 → **先设消费上限再花 $5 试点**。
+4. **🔑 非 X 路径比推文更早**（最重要发现）：
+   - **OpenRouter `/api/v1/models` JSON diff = 当前最早信号**——实验室提前数天~数周用匿名代号上生产模型（Polaris Alpha→GPT-5.1、Sherlock Alpha→Grok 4.1）。实测 343 模型、最新 created=当天。**推文是这条时间线的终点。**
+   - **`models.dev/api.json`**（170 家 5778 模型）抓"没人发推的发布"。
+   - **TestingCatalog `/tag/leak/rss/`** 实测 200——**当天头条即"Anthropic preparing for potential Claude Opus 5 rollout"**（作者最初问的 Opus 5 爆料就躺在这个零凭证 RSS 里）。
+   - 厂商 SDK `releases.atom`×5、openai.com/news/rss.xml、DeepMind blog 全部实测可用。Anthropic **无官方 feed**（三个候选 URL 404），第三方生成 feed 有停更陷阱。
+5. **"看着活着其实死了"陷阱清单**（对架构有直接影响）：`syndication.twitter.com` 返回 200+完好 JSON 但数据停在 8 个月前；`bird.makeup` 200+空 outbox；twikit/snscrape/RSS-Bridge twitter 桥停更。→ **暴露我们健康检查的真缺口：`NO_NEW_ITEMS` 把"连通但 0 条"当健康安静源，需要新鲜度断言（最新条目老于该源应有节奏 → FAILED 而非 empty；看条目日期，不看 HTTP 状态）。**
+
+## twitter-cli / Agent-Reach 评估（作者提供，已核实仓库真实活跃）
+
+- **twitter-cli**（2.8k★，Python，未归档）：auth_token/ct0 或直读浏览器 cookie；`curl_cffi` TLS 指纹伪装；X 内部 GraphQL；queryId 轮换+扫 JS bundle 兜底。输出 JSON/YAML。**Agent-Reach**（60.1k★）只是安装器/健康检查/后端选择（X 链：twitter-cli→OpenCLI→bird），不建议整体引入，但其后端清单可当采购单（rdt-cli 的 reddit 登录态或可治 91% lead 噪音）。
+- **它的独特价值不是补 7 个死账号，是 `search`**——nitter RSS 和官方 API 便宜档都只能拿已知账号时间线；**全站搜索+关注图谱正是 P4 破茧要的工具**（搜 "Opus 5" 捞出不认识的爆料账号 → P4.2 提升为一等源）。
+- **风险**（项目自己标注）：未授权访问内部 GraphQL，违反 ToS；「存在被平台检测并封号的风险」，建议小号+代理+低频。queryId 轮换机制本身证明它常被打断。带写操作（发帖/点赞），**集成只接读子集**。未实跑验证。
+
+## 分层方案（按目的选路径）
+
+| 目的 | 路径 | 风险 | 状态 |
+|---|---|---|---|
+| 最早发现发布/爆料 | 结构化观察源（OpenRouter diff / models.dev / TestingCatalog / SDK releases） | 零 | **首选，~1 天** |
+| 已知的人在说什么 | nitter.net RSS（7/7 实测通过）→ 合规升级走官方 API（$5 试点先行） | 零/低 | 止血 ~2h |
+| 发现不认识的爆料源 | twitter-cli `search`（小号+代理+低频，只读） | 中高 | P4 后端候选，待实跑 |
+| SPA 早期信号（status.x.ai、三家 docs changelog） | 浏览器仅留给这些 | 低 | 配额化使用 |
+
+**明确不建**：headless 浏览器轮询 X（最高风险+最脆+最贵）。浏览器只留一次性 cookie 采集与 SPA 目标。
+
 # 附三：全局内容筛查（2026-07-23，补课完成后，6 路独立评审）
 
 > 数据集：**FEED 全量 93 条已摘要线索**（花了钱的）+ **LEAD 抽样 150 / 888 条**（零成本但占视野）。这是后续降噪工作的**证据基线**，P5 的分类法应从这 243 条判定结果标定，而不是从零设计。
