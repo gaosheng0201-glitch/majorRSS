@@ -321,10 +321,10 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 |---|---|---|---|
 | 最早发现发布/爆料 | 结构化观察源（OpenRouter diff / models.dev / TestingCatalog / SDK releases） | 零 | **首选，~1 天** |
 
-> **通用性约束（作者 2026-07-23 提出，实现时必须遵守）**：OpenRouter/models.dev/TestingCatalog 是 **AI 域专属数据，不许硬编码进代码**——那是对当前 4 个测试任务的过拟合。正确分层：
-> - **通用机制（进代码）**：`JsonDiffAdapter` 源类型，配置驱动（url + 条目 JSON 路径 + id/标题字段 → 轮询 → id 集合 diff → 新条目成 SourceItem），域无关。背后规律通用：**每个领域都有"先于人类讨论的机器可读痕迹"**（AI=模型表/SDK releases；罕见病=ClinicalTrials 新注册/FDA；影展=FilmFreeway 列表；公司=EDGAR/招聘页；安全=CVE）。新鲜度断言同样全源通用。
-> - **领域数据（进预设库）**：OpenRouter 等只是 `source_type: json_diff` 的几条预设记录，挂 AI 集合下（与 133 源/18 集合种子库同机制）。
-> - **连接层（P4.1）**："某话题该配哪些结构化源"由发现引擎回答——建罕见病目标提议 ClinicalTrials、建影展目标提议 FilmFreeway。AI 预设是种子不是天花板。
+> **通用性裁决（作者 2026-07-23，两轮讨论后定案）**：最初方案（新建 `JsonDiffAdapter` 源类型）被作者否决——**方向错误**。理由：产品哲学是"多渠道 → 合并降噪 → 精华"，摄入原语按**格式**分且有限（Feed=RssAdapter / 会变的URL=订阅监控快照diff / 平台=RssHub 桥，三者全部已存在），而领域痕迹无限；"每类痕迹一个 adapter"是无止境的错误扩展轴。**正确原则：新增领域 = 往预设库加一条 URL 数据，永不加代码。**
+> - B2 缩水为两件事：① **新鲜度断言**（全源通用健康检查，保留）；② **几条预设数据**——TestingCatalog/SDK `releases.atom`/openai news 是普通 RSS 直接进预设，OpenRouter `/models` 是"会变的 URL"做成**订阅监控预设**。零新机制。
+> - "某话题该配哪些结构化 URL"归 P4.1 发现引擎回答（罕见病→ClinicalTrials、影展→FilmFreeway）——它提议的是**数据（URL），不是代码**。
+> - 顺带记录的结构性观察（不急做）：订阅监控今天是平行孤岛（`SubscriptionUpdate` 不进雷达管线、只在简报单独拼接）；按"合并"哲学它最终应汇进统一管线（diff 事件→item→聚类→门控）。留作后续。
 | 已知的人在说什么 | nitter.net RSS（7/7 实测通过）→ 合规升级走官方 API（$5 试点先行） | 零/低 | 止血 ~2h |
 | 发现不认识的爆料源 | twitter-cli `search`（小号+代理+低频，只读） | 中高 | P4 后端候选，待实跑 |
 | SPA 早期信号（status.x.ai、三家 docs changelog） | 浏览器仅留给这些 | 低 | 配额化使用 |
