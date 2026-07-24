@@ -217,18 +217,29 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
         for article, vec in embedded:
-            # Relevance vs the tracker's topic profile.
+            # Relevance vs the tracker's topic profile. Both score and threshold
+            # live in the ACTIVE space (mean-centered with a real embedder, raw
+            # with the fallback) — in raw space the gate was dead: every article
+            # scored 0.41+ against 0.35 and 0/1590 were ever gated. Stored
+            # `relevance` values are therefore centered-space going forward
+            # (historical rows are raw-space; scales differ).
             profile = _profile_vecs(article.tracker_id)
             relevance = sm.relevance_score(vec, profile) if profile else None
+            rel_threshold = sm.active_relevance_threshold()
+            # Tier protection (same principle as the P1.1 fusion gate): sources
+            # the user opted into (curated presets / tracked accounts / first
+            # party) are NEVER junk-floored — only aggregator/legacy items are.
+            from services.provenance import HIGH_WEIGHT
+            tier_protected = (article.source_tier or "") in HIGH_WEIGHT
             if gating_enabled and profile and relevance is not None and \
-                    relevance < sm.DEFAULT_RELEVANCE_THRESHOLD:
+                    not tier_protected and relevance < rel_threshold:
                 article.relevance_gated = True
                 gated += 1
                 session.add(article)
                 session.add(ArticleEmbedding(article_id=article.id, model_name=model_name,
                                              dim=len(vec), vector=json.dumps(vec), relevance=relevance))
                 session.commit()
-                logger.info(f"Article {article.id} relevance-gated ({relevance:.2f} < {sm.DEFAULT_RELEVANCE_THRESHOLD}); kept in Raw Feed, skipped by fusion.")
+                logger.info(f"Article {article.id} relevance-gated ({relevance:.2f} < {rel_threshold}); kept in Raw Feed, skipped by fusion.")
                 continue
 
             # Load this tracker's thread centroids.
@@ -293,9 +304,20 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 member_rows = session.exec(
                     select(RawArticle.url, RawArticle.title).where(RawArticle.thread_id == th.id)
                 ).all()
-                pubs = {real_publisher(u, t) for (u, t) in member_rows} | \
-                       {real_publisher(article.url, article.title)}
-                th.distinct_source_count = len(pubs)
+                pairs = list(member_rows) + [(article.url, article.title)]
+                pubs = {real_publisher(u, t) for (u, t) in pairs}
+                # De-syndication: corroboration means INDEPENDENT reporting, not
+                # reach. One press release syndicated to 10 outlets is 10
+                # publishers but ONE title family — count the smaller of the two,
+                # so syndication can't manufacture resonance/CORROBORATED (audit
+                # 2026-07-23: "resonance comes from aggregator reposts of the
+                # same pitch"). Reuses the P0.5 near-dup machinery.
+                from services.dedup import is_near_duplicate
+                families = []   # list of representative titles
+                for (_u, t) in pairs:
+                    if not any(is_near_duplicate(t, rep) for rep in families):
+                        families.append(t)
+                th.distinct_source_count = min(len(pubs), len(families))
                 # Lifecycle: LEAD → CORROBORATED (≥2 independent sources) →
                 # CONFIRMED (a first-party/authoritative source present). A
                 # first-party source confirms directly, even with fewer sources.

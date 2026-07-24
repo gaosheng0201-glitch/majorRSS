@@ -4,7 +4,6 @@ import json
 import urllib.parse
 from datetime import datetime, timezone
 from repositories.repository import DBRepository
-from db.models import IntelReport
 from llm.processor import process_article
 from services.app_mode import is_pure_rss_mode
 from services.log_service import get_logger
@@ -108,11 +107,17 @@ def process_tracker_fusion(tracker_id: int):
         # self-populates after deploy with no dead function or manual step. Once
         # summarized they drop out unless new members arrive. (When the P1.1 gate
         # lands it applies here too, so noise threads aren't backfilled.)
+        from sqlmodel import or_
         backlog = s.exec(
             select(StoryThread.id).where(
                 StoryThread.tracker_id == tracker_id,
                 StoryThread.summary.is_(None),
                 StoryThread.member_count > 0,
+                # Re-evaluate a gated thread only when it has CHANGED since the
+                # gate last saw it — not every 5-minute cycle forever (the gated
+                # backlog grows unboundedly; churn must not grow with it).
+                or_(StoryThread.gate_checked_at.is_(None),
+                    StoryThread.last_update_at > StoryThread.gate_checked_at),
             )
         ).all()
     pending_thread_ids = list({tid for tid in rows if tid is not None} | set(backlog))
@@ -152,8 +157,52 @@ def _fuse_thread(tracker, thread_id: int):
         # model spent). Members are NOT marked processed on a gate miss, so the
         # thread is re-evaluated next cycle — one that later gains resonance or a
         # curated source gets summarized then.
+        # Cross-tracker duplicate guard: threads are per-tracker (semantic layer
+        # clusters within a tracker), so the same event caught by two overlapping
+        # trackers becomes two threads. Don't pay to summarize an event that
+        # already HAS a summary on another tracker's thread — cheap title
+        # near-dup check (P0.5 machinery) against recently summarized threads.
+        from services.dedup import is_near_duplicate
+        from datetime import timedelta
+        recent_cut = (datetime.now(timezone.utc) - timedelta(days=7)).replace(tzinfo=None)
+        others = session.exec(
+            select(StoryThread.id, StoryThread.title).where(
+                StoryThread.id != thread_id,
+                StoryThread.summary.is_not(None),
+                StoryThread.summarized_at >= recent_cut,
+            )
+        ).all()
+        dup_of = next((oid for (oid, otitle) in others
+                       if is_near_duplicate(thread.title or "", otitle or "")), None)
+        if dup_of is not None:
+            thread.gate_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(thread)
+            for u in members:
+                if not u.processed:
+                    u.processed = True
+                    session.add(u)
+            session.commit()
+            logger.info(f"Thread {thread_id} is a cross-tracker duplicate of summarized "
+                        f"thread {dup_of}; skipping fusion (no double spend).")
+            return
+
         worth, reason = _thread_worth_summary(thread, members, tracker)
         if not worth:
+            # Mark the batch as SEEN: members flip processed=True (they were
+            # deliberately held, not "pending" — the Dashboard KPI must not count
+            # them forever) and the thread gets a gate marker so the backlog
+            # query re-evaluates it only when it actually changes (a new member
+            # bumps last_update_at and arrives processed=False, re-triggering
+            # both paths). Caveat: flipping tracker.is_high_attention alone won't
+            # re-gate old quiet threads until their next member (rare; the manual
+            # summarize button is the escape hatch).
+            thread.gate_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(thread)
+            for u in members:
+                if not u.processed:
+                    u.processed = True
+                    session.add(u)
+            session.commit()
             logger.info(f"Thread {thread_id} gated — no summary ({reason}); stays a lead.")
             return
 

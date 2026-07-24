@@ -299,6 +299,10 @@ class StoryThread(SQLModel, table=True):
     event_timestamp: Optional[str] = Field(default=None, description="ISO8601 of the underlying event")
     source_url: Optional[str] = Field(default=None, description="'Fused from N sources (...)' descriptor for display")
     summarized_at: Optional[datetime] = Field(default=None, index=True, description="when summary last (re)generated — feed ordering + incremental re-synth guard")
+    # P1.1 gate marker: when the gate last evaluated this thread. A gated thread
+    # is re-checked only when it changes (last_update_at > gate_checked_at), not
+    # every cycle — kills the per-cycle churn over the whole gated backlog.
+    gate_checked_at: Optional[datetime] = Field(default=None)
 
 class RadarAlert(SQLModel, table=True):
     """A thread-level alert. Default is a quiet dashboard; an alert is created

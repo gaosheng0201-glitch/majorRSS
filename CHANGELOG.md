@@ -70,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P0.5 入库近重去重** (`services/dedup.py` + `services/source_normalizer.py`)：廉价确定性预过滤，剥掉近乎逐字的转载（同标题多站重发）以免白花 embed+fusion。**身份护栏**（版本号/日期周期/退化标题）杜绝把序列/版本兄弟误合并（月度 "Developer Update"、`v0.117.1` vs `.0`）——审计证明护栏而非阈值才是过度合并的控制点。约 3–4% 体积，安全网而非成本杠杆（真正的去重靠向量语义合并）。
 - **P1.2 Billing 按动作/目标拆分** (`backend/api/settings.py` + `desktop/src/pages/Billing.tsx`)：`/settings/token-usage` 新增 `by_category`（向量 vs 融合 vs 趋势 vs 简报）/`by_target`（每探测目标）/`by_action`，每类带真实费用；Billing 页新增两张卡（成本构成条形 + 按目标表）。实测拆解：融合 76% · 向量 8% · 趋势 10% · 简报 5%——省钱杠杆在融合、不在向量（向量还可切本地 Ollama 归零）。
 
+##### 架构复盘六项修复（2026-07-23，作者要求"不欠债"：对 changelog 已修项做成熟度审查，6 项实测证实后全部修复）
+
+- **①迁移只加列不建索引（系统性）**：`thread_id`/`relevance_gated`/`source_tier` 模型声明 `index=True`，但 `create_all` 只在新库建索引、`ALTER TABLE` 不会补 → 升级库热路径全表扫。迁移 `0009` 补 `CREATE INDEX IF NOT EXISTS`×3。
+- **②relevance 门从未生效（死门）**：实测 0/1590 篇被 gate——真实嵌入的原始余弦全在 0.41–0.81 锥内，阈值 0.35 在分布之外。病根与聚类同款（各向异性），当年只修了聚类没修 relevance。改：relevance 与聚类共用去均值空间；**校准实测**（21 噪音/64 信号样本）定为**垃圾地板 0.05**——挡 156/1614 篇明确跑题（"Claude 拒绝改邮件"、手机求助帖），**已知信号零损失**（最低信号 0.066=xAI 诉讼；0.07+ 就开始误杀）。高权重层（curated/primary）不参与。明确降级定位：这是垃圾地板不是信号选择器，编辑判别归 P5。
+- **③线索按 tracker 隔离 → 跨目标重复摘要**：4 个高重叠 AI 目标下同一事件各成线索（实测 7+ 对同题跨 tracker 线索）。有界修复：入库近重去重改全局（与 URL 全局唯一语义一致）+ 融合前跨 tracker 近重摘要守卫（已有摘要的事件不再二次付费）。线索全局化留作结构性后续。
+- **④门控线索永不 processed**：285 条被门线索成员永远 `processed=0` → Dashboard "pending" 永久虚高 301 且每 5 分钟全量重评（churn 随积压线性涨）。改：gate-miss 标记成员 processed + 盖 `gate_checked_at`（0009 新列），backlog 查询只重评 `last_update_at > gate_checked_at` 的线索——新成员到达自动重触发，静止线索零 churn。
+- **⑤共振=传播速度非独立确认**：P0.4 数了真实出版方，但同一通稿多家转载仍伪装成多源。改：`distinct_source_count = min(独立出版方, 近重标题家族)`（复用 P0.5 机器）。实测：67 条 dsc≥2 线索中 14 条虚高、8 条纯转载伪佐证正确降回单源（含审计点名的"马斯克谢美光"实体光环项），真佐证大事件（12→10）安然保级。
+- **⑥IntelReport 三个死方法删除**（save_intel_report/get_recent_reports/append_sources_to_report，grep 证实无调用者），防"IntelReport 还在写"的误导；表保留作回滚。
+
 ##### 作者实测阶段的回归修复（2026-07-23 装包实跑暴露）
 
 - **去均值路径崩溃,整个语义层再度冻结**（`services/semantic_ingest.py`）：各向异性校正读存量向量时写的是 `for (vjson,) in s.exec(select(ArticleEmbedding.vector)).all()`，但 SQLModel 的 `session.exec(单列 select)` 返回的是**标量**而非 1-元组 → 一旦 `ArticleEmbedding` 有行就抛 `too many values to unpack`，**每轮 semantic 整个崩掉、什么都不落库**。此前被 P0.3 的批量嵌入卡死所掩盖（根本走不到这行）；P0.3 修好后执行推进到这里，症状换了根因不变：嵌入停在 100、线索冻在 10:43、feed 空。改为标量/Row 双兼容。**测试盲区归因**：集成测试用 fallback embedder，`gating_enabled=False` 恰好跳过该分支——此后动语义层必须专门跑一遍真 embedder 的 gating 路径。修复后实测解冻：嵌入 100→430+、线索时间戳恢复推进、生命周期出现 CORROBORATED(最高 11 个真实出版方)与 RESONANT。

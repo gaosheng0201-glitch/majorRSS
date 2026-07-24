@@ -17,7 +17,18 @@ import math
 from typing import List, Optional, Tuple
 
 # Tuning knobs (cosine similarity, 0..1 for normalized vectors).
-DEFAULT_RELEVANCE_THRESHOLD = 0.35
+DEFAULT_RELEVANCE_THRESHOLD = 0.35   # raw-space (bag-of-words fallback embedder)
+# With a real embedder the relevance check MUST run in the mean-centered space,
+# same as clustering — in raw space every AI headline scores 0.48–0.72 against an
+# AI profile, so 0.35 gated NOTHING (measured: 0/1590 articles, the gate was
+# dead). This is a JUNK FLOOR, not a signal selector: calibration (2026-07-23,
+# 21 known-noise / 64 known-signal items) put known signal at 0.066+ centered
+# ("Musk's xAI sues…" 0.066, "Gemini 3.6 Flash available" 0.086) and clear junk
+# at −0.04…0.05 ("Claude refuses revising my email", device-help posts). 0.05
+# gates 156/1614 unambiguous off-topic items with ZERO measured signal loss;
+# anything more aggressive (0.07+) starts eating real scoops. Editorial
+# discrimination beyond this floor is P5's job, not a cosine threshold's.
+RELEVANCE_THRESHOLD_CENTERED = 0.05
 DEFAULT_DUPLICATE_THRESHOLD = 0.90
 
 # Thread clustering runs in a MEAN-CENTERED space when a corpus mean is set (see
@@ -79,17 +90,44 @@ def max_similarity(vec: List[float], refs: List[List[float]]) -> float:
     return best
 
 
+def _center(v: List[float]) -> List[float]:
+    """Subtract the corpus mean when set (anisotropy correction); no-op on a
+    dimension mismatch or when no mean is set (fallback embedder)."""
+    m = _CORPUS_MEAN
+    if m and len(m) == len(v):
+        return [x - mx for x, mx in zip(v, m)]
+    return v
+
+
 def relevance_score(vec: List[float], profile_vecs: List[List[float]]) -> float:
     """How on-topic an item is: max cosine against the target's profile vectors
-    (target name + entity aliases + keep-keywords, all embedded)."""
-    return max_similarity(vec, profile_vecs)
+    (target name + entity aliases + keep-keywords, all embedded). Runs in the
+    mean-centered space when a corpus mean is set — same correction as thread
+    clustering, and for the same reason: raw cosines on a real embedder sit in a
+    0.48–0.72 cone against any same-domain profile, so a raw threshold either
+    gates nothing or everything. NOTE: scores can be negative in centered space;
+    compare against active_relevance_threshold(), not the raw constant."""
+    cv = _center(vec)
+    best = -1.0
+    for r in profile_vecs:
+        s = cosine(cv, _center(r))
+        if s > best:
+            best = s
+    return best if profile_vecs else 0.0
+
+
+def active_relevance_threshold() -> float:
+    """The relevance gate matching the active space: centered when a corpus mean
+    is set (real embedder), raw otherwise (bag-of-words fallback)."""
+    return RELEVANCE_THRESHOLD_CENTERED if _CORPUS_MEAN else DEFAULT_RELEVANCE_THRESHOLD
 
 
 def is_relevant(vec: List[float], profile_vecs: List[List[float]],
-                threshold: float = DEFAULT_RELEVANCE_THRESHOLD) -> bool:
+                threshold: Optional[float] = None) -> bool:
     if not profile_vecs:
         return True  # no profile → don't filter (fail open)
-    return relevance_score(vec, profile_vecs) >= threshold
+    thr = threshold if threshold is not None else active_relevance_threshold()
+    return relevance_score(vec, profile_vecs) >= thr
 
 
 def find_duplicate(vec: List[float], existing: List[Tuple[int, List[float]]],
@@ -117,13 +155,10 @@ def assign_thread(vec: List[float], thread_centroids: List[Tuple[int, List[float
     thr = threshold if threshold is not None else (
         THREAD_THRESHOLD_CENTERED if centered else THREAD_THRESHOLD_RAW)
 
-    def prep(v: List[float]) -> List[float]:
-        return [x - mx for x, mx in zip(v, m)] if (centered and len(v) == len(m)) else v
-
-    cv = prep(vec)
+    cv = _center(vec)
     best_id, best_sim = None, 0.0
     for tid, c in thread_centroids:
-        s = cosine(cv, prep(c))
+        s = cosine(cv, _center(c))
         if s > best_sim:
             best_id, best_sim = tid, s
     if best_sim >= thr:

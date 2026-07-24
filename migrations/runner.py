@@ -21,7 +21,8 @@ def run_migrations():
             "0005_pipeline_trace_tables",
             "0006_semantic_and_radar_columns",
             "0007_source_tier",
-            "0008_thread_summary"
+            "0008_thread_summary",
+            "0009_indexes_and_gate_marker"
         ]
         
         for m in migrations:
@@ -234,6 +235,31 @@ def run_migrations():
                     ta_table = "trendalert"
                     if ta_table in inspector.get_table_names():
                         conn.execute(text(f"DELETE FROM {ta_table}"))
+                    session.commit()
+
+                elif m == "0009_indexes_and_gate_marker":
+                    # (a) Columns added by ALTER TABLE in 0006/0007 declared
+                    # index=True in the model, but create_all only builds indexes
+                    # on FRESH databases — upgraded DBs were full-scanning the hot
+                    # paths (fusion pending query, tier gate, member lookups).
+                    # (b) gate_checked_at: P1.1 gate re-evaluation marker so gated
+                    # threads are only re-checked when they actually change,
+                    # instead of every 5-minute cycle forever.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    ra_table = "rawarticle"
+                    if ra_table not in inspector.get_table_names() and "raw_article" in inspector.get_table_names():
+                        ra_table = "raw_article"
+                    if ra_table in inspector.get_table_names():
+                        for col in ("thread_id", "relevance_gated", "source_tier"):
+                            conn.execute(text(
+                                f"CREATE INDEX IF NOT EXISTS ix_{ra_table}_{col} ON {ra_table} ({col})"))
+                    st_table = "storythread"
+                    if st_table in inspector.get_table_names():
+                        st_cols = [c["name"] for c in inspector.get_columns(st_table)]
+                        if "gate_checked_at" not in st_cols:
+                            conn.execute(text(f"ALTER TABLE {st_table} ADD COLUMN gate_checked_at DATETIME"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)
