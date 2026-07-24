@@ -320,6 +320,11 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 | 目的 | 路径 | 风险 | 状态 |
 |---|---|---|---|
 | 最早发现发布/爆料 | 结构化观察源（OpenRouter diff / models.dev / TestingCatalog / SDK releases） | 零 | **首选，~1 天** |
+
+> **通用性约束（作者 2026-07-23 提出，实现时必须遵守）**：OpenRouter/models.dev/TestingCatalog 是 **AI 域专属数据，不许硬编码进代码**——那是对当前 4 个测试任务的过拟合。正确分层：
+> - **通用机制（进代码）**：`JsonDiffAdapter` 源类型，配置驱动（url + 条目 JSON 路径 + id/标题字段 → 轮询 → id 集合 diff → 新条目成 SourceItem），域无关。背后规律通用：**每个领域都有"先于人类讨论的机器可读痕迹"**（AI=模型表/SDK releases；罕见病=ClinicalTrials 新注册/FDA；影展=FilmFreeway 列表；公司=EDGAR/招聘页；安全=CVE）。新鲜度断言同样全源通用。
+> - **领域数据（进预设库）**：OpenRouter 等只是 `source_type: json_diff` 的几条预设记录，挂 AI 集合下（与 133 源/18 集合种子库同机制）。
+> - **连接层（P4.1）**："某话题该配哪些结构化源"由发现引擎回答——建罕见病目标提议 ClinicalTrials、建影展目标提议 FilmFreeway。AI 预设是种子不是天花板。
 | 已知的人在说什么 | nitter.net RSS（7/7 实测通过）→ 合规升级走官方 API（$5 试点先行） | 零/低 | 止血 ~2h |
 | 发现不认识的爆料源 | twitter-cli `search`（小号+代理+低频，只读） | 中高 | P4 后端候选，待实跑 |
 | SPA 早期信号（status.x.ai、三家 docs changelog） | 浏览器仅留给这些 | 低 | 配额化使用 |
