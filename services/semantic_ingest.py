@@ -234,6 +234,12 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
             if gating_enabled and profile and relevance is not None and \
                     not tier_protected and relevance < rel_threshold:
                 article.relevance_gated = True
+                # Also SETTLED, not pending: a junk-floored article is
+                # deliberately excluded from fusion, so leaving processed=False
+                # made the Dashboard's pending KPI grow forever (526 of 572
+                # "pending" were floored items). Same bug class as the P1.1
+                # gate-miss fix — that path was fixed, this one was missed.
+                article.processed = True
                 gated += 1
                 session.add(article)
                 session.add(ArticleEmbedding(article_id=article.id, model_name=model_name,

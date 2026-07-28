@@ -303,6 +303,12 @@ class StoryThread(SQLModel, table=True):
     # is re-checked only when it changes (last_update_at > gate_checked_at), not
     # every cycle — kills the per-cycle churn over the whole gated backlog.
     gate_checked_at: Optional[datetime] = Field(default=None)
+    # Snapshot of the signals AT the last fusion, so re-fusion can tell a real
+    # development (new independent publishers / lifecycle promotion) from more
+    # copies of the same story. Without it every trickle of follow-ups re-burned
+    # the summary and bumped the thread back to the top of the feed.
+    fused_source_count: Optional[int] = Field(default=None)
+    fused_lifecycle: Optional[str] = Field(default=None)
 
 class RadarAlert(SQLModel, table=True):
     """A thread-level alert. Default is a quiet dashboard; an alert is created

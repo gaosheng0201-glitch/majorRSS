@@ -22,7 +22,8 @@ def run_migrations():
             "0006_semantic_and_radar_columns",
             "0007_source_tier",
             "0008_thread_summary",
-            "0009_indexes_and_gate_marker"
+            "0009_indexes_and_gate_marker",
+            "0010_fusion_increment_snapshot"
         ]
         
         for m in migrations:
@@ -260,6 +261,37 @@ def run_migrations():
                         st_cols = [c["name"] for c in inspector.get_columns(st_table)]
                         if "gate_checked_at" not in st_cols:
                             conn.execute(text(f"ALTER TABLE {st_table} ADD COLUMN gate_checked_at DATETIME"))
+                    session.commit()
+
+                elif m == "0010_fusion_increment_snapshot":
+                    # Re-fusion needs to know what the signals looked like at the
+                    # LAST fusion, to distinguish a real development from more
+                    # copies of the same story (see _fuse_thread's material-
+                    # increment gate). Backfill existing summarized threads from
+                    # their current values so they don't all re-fuse once.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    st_table = "storythread"
+                    if st_table in inspector.get_table_names():
+                        st_cols = [c["name"] for c in inspector.get_columns(st_table)]
+                        if "fused_source_count" not in st_cols:
+                            conn.execute(text(f"ALTER TABLE {st_table} ADD COLUMN fused_source_count INTEGER"))
+                        if "fused_lifecycle" not in st_cols:
+                            conn.execute(text(f"ALTER TABLE {st_table} ADD COLUMN fused_lifecycle VARCHAR"))
+                        conn.execute(text(
+                            f"UPDATE {st_table} SET fused_source_count = distinct_source_count, "
+                            f"fused_lifecycle = lifecycle "
+                            f"WHERE summary IS NOT NULL AND fused_source_count IS NULL"))
+                    # Junk-floored articles are settled, not pending: clear the
+                    # backlog the old behaviour accumulated (526 of 572 "pending").
+                    ra_table = "rawarticle"
+                    if ra_table not in inspector.get_table_names() and "raw_article" in inspector.get_table_names():
+                        ra_table = "raw_article"
+                    if ra_table in inspector.get_table_names():
+                        conn.execute(text(
+                            f"UPDATE {ra_table} SET processed = 1 "
+                            f"WHERE relevance_gated = 1 AND processed = 0"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

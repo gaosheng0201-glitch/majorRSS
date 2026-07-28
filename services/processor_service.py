@@ -186,6 +186,33 @@ def _fuse_thread(tracker, thread_id: int):
                         f"thread {dup_of}; skipping fusion (no double spend).")
             return
 
+        # Material-increment gate for RE-fusion (P2.1 leftover #7): once a thread
+        # has a summary, more members of the SAME story are not news. Re-fuse only
+        # when the event actually developed — new independent publishers, or a
+        # lifecycle promotion. Otherwise just record the new sources and leave the
+        # summary (and its feed position) alone. Without this, an old thread was
+        # re-summarized on every trickle of near-duplicate follow-ups and jumped
+        # back to the top of the feed with no new information: measured 560 fusion
+        # calls for 145 summaries (3.9x re-burn), with threads first seen 4-5 days
+        # earlier sitting at the top of the feed.
+        if thread.summary:
+            prev_dsc = thread.fused_source_count or 0
+            prev_life = thread.fused_lifecycle or ""
+            _RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
+            promoted = _RANK.get(thread.lifecycle or "", 0) > _RANK.get(prev_life, 0)
+            if (thread.distinct_source_count or 0) <= prev_dsc and not promoted:
+                thread.gate_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(thread)
+                for u in members:
+                    if not u.processed:
+                        u.processed = True
+                        session.add(u)
+                session.commit()
+                logger.info(f"Thread {thread_id}: no material increment "
+                            f"(publishers {prev_dsc}→{thread.distinct_source_count}, "
+                            f"{prev_life}→{thread.lifecycle}); keeping existing summary.")
+                return
+
         worth, reason = _thread_worth_summary(thread, members, tracker)
         if not worth:
             # Mark the batch as SEEN: members flip processed=True (they were
@@ -278,6 +305,10 @@ def _fuse_thread(tracker, thread_id: int):
         thread.event_timestamp = result.event_timestamp
         thread.source_url = f"Fused from {len(members)} sources ({composite_urls})"
         thread.summarized_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Snapshot the signals this fusion was based on, so the next cycle can
+        # tell a real development from more copies of the same story.
+        thread.fused_source_count = thread.distinct_source_count
+        thread.fused_lifecycle = thread.lifecycle
         session.add(thread)
 
         # Mark every member processed (even those past the char budget — they are
