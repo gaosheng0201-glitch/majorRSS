@@ -24,8 +24,16 @@
       "source_type": "rss",
       "url": "https://openai.com/news/rss.xml",
       "canonical_site": "https://openai.com/news/",
-      "category": ["AI", "Frontier Labs"],
-      "tags": ["OpenAI", "LLM", "API", "Research"],
+      "category": [
+        "AI",
+        "Frontier Labs"
+      ],
+      "tags": [
+        "OpenAI",
+        "LLM",
+        "API",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -42,8 +50,15 @@
       "source_type": "rss",
       "url": "https://blog.google/technology/ai/rss/",
       "canonical_site": "https://blog.google/technology/ai/",
-      "category": ["AI", "Frontier Labs"],
-      "tags": ["Google", "AI", "Gemini"],
+      "category": [
+        "AI",
+        "Frontier Labs"
+      ],
+      "tags": [
+        "Google",
+        "AI",
+        "Gemini"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -60,8 +75,16 @@
       "source_type": "rss",
       "url": "https://deepmind.google/blog/rss.xml",
       "canonical_site": "https://deepmind.google/blog/",
-      "category": ["AI", "Frontier Labs", "Research"],
-      "tags": ["DeepMind", "Google", "Research"],
+      "category": [
+        "AI",
+        "Frontier Labs",
+        "Research"
+      ],
+      "tags": [
+        "DeepMind",
+        "Google",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -78,8 +101,15 @@
       "source_type": "rss",
       "url": "https://mistral.ai/rss.xml",
       "canonical_site": "https://mistral.ai/news/",
-      "category": ["AI", "Frontier Labs"],
-      "tags": ["Mistral", "LLM", "Open Models"],
+      "category": [
+        "AI",
+        "Frontier Labs"
+      ],
+      "tags": [
+        "Mistral",
+        "LLM",
+        "Open Models"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -96,8 +126,15 @@
       "source_type": "rss",
       "url": "https://www.microsoft.com/en-us/research/blog/feed/",
       "canonical_site": "https://www.microsoft.com/en-us/research/blog/",
-      "category": ["AI", "Research"],
-      "tags": ["Microsoft", "Research", "AI"],
+      "category": [
+        "AI",
+        "Research"
+      ],
+      "tags": [
+        "Microsoft",
+        "Research",
+        "AI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -114,8 +151,17 @@
       "source_type": "rss",
       "url": "https://developer.nvidia.com/blog/feed/",
       "canonical_site": "https://developer.nvidia.com/blog/",
-      "category": ["AI", "Infrastructure", "Developer Tools"],
-      "tags": ["NVIDIA", "GPU", "CUDA", "Inference"],
+      "category": [
+        "AI",
+        "Infrastructure",
+        "Developer Tools"
+      ],
+      "tags": [
+        "NVIDIA",
+        "GPU",
+        "CUDA",
+        "Inference"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -132,8 +178,16 @@
       "source_type": "rss",
       "url": "https://huggingface.co/blog/feed.xml",
       "canonical_site": "https://huggingface.co/blog",
-      "category": ["AI", "Open Source", "Developer Tools"],
-      "tags": ["Hugging Face", "Transformers", "Models"],
+      "category": [
+        "AI",
+        "Open Source",
+        "Developer Tools"
+      ],
+      "tags": [
+        "Hugging Face",
+        "Transformers",
+        "Models"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -150,8 +204,15 @@
       "source_type": "rss",
       "url": "https://engineering.fb.com/feed/",
       "canonical_site": "https://engineering.fb.com/",
-      "category": ["Technology", "Engineering"],
-      "tags": ["Meta", "Engineering", "Infrastructure"],
+      "category": [
+        "Technology",
+        "Engineering"
+      ],
+      "tags": [
+        "Meta",
+        "Engineering",
+        "Infrastructure"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -168,8 +229,15 @@
       "source_type": "rss",
       "url": "https://research.facebook.com/feed/",
       "canonical_site": "https://research.facebook.com/",
-      "category": ["AI", "Research"],
-      "tags": ["Meta", "Research", "AI"],
+      "category": [
+        "AI",
+        "Research"
+      ],
+      "tags": [
+        "Meta",
+        "Research",
+        "AI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -186,8 +254,15 @@
       "source_type": "rss",
       "url": "https://github.blog/feed/",
       "canonical_site": "https://github.blog/",
-      "category": ["Developer Tools", "Open Source"],
-      "tags": ["GitHub", "Open Source", "DevTools"],
+      "category": [
+        "Developer Tools",
+        "Open Source"
+      ],
+      "tags": [
+        "GitHub",
+        "Open Source",
+        "DevTools"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -204,8 +279,15 @@
       "source_type": "rss",
       "url": "https://github.blog/changelog/feed/",
       "canonical_site": "https://github.blog/changelog/",
-      "category": ["Developer Tools", "Changelog"],
-      "tags": ["GitHub", "Changelog", "Developer Tools"],
+      "category": [
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "GitHub",
+        "Changelog",
+        "Developer Tools"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -222,8 +304,16 @@
       "source_type": "rss",
       "url": "https://vercel.com/atom",
       "canonical_site": "https://vercel.com/changelog",
-      "category": ["Developer Tools", "Changelog", "Cloud"],
-      "tags": ["Vercel", "Next.js", "Deployment"],
+      "category": [
+        "Developer Tools",
+        "Changelog",
+        "Cloud"
+      ],
+      "tags": [
+        "Vercel",
+        "Next.js",
+        "Deployment"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -240,8 +330,17 @@
       "source_type": "rss",
       "url": "https://blog.cloudflare.com/rss/",
       "canonical_site": "https://blog.cloudflare.com/",
-      "category": ["Cloud", "Security", "Developer Tools"],
-      "tags": ["Cloudflare", "Workers", "Edge", "Security"],
+      "category": [
+        "Cloud",
+        "Security",
+        "Developer Tools"
+      ],
+      "tags": [
+        "Cloudflare",
+        "Workers",
+        "Edge",
+        "Security"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -258,8 +357,16 @@
       "source_type": "rss",
       "url": "https://supabase.com/rss.xml",
       "canonical_site": "https://supabase.com/blog",
-      "category": ["Developer Tools", "Database", "Open Source"],
-      "tags": ["Supabase", "Postgres", "Database"],
+      "category": [
+        "Developer Tools",
+        "Database",
+        "Open Source"
+      ],
+      "tags": [
+        "Supabase",
+        "Postgres",
+        "Database"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -276,8 +383,15 @@
       "source_type": "rss",
       "url": "https://code.visualstudio.com/feed.xml",
       "canonical_site": "https://code.visualstudio.com/updates",
-      "category": ["Developer Tools", "Changelog"],
-      "tags": ["VS Code", "IDE", "Developer Tools"],
+      "category": [
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "VS Code",
+        "IDE",
+        "Developer Tools"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -294,8 +408,15 @@
       "source_type": "rss",
       "url": "https://kubernetes.io/feed.xml",
       "canonical_site": "https://kubernetes.io/blog/",
-      "category": ["Open Source", "Cloud Native"],
-      "tags": ["Kubernetes", "Cloud Native", "Containers"],
+      "category": [
+        "Open Source",
+        "Cloud Native"
+      ],
+      "tags": [
+        "Kubernetes",
+        "Cloud Native",
+        "Containers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -312,8 +433,14 @@
       "source_type": "rss",
       "url": "https://www.docker.com/blog/feed/",
       "canonical_site": "https://www.docker.com/blog/",
-      "category": ["Developer Tools", "Cloud Native"],
-      "tags": ["Docker", "Containers"],
+      "category": [
+        "Developer Tools",
+        "Cloud Native"
+      ],
+      "tags": [
+        "Docker",
+        "Containers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -330,8 +457,14 @@
       "source_type": "rss",
       "url": "https://blog.rust-lang.org/feed.xml",
       "canonical_site": "https://blog.rust-lang.org/",
-      "category": ["Open Source", "Programming Languages"],
-      "tags": ["Rust", "Language"],
+      "category": [
+        "Open Source",
+        "Programming Languages"
+      ],
+      "tags": [
+        "Rust",
+        "Language"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -348,8 +481,14 @@
       "source_type": "rss",
       "url": "https://blog.python.org/feeds/posts/default",
       "canonical_site": "https://blog.python.org/",
-      "category": ["Open Source", "Programming Languages"],
-      "tags": ["Python", "Language"],
+      "category": [
+        "Open Source",
+        "Programming Languages"
+      ],
+      "tags": [
+        "Python",
+        "Language"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -366,8 +505,14 @@
       "source_type": "rss",
       "url": "https://nodejs.org/en/feed/blog.xml",
       "canonical_site": "https://nodejs.org/en/blog",
-      "category": ["Open Source", "Programming Languages"],
-      "tags": ["Node.js", "JavaScript"],
+      "category": [
+        "Open Source",
+        "Programming Languages"
+      ],
+      "tags": [
+        "Node.js",
+        "JavaScript"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -384,8 +529,15 @@
       "source_type": "rss",
       "url": "https://react.dev/rss.xml",
       "canonical_site": "https://react.dev/blog",
-      "category": ["Frontend", "Open Source"],
-      "tags": ["React", "JavaScript", "Frontend"],
+      "category": [
+        "Frontend",
+        "Open Source"
+      ],
+      "tags": [
+        "React",
+        "JavaScript",
+        "Frontend"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -402,8 +554,15 @@
       "source_type": "rss",
       "url": "https://nextjs.org/feed.xml",
       "canonical_site": "https://nextjs.org/blog",
-      "category": ["Frontend", "Developer Tools"],
-      "tags": ["Next.js", "React", "Vercel"],
+      "category": [
+        "Frontend",
+        "Developer Tools"
+      ],
+      "tags": [
+        "Next.js",
+        "React",
+        "Vercel"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -420,8 +579,16 @@
       "source_type": "arxiv",
       "url": "https://export.arxiv.org/rss/cs.AI",
       "canonical_site": "https://arxiv.org/list/cs.AI/recent",
-      "category": ["Research", "Papers", "AI"],
-      "tags": ["arXiv", "AI", "Papers"],
+      "category": [
+        "Research",
+        "Papers",
+        "AI"
+      ],
+      "tags": [
+        "arXiv",
+        "AI",
+        "Papers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -438,8 +605,16 @@
       "source_type": "arxiv",
       "url": "https://export.arxiv.org/rss/cs.LG",
       "canonical_site": "https://arxiv.org/list/cs.LG/recent",
-      "category": ["Research", "Papers", "Machine Learning"],
-      "tags": ["arXiv", "Machine Learning", "Papers"],
+      "category": [
+        "Research",
+        "Papers",
+        "Machine Learning"
+      ],
+      "tags": [
+        "arXiv",
+        "Machine Learning",
+        "Papers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -456,8 +631,16 @@
       "source_type": "arxiv",
       "url": "https://export.arxiv.org/rss/cs.CL",
       "canonical_site": "https://arxiv.org/list/cs.CL/recent",
-      "category": ["Research", "Papers", "NLP"],
-      "tags": ["arXiv", "NLP", "Papers"],
+      "category": [
+        "Research",
+        "Papers",
+        "NLP"
+      ],
+      "tags": [
+        "arXiv",
+        "NLP",
+        "Papers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -474,8 +657,16 @@
       "source_type": "arxiv",
       "url": "https://export.arxiv.org/rss/cs.CV",
       "canonical_site": "https://arxiv.org/list/cs.CV/recent",
-      "category": ["Research", "Papers", "Computer Vision"],
-      "tags": ["arXiv", "Computer Vision", "Papers"],
+      "category": [
+        "Research",
+        "Papers",
+        "Computer Vision"
+      ],
+      "tags": [
+        "arXiv",
+        "Computer Vision",
+        "Papers"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -492,8 +683,15 @@
       "source_type": "rss",
       "url": "https://www.sec.gov/news/pressreleases.rss",
       "canonical_site": "https://www.sec.gov/news/pressreleases",
-      "category": ["Finance", "Regulation"],
-      "tags": ["SEC", "Regulation", "Markets"],
+      "category": [
+        "Finance",
+        "Regulation"
+      ],
+      "tags": [
+        "SEC",
+        "Regulation",
+        "Markets"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -510,8 +708,16 @@
       "source_type": "rss",
       "url": "https://www.federalreserve.gov/feeds/press_all.xml",
       "canonical_site": "https://www.federalreserve.gov/newsevents/pressreleases.htm",
-      "category": ["Finance", "Regulation", "Policy"],
-      "tags": ["Federal Reserve", "Monetary Policy", "Markets"],
+      "category": [
+        "Finance",
+        "Regulation",
+        "Policy"
+      ],
+      "tags": [
+        "Federal Reserve",
+        "Monetary Policy",
+        "Markets"
+      ],
       "language": "en",
       "region": "us",
       "importance": "critical",
@@ -528,8 +734,16 @@
       "source_type": "rss",
       "url": "https://www.ecb.europa.eu/rss/press.html",
       "canonical_site": "https://www.ecb.europa.eu/press/html/index.en.html",
-      "category": ["Finance", "Regulation", "Policy"],
-      "tags": ["ECB", "Central Bank", "Monetary Policy"],
+      "category": [
+        "Finance",
+        "Regulation",
+        "Policy"
+      ],
+      "tags": [
+        "ECB",
+        "Central Bank",
+        "Monetary Policy"
+      ],
       "language": "en",
       "region": "eu",
       "importance": "high",
@@ -546,8 +760,15 @@
       "source_type": "rss",
       "url": "https://www.federalregister.gov/articles/search.rss",
       "canonical_site": "https://www.federalregister.gov/",
-      "category": ["Policy", "Regulation"],
-      "tags": ["Federal Register", "Policy", "Regulation"],
+      "category": [
+        "Policy",
+        "Regulation"
+      ],
+      "tags": [
+        "Federal Register",
+        "Policy",
+        "Regulation"
+      ],
       "language": "en",
       "region": "us",
       "importance": "medium",
@@ -564,8 +785,15 @@
       "source_type": "rss",
       "url": "https://www.cisa.gov/news.xml",
       "canonical_site": "https://www.cisa.gov/news-events/news",
-      "category": ["Security", "Policy"],
-      "tags": ["CISA", "Cybersecurity", "Government"],
+      "category": [
+        "Security",
+        "Policy"
+      ],
+      "tags": [
+        "CISA",
+        "Cybersecurity",
+        "Government"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -582,8 +810,16 @@
       "source_type": "rss",
       "url": "https://www.nist.gov/news-events/news/rss.xml",
       "canonical_site": "https://www.nist.gov/news-events/news",
-      "category": ["Security", "Policy", "Standards"],
-      "tags": ["NIST", "Standards", "Cybersecurity"],
+      "category": [
+        "Security",
+        "Policy",
+        "Standards"
+      ],
+      "tags": [
+        "NIST",
+        "Standards",
+        "Cybersecurity"
+      ],
       "language": "en",
       "region": "us",
       "importance": "medium",
@@ -600,8 +836,15 @@
       "source_type": "rss",
       "url": "https://feeds.bbci.co.uk/news/rss.xml",
       "canonical_site": "https://www.bbc.com/news",
-      "category": ["General News", "World"],
-      "tags": ["BBC", "News", "World"],
+      "category": [
+        "General News",
+        "World"
+      ],
+      "tags": [
+        "BBC",
+        "News",
+        "World"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -618,8 +861,15 @@
       "source_type": "rss",
       "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
       "canonical_site": "https://www.bbc.com/news/world",
-      "category": ["General News", "World", "Politics"],
-      "tags": ["BBC", "World News"],
+      "category": [
+        "General News",
+        "World",
+        "Politics"
+      ],
+      "tags": [
+        "BBC",
+        "World News"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -636,8 +886,16 @@
       "source_type": "rss",
       "url": "https://www.theguardian.com/world/rss",
       "canonical_site": "https://www.theguardian.com/world",
-      "category": ["General News", "World", "Politics"],
-      "tags": ["Guardian", "World News", "Politics"],
+      "category": [
+        "General News",
+        "World",
+        "Politics"
+      ],
+      "tags": [
+        "Guardian",
+        "World News",
+        "Politics"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -654,8 +912,15 @@
       "source_type": "rss",
       "url": "https://www.aljazeera.com/xml/rss/all.xml",
       "canonical_site": "https://www.aljazeera.com/",
-      "category": ["General News", "World"],
-      "tags": ["Al Jazeera", "World News", "Middle East"],
+      "category": [
+        "General News",
+        "World"
+      ],
+      "tags": [
+        "Al Jazeera",
+        "World News",
+        "Middle East"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -672,8 +937,17 @@
       "source_type": "rss",
       "url": "https://rss.dw.com/rdf/rss-en-all",
       "canonical_site": "https://www.dw.com/en/top-stories/s-9097",
-      "category": ["General News", "World", "Europe"],
-      "tags": ["DW", "Germany", "Europe", "World News"],
+      "category": [
+        "General News",
+        "World",
+        "Europe"
+      ],
+      "tags": [
+        "DW",
+        "Germany",
+        "Europe",
+        "World News"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -690,8 +964,16 @@
       "source_type": "rss",
       "url": "https://www.france24.com/en/rss",
       "canonical_site": "https://www.france24.com/en/",
-      "category": ["General News", "World", "Europe"],
-      "tags": ["France 24", "World News", "Europe"],
+      "category": [
+        "General News",
+        "World",
+        "Europe"
+      ],
+      "tags": [
+        "France 24",
+        "World News",
+        "Europe"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -708,8 +990,16 @@
       "source_type": "rss",
       "url": "https://feeds.npr.org/1001/rss.xml",
       "canonical_site": "https://www.npr.org/sections/news/",
-      "category": ["General News", "US", "Politics"],
-      "tags": ["NPR", "US News", "Public Media"],
+      "category": [
+        "General News",
+        "US",
+        "Politics"
+      ],
+      "tags": [
+        "NPR",
+        "US News",
+        "Public Media"
+      ],
       "language": "en",
       "region": "us",
       "importance": "medium",
@@ -726,8 +1016,15 @@
       "source_type": "rss",
       "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
       "canonical_site": "https://www.nytimes.com/",
-      "category": ["General News", "US", "World"],
-      "tags": ["New York Times", "News"],
+      "category": [
+        "General News",
+        "US",
+        "World"
+      ],
+      "tags": [
+        "New York Times",
+        "News"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -744,8 +1041,16 @@
       "source_type": "rss",
       "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
       "canonical_site": "https://www.wsj.com/news/world",
-      "category": ["General News", "World", "Business"],
-      "tags": ["WSJ", "World News", "Business"],
+      "category": [
+        "General News",
+        "World",
+        "Business"
+      ],
+      "tags": [
+        "WSJ",
+        "World News",
+        "Business"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -762,8 +1067,16 @@
       "source_type": "rss",
       "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
       "canonical_site": "https://www.wsj.com/news/markets",
-      "category": ["Finance", "Markets", "Economy"],
-      "tags": ["WSJ", "Markets", "Finance"],
+      "category": [
+        "Finance",
+        "Markets",
+        "Economy"
+      ],
+      "tags": [
+        "WSJ",
+        "Markets",
+        "Finance"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -780,8 +1093,16 @@
       "source_type": "rss",
       "url": "https://www.ft.com/rss/home",
       "canonical_site": "https://www.ft.com/",
-      "category": ["Finance", "Business", "World"],
-      "tags": ["Financial Times", "Markets", "Economy"],
+      "category": [
+        "Finance",
+        "Business",
+        "World"
+      ],
+      "tags": [
+        "Financial Times",
+        "Markets",
+        "Economy"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -798,8 +1119,16 @@
       "source_type": "rss",
       "url": "https://feeds.bloomberg.com/markets/news.rss",
       "canonical_site": "https://www.bloomberg.com/markets",
-      "category": ["Finance", "Markets", "Economy"],
-      "tags": ["Bloomberg", "Markets", "Finance"],
+      "category": [
+        "Finance",
+        "Markets",
+        "Economy"
+      ],
+      "tags": [
+        "Bloomberg",
+        "Markets",
+        "Finance"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -816,8 +1145,16 @@
       "source_type": "rss",
       "url": "https://feeds.bloomberg.com/politics/news.rss",
       "canonical_site": "https://www.bloomberg.com/politics",
-      "category": ["Politics", "Policy", "Economy"],
-      "tags": ["Bloomberg", "Politics", "Policy"],
+      "category": [
+        "Politics",
+        "Policy",
+        "Economy"
+      ],
+      "tags": [
+        "Bloomberg",
+        "Politics",
+        "Policy"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -834,8 +1171,16 @@
       "source_type": "web_page",
       "url": "https://www.reuters.com/",
       "canonical_site": "https://www.reuters.com/",
-      "category": ["General News", "Business", "World"],
-      "tags": ["Reuters", "News Agency", "Candidate"],
+      "category": [
+        "General News",
+        "Business",
+        "World"
+      ],
+      "tags": [
+        "Reuters",
+        "News Agency",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -852,8 +1197,17 @@
       "source_type": "web_page",
       "url": "https://apnews.com/",
       "canonical_site": "https://apnews.com/",
-      "category": ["General News", "World", "US"],
-      "tags": ["AP", "Associated Press", "News Agency", "Candidate"],
+      "category": [
+        "General News",
+        "World",
+        "US"
+      ],
+      "tags": [
+        "AP",
+        "Associated Press",
+        "News Agency",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -870,8 +1224,16 @@
       "source_type": "rss",
       "url": "https://www3.nhk.or.jp/rss/news/cat0.xml",
       "canonical_site": "https://www3.nhk.or.jp/news/",
-      "category": ["General News", "Japan", "Asia"],
-      "tags": ["NHK", "Japan", "Public Broadcaster"],
+      "category": [
+        "General News",
+        "Japan",
+        "Asia"
+      ],
+      "tags": [
+        "NHK",
+        "Japan",
+        "Public Broadcaster"
+      ],
       "language": "ja",
       "region": "jp",
       "importance": "high",
@@ -888,8 +1250,16 @@
       "source_type": "rss",
       "url": "https://www.japantimes.co.jp/feed/",
       "canonical_site": "https://www.japantimes.co.jp/",
-      "category": ["General News", "Japan", "Asia"],
-      "tags": ["Japan Times", "Japan", "Asia"],
+      "category": [
+        "General News",
+        "Japan",
+        "Asia"
+      ],
+      "tags": [
+        "Japan Times",
+        "Japan",
+        "Asia"
+      ],
       "language": "en",
       "region": "jp",
       "importance": "medium",
@@ -906,8 +1276,17 @@
       "source_type": "rss",
       "url": "https://www.scmp.com/rss/91/feed",
       "canonical_site": "https://www.scmp.com/",
-      "category": ["General News", "China", "Asia"],
-      "tags": ["SCMP", "Hong Kong", "China", "Asia"],
+      "category": [
+        "General News",
+        "China",
+        "Asia"
+      ],
+      "tags": [
+        "SCMP",
+        "Hong Kong",
+        "China",
+        "Asia"
+      ],
       "language": "en",
       "region": "hk",
       "importance": "high",
@@ -924,8 +1303,16 @@
       "source_type": "rss",
       "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
       "canonical_site": "https://www.channelnewsasia.com/",
-      "category": ["General News", "Singapore", "Asia"],
-      "tags": ["CNA", "Singapore", "Asia"],
+      "category": [
+        "General News",
+        "Singapore",
+        "Asia"
+      ],
+      "tags": [
+        "CNA",
+        "Singapore",
+        "Asia"
+      ],
       "language": "en",
       "region": "sg",
       "importance": "high",
@@ -942,8 +1329,16 @@
       "source_type": "rss",
       "url": "https://www.abc.net.au/news/feed/51120/rss.xml",
       "canonical_site": "https://www.abc.net.au/news/",
-      "category": ["General News", "Australia", "Oceania"],
-      "tags": ["ABC Australia", "Australia", "Public Broadcaster"],
+      "category": [
+        "General News",
+        "Australia",
+        "Oceania"
+      ],
+      "tags": [
+        "ABC Australia",
+        "Australia",
+        "Public Broadcaster"
+      ],
       "language": "en",
       "region": "au",
       "importance": "high",
@@ -960,8 +1355,16 @@
       "source_type": "rss",
       "url": "https://www.cbc.ca/cmlink/rss-world",
       "canonical_site": "https://www.cbc.ca/news/world",
-      "category": ["General News", "Canada", "World"],
-      "tags": ["CBC", "Canada", "Public Broadcaster"],
+      "category": [
+        "General News",
+        "Canada",
+        "World"
+      ],
+      "tags": [
+        "CBC",
+        "Canada",
+        "Public Broadcaster"
+      ],
       "language": "en",
       "region": "ca",
       "importance": "medium",
@@ -978,8 +1381,16 @@
       "source_type": "rss",
       "url": "https://globalnews.ca/world/feed/",
       "canonical_site": "https://globalnews.ca/world/",
-      "category": ["General News", "Canada", "World"],
-      "tags": ["Global News", "Canada", "World"],
+      "category": [
+        "General News",
+        "Canada",
+        "World"
+      ],
+      "tags": [
+        "Global News",
+        "Canada",
+        "World"
+      ],
       "language": "en",
       "region": "ca",
       "importance": "medium",
@@ -996,8 +1407,16 @@
       "source_type": "rss",
       "url": "https://www.thehindu.com/news/international/feeder/default.rss",
       "canonical_site": "https://www.thehindu.com/news/international/",
-      "category": ["General News", "India", "World"],
-      "tags": ["The Hindu", "India", "International"],
+      "category": [
+        "General News",
+        "India",
+        "World"
+      ],
+      "tags": [
+        "The Hindu",
+        "India",
+        "International"
+      ],
       "language": "en",
       "region": "in",
       "importance": "medium",
@@ -1014,8 +1433,16 @@
       "source_type": "rss",
       "url": "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",
       "canonical_site": "https://timesofindia.indiatimes.com/world",
-      "category": ["General News", "India", "World"],
-      "tags": ["Times of India", "India", "World"],
+      "category": [
+        "General News",
+        "India",
+        "World"
+      ],
+      "tags": [
+        "Times of India",
+        "India",
+        "World"
+      ],
       "language": "en",
       "region": "in",
       "importance": "medium",
@@ -1032,8 +1459,16 @@
       "source_type": "rss",
       "url": "https://www.lemonde.fr/en/rss/une.xml",
       "canonical_site": "https://www.lemonde.fr/en/",
-      "category": ["General News", "France", "Europe"],
-      "tags": ["Le Monde", "France", "Europe"],
+      "category": [
+        "General News",
+        "France",
+        "Europe"
+      ],
+      "tags": [
+        "Le Monde",
+        "France",
+        "Europe"
+      ],
       "language": "en",
       "region": "fr",
       "importance": "high",
@@ -1050,8 +1485,16 @@
       "source_type": "rss",
       "url": "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
       "canonical_site": "https://www.ansa.it/sito/notizie/mondo/mondo.shtml",
-      "category": ["General News", "Italy", "Europe"],
-      "tags": ["ANSA", "Italy", "Europe"],
+      "category": [
+        "General News",
+        "Italy",
+        "Europe"
+      ],
+      "tags": [
+        "ANSA",
+        "Italy",
+        "Europe"
+      ],
       "language": "it",
       "region": "it",
       "importance": "medium",
@@ -1068,8 +1511,15 @@
       "source_type": "rss",
       "url": "https://www.arabnews.com/rss.xml",
       "canonical_site": "https://www.arabnews.com/",
-      "category": ["General News", "Middle East"],
-      "tags": ["Arab News", "Middle East", "Saudi Arabia"],
+      "category": [
+        "General News",
+        "Middle East"
+      ],
+      "tags": [
+        "Arab News",
+        "Middle East",
+        "Saudi Arabia"
+      ],
       "language": "en",
       "region": "sa",
       "importance": "medium",
@@ -1086,8 +1536,15 @@
       "source_type": "rss",
       "url": "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf",
       "canonical_site": "https://allafrica.com/",
-      "category": ["General News", "Africa"],
-      "tags": ["AllAfrica", "Africa", "Regional Aggregator"],
+      "category": [
+        "General News",
+        "Africa"
+      ],
+      "tags": [
+        "AllAfrica",
+        "Africa",
+        "Regional Aggregator"
+      ],
       "language": "en",
       "region": "africa",
       "importance": "medium",
@@ -1104,8 +1561,16 @@
       "source_type": "rss",
       "url": "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml",
       "canonical_site": "https://agenciabrasil.ebc.com.br/",
-      "category": ["General News", "Brazil", "Latin America"],
-      "tags": ["Agencia Brasil", "Brazil", "Latin America"],
+      "category": [
+        "General News",
+        "Brazil",
+        "Latin America"
+      ],
+      "tags": [
+        "Agencia Brasil",
+        "Brazil",
+        "Latin America"
+      ],
       "language": "pt",
       "region": "br",
       "importance": "medium",
@@ -1122,8 +1587,16 @@
       "source_type": "rss",
       "url": "https://www.batimes.com.ar/feed",
       "canonical_site": "https://www.batimes.com.ar/",
-      "category": ["General News", "Argentina", "Latin America"],
-      "tags": ["Buenos Aires Times", "Argentina", "Latin America"],
+      "category": [
+        "General News",
+        "Argentina",
+        "Latin America"
+      ],
+      "tags": [
+        "Buenos Aires Times",
+        "Argentina",
+        "Latin America"
+      ],
       "language": "en",
       "region": "ar",
       "importance": "medium",
@@ -1140,8 +1613,16 @@
       "source_type": "rss",
       "url": "https://mexiconewsdaily.com/feed/",
       "canonical_site": "https://mexiconewsdaily.com/",
-      "category": ["General News", "Mexico", "Latin America"],
-      "tags": ["Mexico News Daily", "Mexico", "Latin America"],
+      "category": [
+        "General News",
+        "Mexico",
+        "Latin America"
+      ],
+      "tags": [
+        "Mexico News Daily",
+        "Mexico",
+        "Latin America"
+      ],
       "language": "en",
       "region": "mx",
       "importance": "medium",
@@ -1158,8 +1639,16 @@
       "source_type": "rss",
       "url": "https://www.taipeitimes.com/xml/index.rss",
       "canonical_site": "https://www.taipeitimes.com/",
-      "category": ["General News", "Taiwan", "Asia"],
-      "tags": ["Taipei Times", "Taiwan", "Asia"],
+      "category": [
+        "General News",
+        "Taiwan",
+        "Asia"
+      ],
+      "tags": [
+        "Taipei Times",
+        "Taiwan",
+        "Asia"
+      ],
       "language": "en",
       "region": "tw",
       "importance": "medium",
@@ -1176,8 +1665,18 @@
       "source_type": "rss",
       "url": "http://www.xinhuanet.com/world/news_world.xml",
       "canonical_site": "http://www.xinhuanet.com/world/",
-      "category": ["General News", "China", "World"],
-      "tags": ["新华网", "新华社", "China", "State News Agency", "World"],
+      "category": [
+        "General News",
+        "China",
+        "World"
+      ],
+      "tags": [
+        "新华网",
+        "新华社",
+        "China",
+        "State News Agency",
+        "World"
+      ],
       "language": "zh",
       "region": "cn",
       "importance": "high",
@@ -1194,8 +1693,18 @@
       "source_type": "rss",
       "url": "http://www.xinhuanet.com/politics/news_politics.xml",
       "canonical_site": "http://www.xinhuanet.com/politics/",
-      "category": ["General News", "China", "Politics"],
-      "tags": ["新华网", "新华社", "China", "State News Agency", "Politics"],
+      "category": [
+        "General News",
+        "China",
+        "Politics"
+      ],
+      "tags": [
+        "新华网",
+        "新华社",
+        "China",
+        "State News Agency",
+        "Politics"
+      ],
       "language": "zh",
       "region": "cn",
       "importance": "high",
@@ -1212,8 +1721,16 @@
       "source_type": "github_release",
       "url": "https://github.com/openai/openai-python/releases.atom",
       "canonical_site": "https://github.com/openai/openai-python",
-      "category": ["Developer Tools", "AI", "Changelog"],
-      "tags": ["OpenAI", "Python", "SDK"],
+      "category": [
+        "Developer Tools",
+        "AI",
+        "Changelog"
+      ],
+      "tags": [
+        "OpenAI",
+        "Python",
+        "SDK"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1230,8 +1747,16 @@
       "source_type": "github_release",
       "url": "https://github.com/openai/openai-node/releases.atom",
       "canonical_site": "https://github.com/openai/openai-node",
-      "category": ["Developer Tools", "AI", "Changelog"],
-      "tags": ["OpenAI", "Node.js", "SDK"],
+      "category": [
+        "Developer Tools",
+        "AI",
+        "Changelog"
+      ],
+      "tags": [
+        "OpenAI",
+        "Node.js",
+        "SDK"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1248,8 +1773,17 @@
       "source_type": "github_release",
       "url": "https://github.com/anthropics/anthropic-sdk-python/releases.atom",
       "canonical_site": "https://github.com/anthropics/anthropic-sdk-python",
-      "category": ["Developer Tools", "AI", "Changelog"],
-      "tags": ["Anthropic", "Claude", "Python", "SDK"],
+      "category": [
+        "Developer Tools",
+        "AI",
+        "Changelog"
+      ],
+      "tags": [
+        "Anthropic",
+        "Claude",
+        "Python",
+        "SDK"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1266,8 +1800,16 @@
       "source_type": "github_release",
       "url": "https://github.com/vercel/next.js/releases.atom",
       "canonical_site": "https://github.com/vercel/next.js",
-      "category": ["Frontend", "Developer Tools", "Changelog"],
-      "tags": ["Next.js", "React", "Vercel"],
+      "category": [
+        "Frontend",
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "Next.js",
+        "React",
+        "Vercel"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1284,8 +1826,16 @@
       "source_type": "github_release",
       "url": "https://github.com/supabase/supabase/releases.atom",
       "canonical_site": "https://github.com/supabase/supabase",
-      "category": ["Developer Tools", "Database", "Changelog"],
-      "tags": ["Supabase", "Postgres", "Open Source"],
+      "category": [
+        "Developer Tools",
+        "Database",
+        "Changelog"
+      ],
+      "tags": [
+        "Supabase",
+        "Postgres",
+        "Open Source"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1302,8 +1852,16 @@
       "source_type": "github_release",
       "url": "https://github.com/langchain-ai/langchain/releases.atom",
       "canonical_site": "https://github.com/langchain-ai/langchain",
-      "category": ["AI", "Developer Tools", "Changelog"],
-      "tags": ["LangChain", "Agents", "LLM"],
+      "category": [
+        "AI",
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "LangChain",
+        "Agents",
+        "LLM"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1320,8 +1878,16 @@
       "source_type": "github_release",
       "url": "https://github.com/run-llama/llama_index/releases.atom",
       "canonical_site": "https://github.com/run-llama/llama_index",
-      "category": ["AI", "Developer Tools", "Changelog"],
-      "tags": ["LlamaIndex", "RAG", "Agents"],
+      "category": [
+        "AI",
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "LlamaIndex",
+        "RAG",
+        "Agents"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1338,8 +1904,16 @@
       "source_type": "github_release",
       "url": "https://github.com/modelcontextprotocol/python-sdk/releases.atom",
       "canonical_site": "https://github.com/modelcontextprotocol/python-sdk",
-      "category": ["AI", "Developer Tools", "Changelog"],
-      "tags": ["MCP", "Python", "Agents"],
+      "category": [
+        "AI",
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "MCP",
+        "Python",
+        "Agents"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1356,8 +1930,16 @@
       "source_type": "github_release",
       "url": "https://github.com/modelcontextprotocol/typescript-sdk/releases.atom",
       "canonical_site": "https://github.com/modelcontextprotocol/typescript-sdk",
-      "category": ["AI", "Developer Tools", "Changelog"],
-      "tags": ["MCP", "TypeScript", "Agents"],
+      "category": [
+        "AI",
+        "Developer Tools",
+        "Changelog"
+      ],
+      "tags": [
+        "MCP",
+        "TypeScript",
+        "Agents"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1374,8 +1956,16 @@
       "source_type": "github_release",
       "url": "https://github.com/huggingface/transformers/releases.atom",
       "canonical_site": "https://github.com/huggingface/transformers",
-      "category": ["AI", "Open Source", "Changelog"],
-      "tags": ["Hugging Face", "Transformers", "Models"],
+      "category": [
+        "AI",
+        "Open Source",
+        "Changelog"
+      ],
+      "tags": [
+        "Hugging Face",
+        "Transformers",
+        "Models"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1392,8 +1982,15 @@
       "source_type": "rss",
       "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml",
       "canonical_site": "https://www.anthropic.com/news",
-      "category": ["AI", "Frontier Labs"],
-      "tags": ["Anthropic", "Claude", "Third-party RSS"],
+      "category": [
+        "AI",
+        "Frontier Labs"
+      ],
+      "tags": [
+        "Anthropic",
+        "Claude",
+        "Third-party RSS"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1415,8 +2012,16 @@
       "source_type": "rss",
       "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_research.xml",
       "canonical_site": "https://www.anthropic.com/research",
-      "category": ["AI", "Frontier Labs", "Research"],
-      "tags": ["Anthropic", "Research", "Third-party RSS"],
+      "category": [
+        "AI",
+        "Frontier Labs",
+        "Research"
+      ],
+      "tags": [
+        "Anthropic",
+        "Research",
+        "Third-party RSS"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1438,8 +2043,16 @@
       "source_type": "rss",
       "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_engineering.xml",
       "canonical_site": "https://www.anthropic.com/engineering",
-      "category": ["AI", "Engineering", "Frontier Labs"],
-      "tags": ["Anthropic", "Engineering", "Third-party RSS"],
+      "category": [
+        "AI",
+        "Engineering",
+        "Frontier Labs"
+      ],
+      "tags": [
+        "Anthropic",
+        "Engineering",
+        "Third-party RSS"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1461,8 +2074,15 @@
       "source_type": "rss",
       "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_claude.xml",
       "canonical_site": "https://claude.com/blog",
-      "category": ["AI", "Product"],
-      "tags": ["Claude", "Anthropic", "Third-party RSS"],
+      "category": [
+        "AI",
+        "Product"
+      ],
+      "tags": [
+        "Claude",
+        "Anthropic",
+        "Third-party RSS"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1484,8 +2104,15 @@
       "source_type": "rss",
       "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_meta_ai.xml",
       "canonical_site": "https://ai.meta.com/blog/",
-      "category": ["AI", "Research"],
-      "tags": ["Meta AI", "Research", "Third-party RSS"],
+      "category": [
+        "AI",
+        "Research"
+      ],
+      "tags": [
+        "Meta AI",
+        "Research",
+        "Third-party RSS"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1507,8 +2134,15 @@
       "source_type": "rss",
       "url": "https://status.anthropic.com/history.atom",
       "canonical_site": "https://status.anthropic.com/",
-      "category": ["AI", "Service Status"],
-      "tags": ["Anthropic", "Status", "Incidents"],
+      "category": [
+        "AI",
+        "Service Status"
+      ],
+      "tags": [
+        "Anthropic",
+        "Status",
+        "Incidents"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1525,8 +2159,15 @@
       "source_type": "rss",
       "url": "https://status.claude.com/history.atom",
       "canonical_site": "https://status.claude.com/",
-      "category": ["AI", "Service Status"],
-      "tags": ["Claude", "Status", "Incidents"],
+      "category": [
+        "AI",
+        "Service Status"
+      ],
+      "tags": [
+        "Claude",
+        "Status",
+        "Incidents"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1543,8 +2184,16 @@
       "source_type": "rss",
       "url": "https://www.who.int/rss-feeds/news-english.xml",
       "canonical_site": "https://www.who.int/news",
-      "category": ["Healthcare", "Public Health", "Global Health"],
-      "tags": ["WHO", "Public Health", "Global Health"],
+      "category": [
+        "Healthcare",
+        "Public Health",
+        "Global Health"
+      ],
+      "tags": [
+        "WHO",
+        "Public Health",
+        "Global Health"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -1561,8 +2210,16 @@
       "source_type": "rss",
       "url": "https://tools.cdc.gov/api/v2/resources/media/132608.rss",
       "canonical_site": "https://www.cdc.gov/media/",
-      "category": ["Healthcare", "Public Health", "US"],
-      "tags": ["CDC", "Public Health", "Disease"],
+      "category": [
+        "Healthcare",
+        "Public Health",
+        "US"
+      ],
+      "tags": [
+        "CDC",
+        "Public Health",
+        "Disease"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -1579,8 +2236,17 @@
       "source_type": "web_page",
       "url": "https://www.fda.gov/news-events/fda-newsroom/press-announcements",
       "canonical_site": "https://www.fda.gov/news-events/fda-newsroom",
-      "category": ["Healthcare", "Regulation", "Medicine"],
-      "tags": ["FDA", "Drug Approval", "Medical Devices", "Candidate"],
+      "category": [
+        "Healthcare",
+        "Regulation",
+        "Medicine"
+      ],
+      "tags": [
+        "FDA",
+        "Drug Approval",
+        "Medical Devices",
+        "Candidate"
+      ],
       "language": "en",
       "region": "us",
       "importance": "critical",
@@ -1597,8 +2263,16 @@
       "source_type": "web_page",
       "url": "https://www.nih.gov/news-events/news-releases",
       "canonical_site": "https://www.nih.gov/news-events/news-releases",
-      "category": ["Healthcare", "Research", "Medicine"],
-      "tags": ["NIH", "Biomedical Research", "Candidate"],
+      "category": [
+        "Healthcare",
+        "Research",
+        "Medicine"
+      ],
+      "tags": [
+        "NIH",
+        "Biomedical Research",
+        "Candidate"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -1615,8 +2289,16 @@
       "source_type": "rss",
       "url": "https://www.nature.com/nature.rss",
       "canonical_site": "https://www.nature.com/nature/",
-      "category": ["Research", "Academia", "Science"],
-      "tags": ["Nature", "Science", "Research"],
+      "category": [
+        "Research",
+        "Academia",
+        "Science"
+      ],
+      "tags": [
+        "Nature",
+        "Science",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -1633,8 +2315,16 @@
       "source_type": "rss",
       "url": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
       "canonical_site": "https://www.science.org/journal/science",
-      "category": ["Research", "Academia", "Science"],
-      "tags": ["Science", "AAAS", "Research"],
+      "category": [
+        "Research",
+        "Academia",
+        "Science"
+      ],
+      "tags": [
+        "Science",
+        "AAAS",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "critical",
@@ -1651,8 +2341,16 @@
       "source_type": "rss",
       "url": "https://journals.plos.org/plosone/feed/atom",
       "canonical_site": "https://journals.plos.org/plosone/",
-      "category": ["Research", "Academia", "Open Access"],
-      "tags": ["PLOS", "Open Access", "Research"],
+      "category": [
+        "Research",
+        "Academia",
+        "Open Access"
+      ],
+      "tags": [
+        "PLOS",
+        "Open Access",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1669,8 +2367,16 @@
       "source_type": "rss",
       "url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml",
       "canonical_site": "https://news.un.org/en/",
-      "category": ["Policy", "International Organizations", "World"],
-      "tags": ["UN", "United Nations", "Global Policy"],
+      "category": [
+        "Policy",
+        "International Organizations",
+        "World"
+      ],
+      "tags": [
+        "UN",
+        "United Nations",
+        "Global Policy"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1687,8 +2393,16 @@
       "source_type": "rss",
       "url": "https://www.gov.uk/search/news-and-communications.atom",
       "canonical_site": "https://www.gov.uk/search/news-and-communications",
-      "category": ["Policy", "Government", "UK"],
-      "tags": ["GOV.UK", "UK Government", "Policy"],
+      "category": [
+        "Policy",
+        "Government",
+        "UK"
+      ],
+      "tags": [
+        "GOV.UK",
+        "UK Government",
+        "Policy"
+      ],
       "language": "en",
       "region": "uk",
       "importance": "medium",
@@ -1705,8 +2419,16 @@
       "source_type": "rss",
       "url": "https://ec.europa.eu/commission/presscorner/api/rss?language=en",
       "canonical_site": "https://ec.europa.eu/commission/presscorner/",
-      "category": ["Policy", "Government", "EU"],
-      "tags": ["European Commission", "EU", "Policy"],
+      "category": [
+        "Policy",
+        "Government",
+        "EU"
+      ],
+      "tags": [
+        "European Commission",
+        "EU",
+        "Policy"
+      ],
       "language": "en",
       "region": "eu",
       "importance": "high",
@@ -1723,8 +2445,16 @@
       "source_type": "rss",
       "url": "https://www.federalreserve.gov/feeds/speeches.xml",
       "canonical_site": "https://www.federalreserve.gov/newsevents/speeches.htm",
-      "category": ["Finance", "Central Banks", "Economy"],
-      "tags": ["Federal Reserve", "Speeches", "Monetary Policy"],
+      "category": [
+        "Finance",
+        "Central Banks",
+        "Economy"
+      ],
+      "tags": [
+        "Federal Reserve",
+        "Speeches",
+        "Monetary Policy"
+      ],
       "language": "en",
       "region": "us",
       "importance": "high",
@@ -1741,8 +2471,16 @@
       "source_type": "rss",
       "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
       "canonical_site": "https://www.federalreserve.gov/newsevents/pressreleases/monetary.htm",
-      "category": ["Finance", "Central Banks", "Economy"],
-      "tags": ["Federal Reserve", "FOMC", "Rates"],
+      "category": [
+        "Finance",
+        "Central Banks",
+        "Economy"
+      ],
+      "tags": [
+        "Federal Reserve",
+        "FOMC",
+        "Rates"
+      ],
       "language": "en",
       "region": "us",
       "importance": "critical",
@@ -1759,8 +2497,15 @@
       "source_type": "rss",
       "url": "https://www.sec.gov/news/speeches-statements.rss",
       "canonical_site": "https://www.sec.gov/news/speeches-statements",
-      "category": ["Finance", "Regulation"],
-      "tags": ["SEC", "Statements", "Markets"],
+      "category": [
+        "Finance",
+        "Regulation"
+      ],
+      "tags": [
+        "SEC",
+        "Statements",
+        "Markets"
+      ],
       "language": "en",
       "region": "us",
       "importance": "medium",
@@ -1777,8 +2522,16 @@
       "source_type": "rss",
       "url": "https://www.esma.europa.eu/rss.xml",
       "canonical_site": "https://www.esma.europa.eu/",
-      "category": ["Finance", "Regulation", "EU"],
-      "tags": ["ESMA", "EU", "Markets Regulation"],
+      "category": [
+        "Finance",
+        "Regulation",
+        "EU"
+      ],
+      "tags": [
+        "ESMA",
+        "EU",
+        "Markets Regulation"
+      ],
       "language": "en",
       "region": "eu",
       "importance": "medium",
@@ -1795,8 +2548,16 @@
       "source_type": "rss",
       "url": "https://www.fca.org.uk/news/rss.xml",
       "canonical_site": "https://www.fca.org.uk/news",
-      "category": ["Finance", "Regulation", "UK"],
-      "tags": ["FCA", "UK", "Financial Regulation"],
+      "category": [
+        "Finance",
+        "Regulation",
+        "UK"
+      ],
+      "tags": [
+        "FCA",
+        "UK",
+        "Financial Regulation"
+      ],
       "language": "en",
       "region": "uk",
       "importance": "medium",
@@ -1813,8 +2574,16 @@
       "source_type": "rss",
       "url": "https://www.bankofengland.co.uk/rss/news",
       "canonical_site": "https://www.bankofengland.co.uk/news",
-      "category": ["Finance", "Central Banks", "UK"],
-      "tags": ["Bank of England", "Central Bank", "UK"],
+      "category": [
+        "Finance",
+        "Central Banks",
+        "UK"
+      ],
+      "tags": [
+        "Bank of England",
+        "Central Bank",
+        "UK"
+      ],
       "language": "en",
       "region": "uk",
       "importance": "medium",
@@ -1831,8 +2600,16 @@
       "source_type": "rss",
       "url": "https://www.bankofengland.co.uk/rss/speeches",
       "canonical_site": "https://www.bankofengland.co.uk/speeches",
-      "category": ["Finance", "Central Banks", "UK"],
-      "tags": ["Bank of England", "Speeches", "Monetary Policy"],
+      "category": [
+        "Finance",
+        "Central Banks",
+        "UK"
+      ],
+      "tags": [
+        "Bank of England",
+        "Speeches",
+        "Monetary Policy"
+      ],
       "language": "en",
       "region": "uk",
       "importance": "medium",
@@ -1849,8 +2626,15 @@
       "source_type": "rss",
       "url": "https://www.microsoft.com/en-us/security/blog/feed/",
       "canonical_site": "https://www.microsoft.com/en-us/security/blog/",
-      "category": ["Security", "Technology"],
-      "tags": ["Microsoft", "Security", "Threat Intelligence"],
+      "category": [
+        "Security",
+        "Technology"
+      ],
+      "tags": [
+        "Microsoft",
+        "Security",
+        "Threat Intelligence"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1867,8 +2651,15 @@
       "source_type": "rss",
       "url": "https://security.googleblog.com/feeds/posts/default",
       "canonical_site": "https://security.googleblog.com/",
-      "category": ["Security", "Technology"],
-      "tags": ["Google", "Security", "Vulnerabilities"],
+      "category": [
+        "Security",
+        "Technology"
+      ],
+      "tags": [
+        "Google",
+        "Security",
+        "Vulnerabilities"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1885,8 +2676,15 @@
       "source_type": "rss",
       "url": "https://googleprojectzero.blogspot.com/feeds/posts/default",
       "canonical_site": "https://googleprojectzero.blogspot.com/",
-      "category": ["Security", "Vulnerability Research"],
-      "tags": ["Project Zero", "Vulnerability Research", "Google"],
+      "category": [
+        "Security",
+        "Vulnerability Research"
+      ],
+      "tags": [
+        "Project Zero",
+        "Vulnerability Research",
+        "Google"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1903,8 +2701,15 @@
       "source_type": "rss",
       "url": "https://blog.talosintelligence.com/rss/",
       "canonical_site": "https://blog.talosintelligence.com/",
-      "category": ["Security", "Threat Intelligence"],
-      "tags": ["Cisco Talos", "Threat Intelligence", "Security"],
+      "category": [
+        "Security",
+        "Threat Intelligence"
+      ],
+      "tags": [
+        "Cisco Talos",
+        "Threat Intelligence",
+        "Security"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -1921,8 +2726,15 @@
       "source_type": "rss",
       "url": "https://www.schneier.com/feed/atom/",
       "canonical_site": "https://www.schneier.com/",
-      "category": ["Security", "Analysis"],
-      "tags": ["Schneier", "Security", "Analysis"],
+      "category": [
+        "Security",
+        "Analysis"
+      ],
+      "tags": [
+        "Schneier",
+        "Security",
+        "Analysis"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1939,8 +2751,15 @@
       "source_type": "rss",
       "url": "https://krebsonsecurity.com/feed/",
       "canonical_site": "https://krebsonsecurity.com/",
-      "category": ["Security", "Cybercrime"],
-      "tags": ["Krebs", "Cybercrime", "Security Journalism"],
+      "category": [
+        "Security",
+        "Cybercrime"
+      ],
+      "tags": [
+        "Krebs",
+        "Cybercrime",
+        "Security Journalism"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1957,8 +2776,15 @@
       "source_type": "rss",
       "url": "https://www.darkreading.com/rss.xml",
       "canonical_site": "https://www.darkreading.com/",
-      "category": ["Security", "Technology"],
-      "tags": ["Dark Reading", "Cybersecurity", "Enterprise Security"],
+      "category": [
+        "Security",
+        "Technology"
+      ],
+      "tags": [
+        "Dark Reading",
+        "Cybersecurity",
+        "Enterprise Security"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1975,8 +2801,15 @@
       "source_type": "rss",
       "url": "https://www.bleepingcomputer.com/feed/",
       "canonical_site": "https://www.bleepingcomputer.com/",
-      "category": ["Security", "Technology"],
-      "tags": ["BleepingComputer", "Cybersecurity", "Vulnerabilities"],
+      "category": [
+        "Security",
+        "Technology"
+      ],
+      "tags": [
+        "BleepingComputer",
+        "Cybersecurity",
+        "Vulnerabilities"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -1993,8 +2826,16 @@
       "source_type": "rss",
       "url": "https://bitcoinmagazine.com/.rss/full/",
       "canonical_site": "https://bitcoinmagazine.com/",
-      "category": ["Crypto", "Bitcoin", "Finance"],
-      "tags": ["Bitcoin", "Crypto", "Digital Assets"],
+      "category": [
+        "Crypto",
+        "Bitcoin",
+        "Finance"
+      ],
+      "tags": [
+        "Bitcoin",
+        "Crypto",
+        "Digital Assets"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2011,8 +2852,16 @@
       "source_type": "rss",
       "url": "https://decrypt.co/feed",
       "canonical_site": "https://decrypt.co/",
-      "category": ["Crypto", "Web3", "Technology"],
-      "tags": ["Crypto", "Web3", "Digital Assets"],
+      "category": [
+        "Crypto",
+        "Web3",
+        "Technology"
+      ],
+      "tags": [
+        "Crypto",
+        "Web3",
+        "Digital Assets"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2029,8 +2878,16 @@
       "source_type": "rss",
       "url": "https://blog.chainalysis.com/rss/",
       "canonical_site": "https://blog.chainalysis.com/",
-      "category": ["Crypto", "Compliance", "Security"],
-      "tags": ["Chainalysis", "Compliance", "On-chain Analytics"],
+      "category": [
+        "Crypto",
+        "Compliance",
+        "Security"
+      ],
+      "tags": [
+        "Chainalysis",
+        "Compliance",
+        "On-chain Analytics"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2047,8 +2904,16 @@
       "source_type": "rss",
       "url": "https://www.elliptic.co/blog/rss.xml",
       "canonical_site": "https://www.elliptic.co/blog",
-      "category": ["Crypto", "Compliance", "Security"],
-      "tags": ["Elliptic", "Compliance", "Blockchain Analytics"],
+      "category": [
+        "Crypto",
+        "Compliance",
+        "Security"
+      ],
+      "tags": [
+        "Elliptic",
+        "Compliance",
+        "Blockchain Analytics"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2065,8 +2930,16 @@
       "source_type": "rss",
       "url": "https://blog.kraken.com/feed",
       "canonical_site": "https://blog.kraken.com/",
-      "category": ["Crypto", "Exchange", "Finance"],
-      "tags": ["Kraken", "Crypto Exchange", "Digital Assets"],
+      "category": [
+        "Crypto",
+        "Exchange",
+        "Finance"
+      ],
+      "tags": [
+        "Kraken",
+        "Crypto Exchange",
+        "Digital Assets"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2083,8 +2956,16 @@
       "source_type": "rss",
       "url": "https://blog.bitmex.com/feed/",
       "canonical_site": "https://blog.bitmex.com/",
-      "category": ["Crypto", "Exchange", "Derivatives"],
-      "tags": ["BitMEX", "Crypto Derivatives", "Markets"],
+      "category": [
+        "Crypto",
+        "Exchange",
+        "Derivatives"
+      ],
+      "tags": [
+        "BitMEX",
+        "Crypto Derivatives",
+        "Markets"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2101,8 +2982,16 @@
       "source_type": "rss",
       "url": "https://blog.ethereum.org/feed.xml",
       "canonical_site": "https://blog.ethereum.org/",
-      "category": ["Crypto", "Blockchain Infrastructure", "Web3"],
-      "tags": ["Ethereum", "Protocol", "Blockchain"],
+      "category": [
+        "Crypto",
+        "Blockchain Infrastructure",
+        "Web3"
+      ],
+      "tags": [
+        "Ethereum",
+        "Protocol",
+        "Blockchain"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2119,8 +3008,16 @@
       "source_type": "rss",
       "url": "https://solana.com/news/rss.xml",
       "canonical_site": "https://solana.com/news",
-      "category": ["Crypto", "Blockchain Infrastructure", "Web3"],
-      "tags": ["Solana", "Protocol", "Blockchain"],
+      "category": [
+        "Crypto",
+        "Blockchain Infrastructure",
+        "Web3"
+      ],
+      "tags": [
+        "Solana",
+        "Protocol",
+        "Blockchain"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2137,8 +3034,16 @@
       "source_type": "rss",
       "url": "https://blog.trailofbits.com/feed/",
       "canonical_site": "https://blog.trailofbits.com/",
-      "category": ["Security", "Crypto", "Engineering"],
-      "tags": ["Trail of Bits", "Security Audit", "Blockchain Security"],
+      "category": [
+        "Security",
+        "Crypto",
+        "Engineering"
+      ],
+      "tags": [
+        "Trail of Bits",
+        "Security Audit",
+        "Blockchain Security"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2155,8 +3060,16 @@
       "source_type": "rss",
       "url": "https://blog.openzeppelin.com/rss.xml",
       "canonical_site": "https://blog.openzeppelin.com/",
-      "category": ["Security", "Crypto", "Web3"],
-      "tags": ["OpenZeppelin", "Smart Contracts", "Security"],
+      "category": [
+        "Security",
+        "Crypto",
+        "Web3"
+      ],
+      "tags": [
+        "OpenZeppelin",
+        "Smart Contracts",
+        "Security"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2174,8 +3087,17 @@
       "platform": "twitter",
       "target": "karpathy",
       "url": "https://x.com/karpathy",
-      "category": ["AI", "Research", "People Radar"],
-      "tags": ["Andrej Karpathy", "AI", "Education", "Eureka Labs"],
+      "category": [
+        "AI",
+        "Research",
+        "People Radar"
+      ],
+      "tags": [
+        "Andrej Karpathy",
+        "AI",
+        "Education",
+        "Eureka Labs"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2193,8 +3115,16 @@
       "platform": "twitter",
       "target": "sama",
       "url": "https://x.com/sama",
-      "category": ["AI", "Frontier Labs", "People Radar"],
-      "tags": ["Sam Altman", "OpenAI", "AI"],
+      "category": [
+        "AI",
+        "Frontier Labs",
+        "People Radar"
+      ],
+      "tags": [
+        "Sam Altman",
+        "OpenAI",
+        "AI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2212,8 +3142,17 @@
       "platform": "twitter",
       "target": "drfeifei",
       "url": "https://x.com/drfeifei",
-      "category": ["AI", "Research", "People Radar"],
-      "tags": ["Fei-Fei Li", "Computer Vision", "Stanford", "HAI"],
+      "category": [
+        "AI",
+        "Research",
+        "People Radar"
+      ],
+      "tags": [
+        "Fei-Fei Li",
+        "Computer Vision",
+        "Stanford",
+        "HAI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2231,8 +3170,16 @@
       "platform": "twitter",
       "target": "ylecun",
       "url": "https://x.com/ylecun",
-      "category": ["AI", "Research", "People Radar"],
-      "tags": ["Yann LeCun", "Meta AI", "Research"],
+      "category": [
+        "AI",
+        "Research",
+        "People Radar"
+      ],
+      "tags": [
+        "Yann LeCun",
+        "Meta AI",
+        "Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2250,8 +3197,16 @@
       "platform": "twitter",
       "target": "demishassabis",
       "url": "https://x.com/demishassabis",
-      "category": ["AI", "Frontier Labs", "People Radar"],
-      "tags": ["Demis Hassabis", "DeepMind", "AI"],
+      "category": [
+        "AI",
+        "Frontier Labs",
+        "People Radar"
+      ],
+      "tags": [
+        "Demis Hassabis",
+        "DeepMind",
+        "AI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2269,8 +3224,16 @@
       "platform": "twitter",
       "target": "AndrewYNg",
       "url": "https://x.com/AndrewYNg",
-      "category": ["AI", "Education", "People Radar"],
-      "tags": ["Andrew Ng", "AI Education", "DeepLearning.AI"],
+      "category": [
+        "AI",
+        "Education",
+        "People Radar"
+      ],
+      "tags": [
+        "Andrew Ng",
+        "AI Education",
+        "DeepLearning.AI"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2287,8 +3250,16 @@
       "source_type": "web_page",
       "url": "https://darioamodei.com/",
       "canonical_site": "https://darioamodei.com/",
-      "category": ["AI", "Frontier Labs", "People Radar"],
-      "tags": ["Dario Amodei", "Anthropic", "AI Safety"],
+      "category": [
+        "AI",
+        "Frontier Labs",
+        "People Radar"
+      ],
+      "tags": [
+        "Dario Amodei",
+        "Anthropic",
+        "AI Safety"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2306,8 +3277,18 @@
       "platform": "twitter",
       "target": "elonmusk",
       "url": "https://x.com/elonmusk",
-      "category": ["Technology", "AI", "Space", "People Radar"],
-      "tags": ["Elon Musk", "xAI", "Tesla", "SpaceX"],
+      "category": [
+        "Technology",
+        "AI",
+        "Space",
+        "People Radar"
+      ],
+      "tags": [
+        "Elon Musk",
+        "xAI",
+        "Tesla",
+        "SpaceX"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2325,8 +3306,16 @@
       "platform": "twitter",
       "target": "VitalikButerin",
       "url": "https://x.com/VitalikButerin",
-      "category": ["Crypto", "Web3", "People Radar"],
-      "tags": ["Vitalik Buterin", "Ethereum", "Crypto"],
+      "category": [
+        "Crypto",
+        "Web3",
+        "People Radar"
+      ],
+      "tags": [
+        "Vitalik Buterin",
+        "Ethereum",
+        "Crypto"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2344,8 +3333,16 @@
       "platform": "twitter",
       "target": "brian_armstrong",
       "url": "https://x.com/brian_armstrong",
-      "category": ["Crypto", "Finance", "People Radar"],
-      "tags": ["Brian Armstrong", "Coinbase", "Crypto Regulation"],
+      "category": [
+        "Crypto",
+        "Finance",
+        "People Radar"
+      ],
+      "tags": [
+        "Brian Armstrong",
+        "Coinbase",
+        "Crypto Regulation"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2362,8 +3359,16 @@
       "source_type": "rss",
       "url": "https://www.bridgewater.com/research-and-insights.rss",
       "canonical_site": "https://www.bridgewater.com/research-and-insights",
-      "category": ["Finance", "Institutional Research", "Macro"],
-      "tags": ["Bridgewater", "Macro", "Institutional Research"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Macro"
+      ],
+      "tags": [
+        "Bridgewater",
+        "Macro",
+        "Institutional Research"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2388,8 +3393,17 @@
       "source_type": "web_page",
       "url": "https://www.goldmansachs.com/insights/",
       "canonical_site": "https://www.goldmansachs.com/insights/",
-      "category": ["Finance", "Institutional Research", "Markets"],
-      "tags": ["Goldman Sachs", "Markets", "Institutional Research", "Candidate"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Markets"
+      ],
+      "tags": [
+        "Goldman Sachs",
+        "Markets",
+        "Institutional Research",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2414,8 +3428,17 @@
       "source_type": "web_page",
       "url": "https://www.jpmorgan.com/insights",
       "canonical_site": "https://www.jpmorgan.com/insights",
-      "category": ["Finance", "Institutional Research", "Markets"],
-      "tags": ["J.P. Morgan", "Markets", "Institutional Research", "Candidate"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Markets"
+      ],
+      "tags": [
+        "J.P. Morgan",
+        "Markets",
+        "Institutional Research",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "high",
@@ -2440,8 +3463,17 @@
       "source_type": "web_page",
       "url": "https://www.morganstanley.com/ideas",
       "canonical_site": "https://www.morganstanley.com/ideas",
-      "category": ["Finance", "Institutional Research", "Markets"],
-      "tags": ["Morgan Stanley", "Markets", "Institutional Research", "Candidate"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Markets"
+      ],
+      "tags": [
+        "Morgan Stanley",
+        "Markets",
+        "Institutional Research",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2466,8 +3498,17 @@
       "source_type": "web_page",
       "url": "https://www.pimco.com/us/en/insights",
       "canonical_site": "https://www.pimco.com/us/en/insights",
-      "category": ["Finance", "Institutional Research", "Fixed Income"],
-      "tags": ["PIMCO", "Fixed Income", "Macro", "Candidate"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Fixed Income"
+      ],
+      "tags": [
+        "PIMCO",
+        "Fixed Income",
+        "Macro",
+        "Candidate"
+      ],
       "language": "en",
       "region": "global",
       "importance": "medium",
@@ -2484,6 +3525,57 @@
         "source_link_required": true,
         "risk_level": "medium"
       }
+    },
+    {
+      "id": "testingcatalog_leaks",
+      "title": "TestingCatalog — Leaks & Unreleased Features",
+      "description": "Hands-on discoveries of unreleased AI features found in shipped apps and APIs — typically surfaces days before official announcements.",
+      "source_type": "rss",
+      "url": "https://www.testingcatalog.com/tag/leak/rss/",
+      "canonical_site": "https://www.testingcatalog.com/tag/leak/",
+      "category": [
+        "AI",
+        "Leaks"
+      ],
+      "tags": [
+        "Leak",
+        "Unreleased",
+        "AI",
+        "EarlySignal"
+      ],
+      "language": "en",
+      "region": "global",
+      "importance": "high",
+      "noise_level": "medium",
+      "update_frequency": "high",
+      "requires_auth": false,
+      "owner_type": "built_in",
+      "verification_status": "third_party_feed"
+    },
+    {
+      "id": "testingcatalog_all",
+      "title": "TestingCatalog — All Posts",
+      "description": "Full TestingCatalog feed: AI product teardowns and feature discoveries across labs.",
+      "source_type": "rss",
+      "url": "https://www.testingcatalog.com/rss/",
+      "canonical_site": "https://www.testingcatalog.com/",
+      "category": [
+        "AI",
+        "Leaks"
+      ],
+      "tags": [
+        "AI",
+        "Product",
+        "EarlySignal"
+      ],
+      "language": "en",
+      "region": "global",
+      "importance": "medium",
+      "noise_level": "medium",
+      "update_frequency": "high",
+      "requires_auth": false,
+      "owner_type": "built_in",
+      "verification_status": "third_party_feed"
     }
   ],
   "collections": [
@@ -2491,7 +3583,12 @@
       "id": "general_baseline",
       "title": "General Baseline",
       "description": "Broad official source baseline. A user can enable only this collection and still get useful general world, business, politics, and public-interest coverage.",
-      "category": ["General News", "World", "Business", "Politics"],
+      "category": [
+        "General News",
+        "World",
+        "Business",
+        "Politics"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "bbc_news",
@@ -2526,14 +3623,27 @@
         "reuters_home_candidate",
         "ap_news_candidate"
       ],
-      "default_keywords": ["breaking", "policy", "markets", "election", "conflict", "economy", "health", "technology"],
+      "default_keywords": [
+        "breaking",
+        "policy",
+        "markets",
+        "election",
+        "conflict",
+        "economy",
+        "health",
+        "technology"
+      ],
       "default_summary_style": "daily_brief"
     },
     {
       "id": "regional_perspectives_baseline",
       "title": "Regional Perspectives Baseline",
       "description": "Mainstream sources from different countries and regions to reduce single-region bias in the broad baseline.",
-      "category": ["General News", "Regional Perspective", "World"],
+      "category": [
+        "General News",
+        "Regional Perspective",
+        "World"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "nhk_news",
@@ -2556,14 +3666,26 @@
         "xinhuanet_world",
         "xinhuanet_politics"
       ],
-      "default_keywords": ["election", "economy", "conflict", "policy", "climate", "trade", "technology"],
+      "default_keywords": [
+        "election",
+        "economy",
+        "conflict",
+        "policy",
+        "climate",
+        "trade",
+        "technology"
+      ],
       "default_summary_style": "regional_brief"
     },
     {
       "id": "market_and_economy_baseline",
       "title": "Market and Economy Baseline",
       "description": "Broad official finance and economy feeds for users who need market-moving context before deeper vertical packs.",
-      "category": ["Finance", "Economy", "Markets"],
+      "category": [
+        "Finance",
+        "Economy",
+        "Markets"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "financial_times_home",
@@ -2584,14 +3706,25 @@
         "jpmorgan_insights_candidate",
         "pimco_insights_candidate"
       ],
-      "default_keywords": ["rates", "inflation", "earnings", "markets", "regulation", "central bank"],
+      "default_keywords": [
+        "rates",
+        "inflation",
+        "earnings",
+        "markets",
+        "regulation",
+        "central bank"
+      ],
       "default_summary_style": "market_brief"
     },
     {
       "id": "financial_institutions_research",
       "title": "Financial Institutions Research",
       "description": "Public insights and research pages from investment banks and asset managers. Public metadata and short summaries only; do not redistribute paid or licensed reports.",
-      "category": ["Finance", "Institutional Research", "Markets"],
+      "category": [
+        "Finance",
+        "Institutional Research",
+        "Markets"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "bridgewater_research",
@@ -2603,14 +3736,27 @@
         "bloomberg_markets",
         "wsj_markets"
       ],
-      "default_keywords": ["macro", "rates", "inflation", "markets", "fixed income", "equities", "commodities", "recession"],
+      "default_keywords": [
+        "macro",
+        "rates",
+        "inflation",
+        "markets",
+        "fixed income",
+        "equities",
+        "commodities",
+        "recession"
+      ],
       "default_summary_style": "institutional_research_brief"
     },
     {
       "id": "healthcare_medicine",
       "title": "Healthcare and Medicine",
       "description": "Public health, medical regulation, and biomedical research sources for health-related monitoring.",
-      "category": ["Healthcare", "Medicine", "Public Health"],
+      "category": [
+        "Healthcare",
+        "Medicine",
+        "Public Health"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "who_news",
@@ -2621,14 +3767,25 @@
         "science_journal",
         "plos_one"
       ],
-      "default_keywords": ["disease", "clinical trial", "drug approval", "vaccine", "public health", "rare disease"],
+      "default_keywords": [
+        "disease",
+        "clinical trial",
+        "drug approval",
+        "vaccine",
+        "public health",
+        "rare disease"
+      ],
       "default_summary_style": "medical_brief"
     },
     {
       "id": "academic_research",
       "title": "Academic Research",
       "description": "General academic and scientific sources. Use with domain keywords or narrower user-defined sources for niche fields.",
-      "category": ["Research", "Academia", "Papers"],
+      "category": [
+        "Research",
+        "Academia",
+        "Papers"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "nature_journal",
@@ -2639,14 +3796,25 @@
         "arxiv_cs_cl",
         "arxiv_cs_cv"
       ],
-      "default_keywords": ["paper", "preprint", "dataset", "method", "clinical trial", "benchmark"],
+      "default_keywords": [
+        "paper",
+        "preprint",
+        "dataset",
+        "method",
+        "clinical trial",
+        "benchmark"
+      ],
       "default_summary_style": "research_digest"
     },
     {
       "id": "policy_international_orgs",
       "title": "Policy and International Organizations",
       "description": "Government and international organization feeds for policy, diplomacy, trade, and regulation tracking.",
-      "category": ["Policy", "Government", "International Organizations"],
+      "category": [
+        "Policy",
+        "Government",
+        "International Organizations"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "un_news",
@@ -2659,14 +3827,25 @@
         "federal_reserve_press",
         "ecb_press"
       ],
-      "default_keywords": ["policy", "regulation", "sanctions", "trade", "security", "AI", "public health"],
+      "default_keywords": [
+        "policy",
+        "regulation",
+        "sanctions",
+        "trade",
+        "security",
+        "AI",
+        "public health"
+      ],
       "default_summary_style": "policy_brief"
     },
     {
       "id": "cybersecurity_watch",
       "title": "Cybersecurity Watch",
       "description": "Official and high-signal security feeds for vulnerabilities, threat intelligence, incidents, and security policy.",
-      "category": ["Security", "Technology"],
+      "category": [
+        "Security",
+        "Technology"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "cisa_news",
@@ -2682,14 +3861,27 @@
         "trail_of_bits_blog",
         "openzeppelin_blog"
       ],
-      "default_keywords": ["CVE", "vulnerability", "ransomware", "exploit", "breach", "patch", "zero-day"],
+      "default_keywords": [
+        "CVE",
+        "vulnerability",
+        "ransomware",
+        "exploit",
+        "breach",
+        "patch",
+        "zero-day"
+      ],
       "default_summary_style": "security_brief"
     },
     {
       "id": "crypto_web3_watch",
       "title": "Crypto and Web3 Watch",
       "description": "Crypto assets, Bitcoin, blockchain infrastructure, Web3 security, exchanges, and compliance. This overlaps finance, security, and regulation but remains separate to avoid polluting the general finance feed.",
-      "category": ["Crypto", "Web3", "Finance", "Security"],
+      "category": [
+        "Crypto",
+        "Web3",
+        "Finance",
+        "Security"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "bitcoin_magazine",
@@ -2707,14 +3899,28 @@
         "fca_news",
         "esma_news"
       ],
-      "default_keywords": ["bitcoin", "ethereum", "stablecoin", "ETF", "DeFi", "exploit", "wallet", "exchange", "regulation"],
+      "default_keywords": [
+        "bitcoin",
+        "ethereum",
+        "stablecoin",
+        "ETF",
+        "DeFi",
+        "exploit",
+        "wallet",
+        "exchange",
+        "regulation"
+      ],
       "default_summary_style": "crypto_brief"
     },
     {
       "id": "ai_people_radar",
       "title": "AI People Radar",
       "description": "High-signal AI researchers, founders, and lab leaders. This is intentionally separate from official lab feeds because personal accounts can be noisy.",
-      "category": ["AI", "People Radar", "Research"],
+      "category": [
+        "AI",
+        "People Radar",
+        "Research"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "karpathy_x",
@@ -2726,42 +3932,79 @@
         "dario_amodei_essays",
         "elon_musk_x"
       ],
-      "default_keywords": ["paper", "model", "research", "agent", "OpenAI", "DeepMind", "Anthropic", "AI safety", "dataset"],
+      "default_keywords": [
+        "paper",
+        "model",
+        "research",
+        "agent",
+        "OpenAI",
+        "DeepMind",
+        "Anthropic",
+        "AI safety",
+        "dataset"
+      ],
       "default_summary_style": "people_radar_brief"
     },
     {
       "id": "tech_founders_people_radar",
       "title": "Tech Founders People Radar",
       "description": "High-impact technology founder and operator accounts. Useful but noisy; best paired with task-level filters.",
-      "category": ["Technology", "People Radar"],
+      "category": [
+        "Technology",
+        "People Radar"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "sam_altman_x",
         "elon_musk_x",
         "brian_armstrong_x"
       ],
-      "default_keywords": ["product", "launch", "company", "regulation", "AI", "market", "infrastructure"],
+      "default_keywords": [
+        "product",
+        "launch",
+        "company",
+        "regulation",
+        "AI",
+        "market",
+        "infrastructure"
+      ],
       "default_summary_style": "people_radar_brief"
     },
     {
       "id": "crypto_people_radar",
       "title": "Crypto People Radar",
       "description": "High-signal crypto and Web3 people accounts.",
-      "category": ["Crypto", "Web3", "People Radar"],
+      "category": [
+        "Crypto",
+        "Web3",
+        "People Radar"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "vitalik_buterin_x",
         "brian_armstrong_x",
         "elon_musk_x"
       ],
-      "default_keywords": ["bitcoin", "ethereum", "stablecoin", "regulation", "wallet", "L2", "exchange", "protocol"],
+      "default_keywords": [
+        "bitcoin",
+        "ethereum",
+        "stablecoin",
+        "regulation",
+        "wallet",
+        "L2",
+        "exchange",
+        "protocol"
+      ],
       "default_summary_style": "people_radar_brief"
     },
     {
       "id": "frontier_model_labs",
       "title": "Frontier Model Labs",
       "description": "High-signal updates from frontier AI labs and model providers.",
-      "category": ["AI", "Frontier Labs"],
+      "category": [
+        "AI",
+        "Frontier Labs"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "openai_news",
@@ -2773,14 +4016,25 @@
         "claude_blog_olshansk",
         "meta_ai_blog_olshansk"
       ],
-      "default_keywords": ["model", "agent", "API", "safety", "research", "benchmark"],
+      "default_keywords": [
+        "model",
+        "agent",
+        "API",
+        "safety",
+        "research",
+        "benchmark"
+      ],
       "default_summary_style": "technical_brief"
     },
     {
       "id": "ai_infra_radar",
       "title": "AI Infra Radar",
       "description": "AI infrastructure, model serving, GPU, developer tools, and framework updates.",
-      "category": ["AI", "Infrastructure", "Developer Tools"],
+      "category": [
+        "AI",
+        "Infrastructure",
+        "Developer Tools"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "nvidia_developer_blog",
@@ -2793,14 +4047,24 @@
         "llamaindex_releases",
         "transformers_releases"
       ],
-      "default_keywords": ["inference", "GPU", "agent", "RAG", "deployment", "serving"],
+      "default_keywords": [
+        "inference",
+        "GPU",
+        "agent",
+        "RAG",
+        "deployment",
+        "serving"
+      ],
       "default_summary_style": "technical_brief"
     },
     {
       "id": "developer_tools_changelog",
       "title": "Developer Tools Changelog",
       "description": "Low-noise product and release updates for developer tools.",
-      "category": ["Developer Tools", "Changelog"],
+      "category": [
+        "Developer Tools",
+        "Changelog"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "github_changelog",
@@ -2814,24 +4078,50 @@
         "mcp_python_sdk_releases",
         "mcp_typescript_sdk_releases"
       ],
-      "default_keywords": ["release", "breaking change", "SDK", "API", "deprecation"],
+      "default_keywords": [
+        "release",
+        "breaking change",
+        "SDK",
+        "API",
+        "deprecation"
+      ],
       "default_summary_style": "release_notes"
     },
     {
       "id": "ai_papers",
       "title": "AI Papers",
       "description": "Core arXiv category feeds for AI, ML, NLP, and computer vision.",
-      "category": ["Research", "Papers", "AI"],
+      "category": [
+        "Research",
+        "Papers",
+        "AI"
+      ],
       "owner_type": "built_in",
-      "source_ids": ["arxiv_cs_ai", "arxiv_cs_lg", "arxiv_cs_cl", "arxiv_cs_cv"],
-      "default_keywords": ["LLM", "agent", "alignment", "inference", "multimodal"],
+      "source_ids": [
+        "arxiv_cs_ai",
+        "arxiv_cs_lg",
+        "arxiv_cs_cl",
+        "arxiv_cs_cv"
+      ],
+      "default_keywords": [
+        "LLM",
+        "agent",
+        "alignment",
+        "inference",
+        "multimodal"
+      ],
       "default_summary_style": "research_digest"
     },
     {
       "id": "regulatory_radar",
       "title": "Regulatory Radar",
       "description": "Selected official finance, policy, standards, and cybersecurity announcement feeds.",
-      "category": ["Finance", "Regulation", "Policy", "Security"],
+      "category": [
+        "Finance",
+        "Regulation",
+        "Policy",
+        "Security"
+      ],
       "owner_type": "built_in",
       "source_ids": [
         "sec_press_releases",
@@ -2841,18 +4131,64 @@
         "cisa_news",
         "nist_news"
       ],
-      "default_keywords": ["AI", "cybersecurity", "market", "banking", "enforcement", "rulemaking"],
+      "default_keywords": [
+        "AI",
+        "cybersecurity",
+        "market",
+        "banking",
+        "enforcement",
+        "rulemaking"
+      ],
       "default_summary_style": "policy_brief"
     },
     {
       "id": "ai_service_status",
       "title": "AI Service Status",
       "description": "Official service-status feeds for AI platforms. Keep separate from news feeds.",
-      "category": ["AI", "Service Status"],
+      "category": [
+        "AI",
+        "Service Status"
+      ],
       "owner_type": "built_in",
-      "source_ids": ["anthropic_status", "claude_status"],
-      "default_keywords": ["incident", "degraded", "outage", "resolved"],
+      "source_ids": [
+        "anthropic_status",
+        "claude_status"
+      ],
+      "default_keywords": [
+        "incident",
+        "degraded",
+        "outage",
+        "resolved"
+      ],
       "default_summary_style": "incident_brief"
+    },
+    {
+      "id": "ai_early_signals",
+      "title": "AI 早期信号与泄露",
+      "description": "在官方公告之前出现的痕迹:未发布功能的实测发现、SDK 里先落地的模型常量、厂商 changelog。用于比新闻更早察觉模型/产品动向。",
+      "category": [
+        "AI",
+        "Leaks",
+        "EarlySignal"
+      ],
+      "owner_type": "built_in",
+      "source_ids": [
+        "testingcatalog_leaks",
+        "testingcatalog_all",
+        "openai_python_releases",
+        "openai_node_releases",
+        "anthropic_python_sdk_releases",
+        "mcp_python_sdk_releases",
+        "mcp_typescript_sdk_releases"
+      ],
+      "default_keywords": [
+        "model",
+        "release",
+        "preview",
+        "deprecat",
+        "beta"
+      ],
+      "default_summary_style": "concise"
     }
   ]
 }

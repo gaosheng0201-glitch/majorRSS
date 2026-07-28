@@ -21,6 +21,38 @@ class SourceRoute:
     # AGGREGATED. The normalizer refines CURATED→PRIMARY by the item's URL.
     tier: str = Tier.CURATED
 
+def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
+                            base_priority: int = 1) -> List[SourceRoute]:
+    """Fallback chain for one X/Twitter account, shared by keyword-derived and
+    preset account sources (B3/B4).
+
+    Tier order is set by what actually works (verified 2026-07-28):
+      1. nitter.net RSS — free, no credentials, all 7 tracked accounts returned
+         content. NOTE: it answers 200 with an EMPTY body for script user-agents
+         and under rate limiting, which the freshness assertion (B1) now records
+         as a failure instead of "no news today", so the next tier gets a turn.
+      2. RSSHub — the PUBLIC instance disabled its twitter route permanently
+         (302 → google.com/404), so this tier only pays off with a self-hosted
+         RSSHUB_URL; kept because that is a supported deployment.
+      3. Agentic snapshot — needs an authorized session; platform is "twitter"
+         (not "rsshub") so _enrich_routes_with_auth can actually attach one.
+    """
+    return [
+        SourceRoute(route_id=f"nitter_{id_prefix}", adapter="RssAdapter",
+                    url_or_command=f"https://nitter.net/{handle}/rss",
+                    purpose="discovery", requires_auth=False, platform="twitter",
+                    priority=base_priority, tier=Tier.CURATED),
+        SourceRoute(route_id=f"rsshub_{id_prefix}", adapter="RssHubAdapter",
+                    url_or_command=f"rsshub:/twitter/user/{handle}",
+                    purpose="discovery", requires_auth=False, platform="twitter",
+                    priority=base_priority + 1, tier=Tier.CURATED),
+        SourceRoute(route_id=f"agentic_{id_prefix}", adapter="AgenticAdapter",
+                    url_or_command=f"https://x.com/{handle}",
+                    purpose="snapshot", requires_auth=auth_profile_id is not None,
+                    platform="twitter", priority=base_priority + 2, tier=Tier.CURATED),
+    ]
+
+
 class SourceResolver:
     def __init__(self, fetch_policy: Optional[str] = None, auth_profile_id: Optional[int] = None):
         self.auth_profile_id = auth_profile_id
@@ -114,18 +146,28 @@ class SourceResolver:
                     url = preset.url
                     if stype == "account":
                         # A social account (e.g. https://x.com/sama) can't be parsed
-                        # as RSS — the raw profile page is HTML. Route X/Twitter
-                        # accounts through RssHub's twitter feed; other hosts fall
-                        # back to an agentic page snapshot. (Previously "account"
-                        # fell through to RssAdapter and every people-radar source
-                        # failed on every scrape.)
+                        # as RSS — the raw profile page is HTML.
                         handle = url.rstrip("/").split("/")[-1]
                         low = url.lower()
                         if "x.com" in low or "twitter.com" in low:
-                            adapter, platform = "RssHubAdapter", "rsshub"
-                            url = f"rsshub:/twitter/user/{handle}"
-                        else:
-                            adapter, platform = "AgenticAdapter", "web"
+                            # X accounts get the SAME 3-tier fallback chain as
+                            # keyword-derived account routes (B3/B4). Previously a
+                            # preset account was locked to the single rsshub route
+                            # with platform="rsshub" — which meant (a) no fallback
+                            # when that instance died, and (b) _enrich_routes_with_auth
+                            # never matched a twitter AuthProfile, so an authorized
+                            # session could never be used. Measured effect: all 7
+                            # tracked people-radar accounts, 0 successes ever, while
+                            # rsshub.app's twitter route is permanently disabled
+                            # (302 → google.com/404).
+                            for r in _twitter_account_routes(handle, f"preset_{pid}",
+                                                             self.auth_profile_id, base_priority=5):
+                                if r.url_or_command not in existing_urls:
+                                    added.append(r)
+                                    existing_urls.add(r.url_or_command)
+                            existing_urls.add(preset.url)
+                            continue
+                        adapter, platform = "AgenticAdapter", "web"
                     elif stype == "rsshub" or url.startswith("rsshub:"):
                         adapter, platform = "RssHubAdapter", "rsshub"
                     elif stype in ("web", "webpage", "html"):
@@ -399,36 +441,9 @@ class SourceResolver:
                     account_name = parts[0]
             
             if platform == "twitter":
-                # Route 1: Nitter (RssAdapter)
-                routes.append(SourceRoute(
-                    route_id=f"nitter_twitter_{idx}",
-                    adapter="RssAdapter",
-                    url_or_command=f"https://nitter.net/{account_name}/rss",
-                    purpose="discovery",
-                    requires_auth=False,
-                    platform="twitter",
-                    priority=1
-                ))
-                # Route 2: RSSHub (RssHubAdapter)
-                routes.append(SourceRoute(
-                    route_id=f"rsshub_twitter_{idx}",
-                    adapter="RssHubAdapter",
-                    url_or_command=f"rsshub:/twitter/user/{account_name}",
-                    purpose="discovery",
-                    requires_auth=False,
-                    platform="twitter",
-                    priority=2
-                ))
-                # Route 3: Playwright Agentic (AgenticAdapter)
-                routes.append(SourceRoute(
-                    route_id=f"agentic_twitter_{idx}",
-                    adapter="AgenticAdapter",
-                    url_or_command=f"https://x.com/{account_name}",
-                    purpose="snapshot",
-                    requires_auth=self.auth_profile_id is not None,
-                    platform="twitter",
-                    priority=3
-                ))
+                # Shared 3-tier chain (nitter → rsshub → authorized agentic).
+                routes.extend(_twitter_account_routes(
+                    account_name, f"twitter_{idx}", self.auth_profile_id, base_priority=1))
             elif platform == "bilibili":
                 # Route 1: RSSHub (RssHubAdapter)
                 routes.append(SourceRoute(

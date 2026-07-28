@@ -20,6 +20,11 @@ logger = get_logger("scraper")
 
 import re as _re
 _ACCT_TIER_RE = _re.compile(r"^(?:nitter|rsshub|agentic)_(twitter|bilibili|weibo)_(\d+)$")
+# Preset account tiers: nitter|rsshub|agentic_preset_<presetId> — same logical
+# source, so they must share a group (fetch stops at the first that delivers).
+# Without this each tier would be its own group and every cycle would hit all
+# three, including the expensive authorized browser one.
+_PRESET_TIER_RE = _re.compile(r"^(?:nitter|rsshub|agentic)_(preset_\w+)$")
 
 
 def _route_group(route_id: str) -> str:
@@ -28,6 +33,7 @@ def _route_group(route_id: str) -> str:
     group (all fetched). Derived from the resolver's route_id naming:
       rss_feed_N / agentic_snapshot_N / rss_alternate_N  → one URL   → 'url_N'
       nitter|rsshub|agentic_<plat>_N                     → one acct  → '<plat>_N'
+      nitter|rsshub|agentic_preset_<id>                  → one preset acct
       gnews_N / hn_N / reddit_N / preset_* / rsshub_generic_N → independent."""
     rid = route_id or ""
     for prefix in ("rss_feed_", "agentic_snapshot_", "rss_alternate_"):
@@ -36,6 +42,9 @@ def _route_group(route_id: str) -> str:
     m = _ACCT_TIER_RE.match(rid)
     if m:
         return f"{m.group(1)}_{m.group(2)}"
+    m = _PRESET_TIER_RE.match(rid)
+    if m:
+        return m.group(1)
     return rid  # independent source → its own group
 
 
