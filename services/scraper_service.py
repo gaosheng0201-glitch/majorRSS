@@ -362,17 +362,30 @@ def scrape_single_tracker(tracker_id: int):
                 dup_total += dup
                 filt_total += filtered
 
-                fetched_ok = True
                 duration = int((time.time() - route_start_time) * 1000)
-                source_health.record_success(health_key, latency_ms=duration)
+                # Freshness assertion (B1): a 200 with nothing / with 8-month-old
+                # items is NOT health. record_fetch judges by item dates and
+                # records a failure for a silently-stale or repeatedly-empty
+                # source, so it backs off and shows up as broken instead of
+                # masquerading as a quiet feed.
+                stale_reason = source_health.record_fetch(health_key, items, latency_ms=duration)
+                fetched_ok = stale_reason is None
                 if account_key:
                     account_guard.record_yield(account_key, items=len(items))
-                tracer.event("FETCH", route_id=route.route_id, adapter=adapter_name,
+                tracer.event("FETCH",
+                             status="FAILED" if stale_reason else "SUCCESS",
+                             route_id=route.route_id, adapter=adapter_name,
                              input_data=desensitize_url(route.url_or_command),
                              output_summary=f"Fetched {len(items)} items. Saved {saved}, Dup {dup}, Filtered {filtered} (Auth: {route.auth_status})",
+                             error=f"freshness:{stale_reason}" if stale_reason else None,
                              duration_ms=duration)
 
-                if len(items) > 0:
+                if stale_reason:
+                    # Not a healthy delivery — let the group's fallback tiers run.
+                    last_error = RuntimeError(f"source freshness check failed: {stale_reason}")
+                    logger.warning(f"Route {route.route_id} failed the freshness assertion ({stale_reason}); "
+                                   f"trying fallback routes.")
+                elif len(items) > 0:
                     content_delivered = True
                     # Mark this source's group satisfied so its remaining fallback
                     # tiers are skipped; independent sources keep being fetched.
