@@ -24,7 +24,8 @@ def run_migrations():
             "0008_thread_summary",
             "0009_indexes_and_gate_marker",
             "0010_fusion_increment_snapshot",
-            "0011_from_account"
+            "0011_from_account",
+            "0012_release_rate_limit_quarantine"
         ]
         
         for m in migrations:
@@ -312,6 +313,26 @@ def run_migrations():
                         if "from_account" not in ra_cols:
                             conn.execute(text(
                                 f"ALTER TABLE {ra_table} ADD COLUMN from_account BOOLEAN DEFAULT 0"))
+                    session.commit()
+
+                elif m == "0012_release_rate_limit_quarantine":
+                    # Rate limiting is now handled at host scope (host_politeness),
+                    # so endpoints no longer accrue penalties for it. The records
+                    # already on disk were written under the old rule and would
+                    # mask the fix for hours — or forever, since a quarantined
+                    # route never runs, never succeeds, and so never clears.
+                    # Measured here before the reset: 5 quarantined, 10 degraded,
+                    # backoffs up to 2.4h, all attributed to a host-wide refusal
+                    # that none of these endpoints caused. Release them; the host
+                    # cooldown is what should have been holding them back.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    if "sourcehealth" in inspector.get_table_names():
+                        conn.execute(text(
+                            "UPDATE sourcehealth SET consecutive_failures = 0, "
+                            "state = 'healthy', next_eligible_at = NULL "
+                            "WHERE last_error_type = 'RATE_LIMITED'"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

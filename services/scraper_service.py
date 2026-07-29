@@ -439,9 +439,16 @@ def scrape_single_tracker(tracker_id: int):
                 error_type = classify_error(e)
                 logger.warning(f"Fetch failed for {route.url_or_command} [{error_type}]: {e}")
                 db.set_pipeline_status(tracker.name, "Probe Failed", f"[{domain}] {error_type}: {e}")
-                source_health.record_failure(health_key, error_type=error_type)
-                # ...and if the host refused us rather than this one endpoint,
-                # park every route on it instead of discovering that 22 more times.
+                # Record the failure at the scope that actually owns it. A 429 is
+                # issued per HOST: charging it to the endpoint too is double
+                # punishment for one fault, and it is the endpoint that pays the
+                # larger price — measured on the live DB, 16 reddit endpoints
+                # carried RATE_LIMITED penalties (5 quarantined outright, others
+                # backed off up to 2.4h) for a refusal none of them caused. The
+                # host cooldown already stops the traffic; the endpoint should
+                # keep a clean record so it can run the moment the host reopens.
+                if error_type != "RATE_LIMITED":
+                    source_health.record_failure(health_key, error_type=error_type)
                 host_politeness.record_failure(route.url_or_command, error_type)
                 # Rate-limit / captcha on an authorized route = account risk signal.
                 if account_key and error_type in ("RATE_LIMITED", "CAPTCHA_REQUIRED"):

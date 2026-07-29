@@ -9,6 +9,9 @@ from db.models import AuthProfile
 from backend.schemas import AuthProfileCreate, AuthProfileResponse
 from db.config import get_cookie_path
 from scrapers.auth_helper import interactive_login, check_cookie_health, live_check_cookie_health, AUTH_PLATFORMS
+from services.log_service import get_logger
+
+logger = get_logger("auth")
 
 router = APIRouter(prefix="/auth/profiles", tags=["auth"])
 
@@ -103,7 +106,26 @@ def create_auth_profile(profile_in: AuthProfileCreate, session: Session = Depend
                 success = True
                 msg = f"Successfully authenticated {platform['name']}."
             else:
-                msg = "Authorization did not complete successfully (required cookie not found)."
+                # Say WHAT was seen, not just that it was not enough. Without
+                # this the flow reports a single unactionable line and discards
+                # the evidence, so there is no way to tell "the window was closed
+                # before logging in" from "logged in, but the session cookie
+                # landed somewhere we did not look" — which is why this path went
+                # so long untested. Cookie NAMES and domains only: a cookie value
+                # IS the credential and must never reach a log or an API response.
+                names = sorted({c.get("name", "?") for c in state.get("cookies", [])})
+                domains = sorted({c.get("domain", "?") for c in state.get("cookies", [])})
+                want = "/".join(platform["success_cookies"])
+                if not names:
+                    msg = (f"Authorization did not complete: the browser captured no cookies at all, "
+                           f"which usually means the window was closed before signing in.")
+                else:
+                    msg = (f"Authorization did not complete: signed-in cookie '{want}' was not among "
+                           f"the {len(names)} cookies captured from {', '.join(domains)}. "
+                           f"Captured: {', '.join(names[:12])}"
+                           f"{' …' if len(names) > 12 else ''}. "
+                           f"If you did sign in, complete it fully (past any 2FA) before closing the window.")
+                logger.warning(msg)
         except Exception as e:
             msg = f"Auth error: {e}"
         finally:
