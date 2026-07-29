@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 import json
 import urllib.parse
@@ -26,16 +27,70 @@ FUSION_MAX_MEMBERS = int(os.environ.get("FUSION_MAX_MEMBERS", "12"))
 FUSION_MIN_SOURCES = int(os.environ.get("FUSION_MIN_SOURCES", "3"))
 
 
+def _extractive_summary(thread, members, tracker) -> str:
+    """The 抽取式 path (愿景 line 184: 合成优先抽取式；置信不足只给原文关键句+链接).
+
+    Used when there is nothing to SYNTHESIZE — a single source telling a story
+    once. Synthesis means reconciling several accounts of one event or reporting
+    what changed; with one account the source's own words are both cheaper and
+    more faithful than a paraphrase (愿景 line 35: 真相与溯源). Zero LLM.
+    """
+    lead = members[0]
+    body = (lead.content or "").strip()
+    # First substantial sentence/line — the source's own words, never a rewrite.
+    snippet = ""
+    for part in re.split(r"(?<=[。．.!?！？])\s+|\n+", body):
+        part = part.strip()
+        if len(part) >= 24:
+            snippet = part[:300]
+            break
+    if not snippet:
+        snippet = body[:300]
+    links = "\n".join(f"- [{m.title}]({m.url})" for m in members[:8])
+    return (f"[TITLE: {lead.title}]\n\n{snippet}\n\n---\n"
+            f"**:material/menu_book: 摘要引用来源:**\n{links}"
+            f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`")
+
+
+def _has_something_to_synthesize(thread, members) -> bool:
+    """Does this thread need a GENERATION model, or is extraction enough?
+
+    愿景 line 73 says synthesis happens 线索出现真实增量时 — the unit of synthesis
+    is a thread's increment, not "a summary for every item". line 150 wants most
+    content to never touch a generation model at all. So generation is reserved
+    for the two cases where it actually adds something:
+      • several independent accounts of one event to reconcile and cite
+      • a re-fusion, i.e. a real increment on a thread that already has a summary
+    A lone item — a 87-character tweet, one vendor blog post — has nothing to
+    reconcile; summarizing it produces a paraphrase no shorter than the original.
+    Measured 2026-07-29: 132 of 155 summaries (85%) were single-source.
+    """
+    if (thread.distinct_source_count or 0) >= 2:
+        return True
+    if len({(m.url or "").split("/")[2] if "//" in (m.url or "") else m.url for m in members}) >= 2:
+        return True
+    return False
+
+
 def _thread_worth_summary(thread, members, tracker):
     """P1.1 channel-tiered gate: does this event-thread earn an LLM summary, or
     stay a lead (title + sources, no generation model touched)? "The source you
     opted into is itself a signal": curated presets, tracked accounts and
     first-party sources always pass; the keyword firehose must earn it via
     resonance or multi-source corroboration. Returns (worth: bool, reason: str)."""
-    from services.provenance import HIGH_WEIGHT
+    from services.provenance import HIGH_WEIGHT, Tier
     tiers = {getattr(m, "source_tier", None) for m in members}
-    if tiers & set(HIGH_WEIGHT):
-        return True, "high-weight source (curated/first-party/account)"
+    # PRIMARY only. CURATED used to auto-pass too, on the reasoning that "you
+    # picked this source" — but you pick a SOURCE, not every topic it covers. A
+    # portfolio blog like Cloudflare publishes on CDN, BGP and World Cup traffic
+    # as well as AI, and each post was inheriting the bypass: measured, 5 of 5
+    # Cloudflare summaries were off-topic (relevance 0.089-0.14, i.e. ABOVE the
+    # junk floor — topical proximity cannot separate them, same lesson as P5).
+    # A tracked entity's OWN domain (PRIMARY) still auto-passes: that is the
+    # announcement the user is watching for. CURATED must now be relevant or
+    # corroborated like anything else.
+    if Tier.PRIMARY in tiers:
+        return True, "first-party source"
     if thread.lifecycle == "CONFIRMED":            # a first-party source is present
         return True, "CONFIRMED lifecycle"
     if getattr(tracker, "is_high_attention", False):
@@ -231,6 +286,27 @@ def _fuse_thread(tracker, thread_id: int):
                     session.add(u)
             session.commit()
             logger.info(f"Thread {thread_id} gated — no summary ({reason}); stays a lead.")
+            return
+
+        # Extractive path (愿景 line 184). The thread earned a place in the feed,
+        # but with a single account there is nothing to synthesize — quote the
+        # source instead of paraphrasing it. Zero LLM, and more faithful.
+        if thread.summary is None and not _has_something_to_synthesize(thread, members):
+            thread.summary = _extractive_summary(thread, members, tracker)
+            thread.validity_category = "[VALID_NEWS]"
+            thread.radar_section = tracker.radar_section
+            thread.key_entities = thread.key_entities or "[]"
+            thread.source_url = f"Extractive from {len(members)} source(s)"
+            thread.summarized_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            thread.fused_source_count = thread.distinct_source_count
+            thread.fused_lifecycle = thread.lifecycle
+            session.add(thread)
+            for u in members:
+                if not u.processed:
+                    u.processed = True
+                    session.add(u)
+            session.commit()
+            logger.info(f"Thread {thread_id} extractive (single source, nothing to synthesize) — no LLM.")
             return
 
         # What to SEND to the LLM: newest members (latest developments), capped for
