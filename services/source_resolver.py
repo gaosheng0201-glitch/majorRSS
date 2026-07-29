@@ -429,7 +429,7 @@ class SourceResolver:
                     priority=1,
                     tier=Tier.AGGREGATED,
                 ))
-            if strategy in ["default", "social_forum"]:
+            if strategy in ["default", "social_forum"]:  # noqa: E501 (loop continues below)
                 routes.append(SourceRoute(
                     route_id=f"reddit_{idx}",
                     adapter="RssAdapter",
@@ -438,6 +438,43 @@ class SourceResolver:
                     requires_auth=False,
                     platform="reddit",
                     priority=1,
+                    tier=Tier.AGGREGATED,
+                ))
+
+        # Cross-language coverage (愿景 语言三原则, 2026-07-05 — wired 2026-07-29).
+        # The portfolio planner has always expanded a target into MULTILINGUAL
+        # entity aliases, but they were dropped before reaching the resolver, so a
+        # topic was only ever searched in the user's own wording. Principle ①: the
+        # entity profile is language-independent and the input language decides
+        # only the narration, never the search scope — a topic's source geography
+        # is a property of the TOPIC (Apple Siri = EN first-party + ja supply chain
+        # + zh leaks). Principle ②: queries are generated per SOURCE language via
+        # Google News hl/gl editions. Principle ③: this is purely ADDITIVE — the
+        # user's own keywords always keep their routes.
+        # One route per edition (aliases of the same edition are OR-ed), so this
+        # adds at most a couple of routes however many aliases there are.
+        aliases = [a for a in (self.policy.get("entities") or []) if a and a.strip()]
+        if aliases and strategy in ["default", "news_only", "tech_sources", "trusted_news_only"]:
+            covered = {gnews_locale_params(k) for k in keywords}
+            by_edition = {}
+            for a in aliases:
+                loc = gnews_locale_params(a)
+                if loc in covered:
+                    continue          # that edition is already queried
+                by_edition.setdefault(loc, []).append(a.strip())
+            for i, (loc, terms) in enumerate(by_edition.items()):
+                q = " OR ".join(f'"{t}"' for t in terms[:6])
+                if max_days > 0:
+                    q = f"{q} when:{max_days}d"
+                routes.append(SourceRoute(
+                    route_id=f"gnews_xlang_{i}",
+                    adapter="RssAdapter",
+                    url_or_command=(f"https://news.google.com/rss/search?"
+                                    f"q={urllib.parse.quote(q)}{loc}"),
+                    purpose="discovery",
+                    requires_auth=False,
+                    platform="gnews",
+                    priority=2,       # after the user's own keywords
                     tier=Tier.AGGREGATED,
                 ))
         return routes

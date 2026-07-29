@@ -59,6 +59,16 @@ def _ensure_source_scope(name: str, target: str, fetch_policy_json: Optional[str
             policy["source_scope"] = scope
             if plan.get("keep_keywords") and not policy.get("keep_keywords"):
                 policy["keep_keywords"] = plan["keep_keywords"]
+            # Persist the planner's MULTILINGUAL entity aliases. The planner has
+            # always produced them ("expand its entities, include aliases and
+            # other-language names") but they were dropped here, so the resolver
+            # only ever queried the user's own wording — which meant a topic was
+            # searched in exactly one language. 愿景 语言三原则 ①②: the entity
+            # profile is language-independent, and search queries are generated
+            # per SOURCE language, not per user language. source_resolver turns
+            # these into one Google News route per edition.
+            if plan.get("entities") and not policy.get("entities"):
+                policy["entities"] = plan["entities"]
             return json.dumps(policy)
     except Exception:
         pass
