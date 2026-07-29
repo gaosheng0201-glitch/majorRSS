@@ -21,6 +21,35 @@ class SourceRoute:
     # AGGREGATED. The normalizer refines CURATED→PRIMARY by the item's URL.
     tier: str = Tier.CURATED
 
+# Google News serves a per-EDITION index. Without hl/gl/ceid it answers from the
+# en-US edition, so a non-English query returns English articles or — combined
+# with the `when:Nd` operator — nothing at all. Measured 2026-07-29:
+#   "渐冻症 when:7d"  no locale → 0 items    with locale → 41 Chinese items
+#   "渐冻症"          no locale → 7 ENGLISH  with locale → 100 Chinese items
+#   "大谷翔平"         no locale → 100 ENGLISH results
+# That made keyword discovery structurally English-only: a Chinese/Japanese/
+# Korean topic silently produced nothing or off-language coverage. The edition is
+# derived from the query's script, so it needs no configuration.
+_CJK_EDITIONS = (
+    # (test, hl, gl, ceid)
+    (lambda ch: "぀" <= ch <= "ヿ", "ja", "JP", "JP:ja"),          # kana → Japanese
+    (lambda ch: "가" <= ch <= "힯", "ko", "KR", "KR:ko"),          # hangul → Korean
+    (lambda ch: "一" <= ch <= "鿿", "zh-CN", "CN", "CN:zh-Hans"),  # han → Chinese
+)
+
+
+def gnews_locale_params(query: str) -> str:
+    """Google News edition parameters for a query, derived from its script.
+    Returns '' for Latin text (the default en-US edition is already right)."""
+    text = query or ""
+    # Kana/Hangul are decisive; Han alone means Chinese (Japanese text almost
+    # always carries kana too, so it is checked first).
+    for test, hl, gl, ceid in _CJK_EDITIONS:
+        if any(test(ch) for ch in text):
+            return f"&hl={hl}&gl={gl}&ceid={ceid}"
+    return ""
+
+
 def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
                             base_priority: int = 1) -> List[SourceRoute]:
     """Fallback chain for one X/Twitter account, shared by keyword-derived and
@@ -381,7 +410,8 @@ class SourceResolver:
                 routes.append(SourceRoute(
                     route_id=f"gnews_{idx}",
                     adapter="RssAdapter",
-                    url_or_command=f"https://news.google.com/rss/search?q={gnews_encoded}",
+                    url_or_command=(f"https://news.google.com/rss/search?q={gnews_encoded}"
+                                    f"{gnews_locale_params(kw)}"),
                     purpose="discovery",
                     requires_auth=False,
                     platform="gnews",
