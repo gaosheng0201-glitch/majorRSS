@@ -212,3 +212,66 @@ def plan_portfolio(name: str, intent_text: str = "", use_llm: bool = True) -> di
         "budget": DEFAULT_BUDGET,
         "fetch_policy": fetch_policy,
     }
+
+
+def backfill_tracker_entities(limit: int = 20) -> dict:
+    """Give existing trackers the MULTILINGUAL aliases they never got (self-heal).
+
+    The planner has always produced multilingual entities, and source_resolver now
+    turns them into one Google News route per edition — but only trackers created
+    through the planning path carry them. Everything created before that (or added
+    directly) searches in exactly one language, which silently breaks the design's
+    core promise: 愿景 语言三原则① — one topic normalises to a language-independent
+    entity profile, and a user tracking something should receive coverage in every
+    language it is reported in, not only their own. Measured on the live corpus:
+    same-event Chinese/Japanese/English articles sit at 0.54-0.58 centred
+    similarity, far above the 0.18 merge threshold, so once one tracker collects
+    several languages the vector layer merges them by itself.
+
+    Idempotent: only touches trackers with no `entities`. One cheap planner call
+    each, capped by `limit`.
+    """
+    import json
+    from db.database import get_session
+    from db.models import Tracker
+    from sqlmodel import select
+
+    planned, skipped = 0, 0
+    with get_session() as session:
+        trackers = session.exec(select(Tracker)).all()
+        for t in trackers:
+            if planned >= limit:
+                break
+            try:
+                policy = json.loads(t.fetch_policy) if t.fetch_policy else {}
+            except Exception:
+                skipped += 1
+                continue
+            if policy.get("entities"):
+                continue
+            intent = t.name or ""
+            try:
+                tgt = json.loads(t.target) if t.target else {}
+                kws = [s.get("value", "") for s in (tgt.get("signals") or [])
+                       if s.get("type") == "keyword"]
+                if kws:
+                    intent = f"{t.name} {' '.join(kws)}".strip()
+            except Exception:
+                pass
+            try:
+                plan = plan_portfolio(t.name or intent, intent, use_llm=True)
+            except Exception as e:
+                logger.warning(f"Entity backfill failed for {t.name}: {e}")
+                skipped += 1
+                continue
+            ents = [e for e in (plan.get("entities") or []) if e and e.strip()]
+            if not ents:
+                skipped += 1
+                continue
+            policy["entities"] = ents
+            t.fetch_policy = json.dumps(policy)
+            session.add(t)
+            planned += 1
+            logger.info(f"Entity backfill: {t.name} → {ents[:6]}")
+        session.commit()
+    return {"planned": planned, "skipped": skipped}

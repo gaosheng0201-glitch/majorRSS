@@ -125,6 +125,20 @@ def tier_for_url(url: str, base: str) -> str:
     return Tier.CURATED
 
 
+# Social platforms a tracked account is read through. A CURATED item from one of
+# these is a person the user NAMED (the people radar), not a portfolio blog that
+# happens to cover many topics — the distinction matters because tracked accounts
+# are the fast-tip channel and are frequently foreign-language, i.e. exactly the
+# content that most needs synthesising into the user's language.
+_ACCOUNT_HOSTS = ("nitter.net", "x.com", "twitter.com", "weibo.com", "weibo.cn",
+                  "bilibili.com", "threads.net", "mastodon.social")
+
+
+def is_tracked_account(url: str) -> bool:
+    d = domain(url)
+    return any(d == h or d.endswith("." + h) for h in _ACCOUNT_HOSTS)
+
+
 def real_publisher(url: str, title: str = "") -> str:
     """Outlet identity key for corroboration counting. Google News links share
     news.google.com — the real publisher is the title's ' - Publisher' suffix.

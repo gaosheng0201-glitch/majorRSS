@@ -84,6 +84,47 @@ def _extractive_summary(thread, members, tracker) -> str:
             f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`")
 
 
+_SCRIPT_TESTS = (
+    ("ja", re.compile(r"[぀-ヿ]")),        # kana is decisive for Japanese
+    ("ko", re.compile(r"[가-힣]")),        # hangul
+    ("ru", re.compile(r"[А-я]")),          # cyrillic
+    ("zh", re.compile(r"[一-鿿]")),        # han without kana → Chinese
+)
+
+
+def _detect_language(text: str) -> str:
+    """Coarse language of a source item, by script. Kana/hangul/cyrillic are
+    decisive; bare han means Chinese; anything else is treated as English."""
+    t = text or ""
+    for code, pattern in _SCRIPT_TESTS:
+        if pattern.search(t):
+            return code
+    return "en"
+
+
+def _needs_translation(members) -> bool:
+    """True when a source is not in the user's narration language.
+
+    愿景 语言三原则①: the input language decides the NARRATION language, never
+    the search scope — a Chinese user tracking a topic should receive Japanese
+    and English coverage rendered in Chinese, because some things surface earlier
+    in another language and different countries report different angles. The
+    extractive path quotes a source verbatim, so using it across a language
+    boundary would drop raw foreign text into the AI feed and collapse that
+    surface into what the lead view already is. Translation is the whole reason
+    that surface exists, so it is worth the tokens.
+
+    Note this compares SPECIFIC languages, not a CJK/non-CJK split: a Japanese
+    post is just as foreign to a Chinese reader as an English one.
+    """
+    target = (os.environ.get("SYSTEM_LANGUAGE", "zh") or "zh").strip().lower()[:2]
+    for m in members:
+        src = _detect_language((m.title or "") + " " + (m.content or "")[:300])
+        if src != target:
+            return True
+    return False
+
+
 def _has_something_to_synthesize(thread, members) -> bool:
     """Does this thread need a GENERATION model, or is extraction enough?
 
@@ -101,6 +142,10 @@ def _has_something_to_synthesize(thread, members) -> bool:
         return True
     if len({(m.url or "").split("/")[2] if "//" in (m.url or "") else m.url for m in members}) >= 2:
         return True
+    # Cross-language: quoting a foreign source verbatim would defeat the AI
+    # feed's purpose (see _needs_translation).
+    if _needs_translation(members):
+        return True
     return False
 
 
@@ -110,7 +155,7 @@ def _thread_worth_summary(thread, members, tracker):
     opted into is itself a signal": curated presets, tracked accounts and
     first-party sources always pass; the keyword firehose must earn it via
     resonance or multi-source corroboration. Returns (worth: bool, reason: str)."""
-    from services.provenance import HIGH_WEIGHT, Tier
+    from services.provenance import HIGH_WEIGHT, Tier, is_tracked_account
     tiers = {getattr(m, "source_tier", None) for m in members}
     # PRIMARY only. CURATED used to auto-pass too, on the reasoning that "you
     # picked this source" — but you pick a SOURCE, not every topic it covers. A
@@ -123,6 +168,13 @@ def _thread_worth_summary(thread, members, tracker):
     # corroborated like anything else.
     if Tier.PRIMARY in tiers:
         return True, "first-party source"
+    # Tracked accounts (the people radar) keep their bypass. Tightening CURATED
+    # was aimed at portfolio blogs publishing off-topic posts; a person the user
+    # NAMED is a different thing — it is the fast-tip channel the design values
+    # (愿景: 社交源天然领先媒体数天) and is often foreign-language, so it is
+    # precisely the content that needs synthesising into the narration language.
+    if any(is_tracked_account(getattr(m, "url", "") or "") for m in members):
+        return True, "tracked account (people radar)"
     if thread.lifecycle == "CONFIRMED":            # a first-party source is present
         return True, "CONFIRMED lifecycle"
     if getattr(tracker, "is_high_attention", False):

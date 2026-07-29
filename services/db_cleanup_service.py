@@ -257,6 +257,17 @@ def run_maintenance():
     except Exception as e:
         telemetry_deleted = 0
         logger.error(f"Telemetry cleanup failed: {e}", exc_info=e)
+    # Self-heal: trackers created before multilingual aliases were wired search in
+    # exactly one language, which silently breaks 语言三原则① (one topic, coverage
+    # in every language it is reported in). Idempotent — only trackers with no
+    # entities, one cheap planner call each.
+    try:
+        from services.portfolio_planner import backfill_tracker_entities
+        res = backfill_tracker_entities()
+        if res.get("planned"):
+            logger.info(f"Multilingual alias backfill: {res}")
+    except Exception as e:
+        logger.error(f"Entity backfill failed: {e}", exc_info=e)
     logger.info(f"DB maintenance done: {user_deleted} user rows, {telemetry_deleted} telemetry rows removed.")
 
 def test_pg_connection(host, port, user, password, dbname):
