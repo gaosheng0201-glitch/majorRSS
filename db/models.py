@@ -58,6 +58,15 @@ class RawArticle(SQLModel, table=True):
     # dev-mode display. Nullable: legacy rows are unknown → treated as aggregated
     # (must earn a summary) by the gate.
     source_tier: Optional[str] = Field(default=None, index=True)
+    # True when this item arrived through a route the user created by NAMING an
+    # account (the people radar) — stamped at intake, like source_tier, per
+    # docs/source_tiering.md §2 "capture now, weight-application later".
+    # The fusion gate used to re-derive this at consumption time from the item's
+    # URL host, which is not the same question: a topic feed linking to x.com
+    # would earn the people-radar bypass, while an account read through a host
+    # not on the list would lose it. Only the resolver knows, so only the
+    # resolver decides. Legacy rows are False → they simply take the normal path.
+    from_account: bool = Field(default=False, index=True)
 
 class IntelReport(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

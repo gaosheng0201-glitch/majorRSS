@@ -125,18 +125,12 @@ def tier_for_url(url: str, base: str) -> str:
     return Tier.CURATED
 
 
-# Social platforms a tracked account is read through. A CURATED item from one of
-# these is a person the user NAMED (the people radar), not a portfolio blog that
-# happens to cover many topics — the distinction matters because tracked accounts
-# are the fast-tip channel and are frequently foreign-language, i.e. exactly the
-# content that most needs synthesising into the user's language.
-_ACCOUNT_HOSTS = ("nitter.net", "x.com", "twitter.com", "weibo.com", "weibo.cn",
-                  "bilibili.com", "threads.net", "mastodon.social")
-
-
-def is_tracked_account(url: str) -> bool:
-    d = domain(url)
-    return any(d == h or d.endswith("." + h) for h in _ACCOUNT_HOSTS)
+# NOTE: "is this a tracked account?" deliberately does NOT live here. It was a
+# host allow-list (nitter/x/weibo/bilibili/…) consulted at fusion time, which
+# answers a different question from the one being asked: a topic feed linking to
+# x.com matched it, and an account read through any host not on the list did not.
+# Only the resolver knows why a route exists, so it stamps RawArticle.from_account
+# at intake — "capture now, weight-application later" (source_tiering.md §2).
 
 
 def real_publisher(url: str, title: str = "") -> str:

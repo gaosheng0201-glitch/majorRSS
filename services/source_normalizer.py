@@ -169,6 +169,10 @@ class SourceNormalizer:
                 published_at=item.published_at.replace(tzinfo=None) if item.published_at else None,
                 processed=False,
                 source_tier=source_tier,
+                # Carried straight from the route: whether the user NAMED this
+                # account. Unlike the tier, it is not refined by the URL — the
+                # URL cannot answer this question (see RawArticle.from_account).
+                from_account=bool(getattr(item, "from_account", False)),
             )
             
             # Save

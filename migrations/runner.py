@@ -23,7 +23,8 @@ def run_migrations():
             "0007_source_tier",
             "0008_thread_summary",
             "0009_indexes_and_gate_marker",
-            "0010_fusion_increment_snapshot"
+            "0010_fusion_increment_snapshot",
+            "0011_from_account"
         ]
         
         for m in migrations:
@@ -292,6 +293,25 @@ def run_migrations():
                         conn.execute(text(
                             f"UPDATE {ra_table} SET processed = 1 "
                             f"WHERE relevance_gated = 1 AND processed = 0"))
+                    session.commit()
+
+                elif m == "0011_from_account":
+                    # Stamp "this came from an account the user NAMED" at intake
+                    # instead of re-deriving it from the URL host at fusion time
+                    # (docs/source_tiering.md §2). Legacy rows default to 0: they
+                    # simply take the normal gate path rather than the people-radar
+                    # bypass, which is the safe direction — under-, not over-trusting.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    ra_table = "rawarticle"
+                    if ra_table not in inspector.get_table_names() and "raw_article" in inspector.get_table_names():
+                        ra_table = "raw_article"
+                    if ra_table in inspector.get_table_names():
+                        ra_cols = [c["name"] for c in inspector.get_columns(ra_table)]
+                        if "from_account" not in ra_cols:
+                            conn.execute(text(
+                                f"ALTER TABLE {ra_table} ADD COLUMN from_account BOOLEAN DEFAULT 0"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)

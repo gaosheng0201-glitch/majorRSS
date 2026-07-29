@@ -27,6 +27,10 @@ class SourceItem:
     # Provenance tier carried from the route (docs/source_tiering.md). The
     # normalizer refines it by the item URL and writes RawArticle.source_tier.
     tier: Optional[str] = None
+    # True when this route exists because the user NAMED an account (the people
+    # radar), as opposed to a topic feed that merely happens to link to one.
+    # Carried from the route and stamped at intake — see RawArticle.from_account.
+    from_account: bool = False
 
 class BaseAdapter:
     def fetch(self, route: SourceRoute, auth_profile_id: Optional[int] = None) -> List[SourceItem]:
@@ -48,6 +52,7 @@ class RssAdapter(BaseAdapter):
                 source_id=f"{route.route_id}_{idx}",
                 platform=route.platform,
                 tier=getattr(route, "tier", None),
+                from_account=getattr(route, "is_account", False),
                 route=route.url_or_command,
                 title=entry.get("title", "No Title"),
                 url=entry.get("url", ""),
@@ -88,6 +93,7 @@ class RssHubAdapter(BaseAdapter):
                 source_id=f"{route.route_id}_{idx}",
                 platform=route.platform,
                 tier=getattr(route, "tier", None),
+                from_account=getattr(route, "is_account", False),
                 route=route.url_or_command,
                 title=entry.get("title", "No Title"),
                 url=entry.get("url", ""),
@@ -141,6 +147,7 @@ class AgenticAdapter(BaseAdapter):
             source_id=f"{route.route_id}_snapshot",
             platform=route.platform,
             tier=getattr(route, "tier", None),
+            from_account=getattr(route, "is_account", False),
             route=route.url_or_command,
             title=f"Snapshot: {route.url_or_command}",
             url=route.url_or_command + f"#{content_hash}",

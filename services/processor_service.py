@@ -155,7 +155,7 @@ def _thread_worth_summary(thread, members, tracker):
     opted into is itself a signal": curated presets, tracked accounts and
     first-party sources always pass; the keyword firehose must earn it via
     resonance or multi-source corroboration. Returns (worth: bool, reason: str)."""
-    from services.provenance import HIGH_WEIGHT, Tier, is_tracked_account
+    from services.provenance import HIGH_WEIGHT, Tier
     tiers = {getattr(m, "source_tier", None) for m in members}
     # PRIMARY only. CURATED used to auto-pass too, on the reasoning that "you
     # picked this source" — but you pick a SOURCE, not every topic it covers. A
@@ -173,7 +173,12 @@ def _thread_worth_summary(thread, members, tracker):
     # NAMED is a different thing — it is the fast-tip channel the design values
     # (愿景: 社交源天然领先媒体数天) and is often foreign-language, so it is
     # precisely the content that needs synthesising into the narration language.
-    if any(is_tracked_account(getattr(m, "url", "") or "") for m in members):
+    #
+    # Read from the intake stamp, NOT re-derived from the item's URL host. The
+    # URL answers "is this link on a social platform", which is a different
+    # question: a topic feed that linked to x.com was earning the people-radar
+    # bypass, and an account read through any host not on the list was losing it.
+    if any(getattr(m, "from_account", False) for m in members):
         return True, "tracked account (people radar)"
     if thread.lifecycle == "CONFIRMED":            # a first-party source is present
         return True, "CONFIRMED lifecycle"

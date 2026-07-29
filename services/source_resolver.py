@@ -20,6 +20,10 @@ class SourceRoute:
     # direct URLs, tracked accounts, portfolio presets); keyword firehoses stamp
     # AGGREGATED. The normalizer refines CURATED→PRIMARY by the item's URL.
     tier: str = Tier.CURATED
+    # This route exists because the user NAMED an account (the people radar).
+    # Only the resolver knows this; by consumption time the URL is all that is
+    # left, and a URL cannot tell "an account we follow" from "a link to one".
+    is_account: bool = False
 
 # Google News serves a per-EDITION index. Without hl/gl/ceid it answers from the
 # en-US edition, so a non-English query returns English articles or — combined
@@ -70,15 +74,16 @@ def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
         SourceRoute(route_id=f"nitter_{id_prefix}", adapter="RssAdapter",
                     url_or_command=f"https://nitter.net/{handle}/rss",
                     purpose="discovery", requires_auth=False, platform="twitter",
-                    priority=base_priority, tier=Tier.CURATED),
+                    priority=base_priority, tier=Tier.CURATED, is_account=True),
         SourceRoute(route_id=f"rsshub_{id_prefix}", adapter="RssHubAdapter",
                     url_or_command=f"rsshub:/twitter/user/{handle}",
                     purpose="discovery", requires_auth=False, platform="twitter",
-                    priority=base_priority + 1, tier=Tier.CURATED),
+                    priority=base_priority + 1, tier=Tier.CURATED, is_account=True),
         SourceRoute(route_id=f"agentic_{id_prefix}", adapter="AgenticAdapter",
                     url_or_command=f"https://x.com/{handle}",
                     purpose="snapshot", requires_auth=auth_profile_id is not None,
-                    platform="twitter", priority=base_priority + 2, tier=Tier.CURATED),
+                    platform="twitter", priority=base_priority + 2, tier=Tier.CURATED,
+                    is_account=True),
     ]
 
 
@@ -553,6 +558,11 @@ class SourceResolver:
                     platform=platform,
                     priority=1
                 ))
+        # Every route from here is an account the user named, whatever platform
+        # it landed on. Stamped once at the exit rather than at each construction
+        # site, so a new platform branch cannot silently forget it.
+        for r in routes:
+            r.is_account = True
         return routes
 
     def _resolve_hybrid_routes(self, target: str) -> List[SourceRoute]:
