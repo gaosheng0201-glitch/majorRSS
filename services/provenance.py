@@ -58,6 +58,29 @@ def domain(url: str) -> str:
         return (url or "").lower()
 
 
+# Paths on an otherwise first-party domain that are MARKETING, not announcements.
+# PRIMARY tier bypasses the fusion gate unconditionally, so without this the
+# vendor's own comms team spends the trust the domain earned: the content audit
+# found customer stories and op-eds on openai.com getting the same paid treatment
+# as a model launch. These paths stay CURATED — still trusted, still exempt from
+# keyword filtering, but they must earn a summary like any other curated source.
+_MARKETING_PATH_MARKERS = (
+    "/customer-stories", "/customers/", "/case-stud", "/testimonial",
+    "/global-affairs", "/policy/", "/opinion", "/editorial",
+    "/careers", "/jobs", "/events/", "/webinar", "/pricing",
+)
+
+
+def is_marketing_path(url: str) -> bool:
+    """True for vendor-domain URLs that are marketing/PR rather than product or
+    research announcements (see _MARKETING_PATH_MARKERS)."""
+    try:
+        path = urllib.parse.urlparse(url or "").path.lower()
+    except Exception:
+        path = (url or "").lower()
+    return any(m in path for m in _MARKETING_PATH_MARKERS)
+
+
 def is_first_party(url: str) -> bool:
     d = domain(url)
     if any(d.endswith(sfx) for sfx in _FIRST_PARTY_SUFFIXES):
@@ -69,10 +92,14 @@ def tier_for_url(url: str, base: str) -> str:
     """Final tier for an item: refine a route's base tier by the item's own URL.
     An opt-in source (CURATED base) whose article sits on a first-party domain is
     PRIMARY. AGGREGATED never upgrades — a keyword-search hit that happens to
-    point at a vendor domain is still a firehose catch, not a curated source."""
+    point at a vendor domain is still a firehose catch, not a curated source.
+    Marketing paths on a first-party domain stay CURATED (B6): domain-level trust
+    should not be spendable by the vendor's marketing team."""
     if base == Tier.AGGREGATED:
         return Tier.AGGREGATED
-    return Tier.PRIMARY if is_first_party(url) else Tier.CURATED
+    if is_first_party(url) and not is_marketing_path(url):
+        return Tier.PRIMARY
+    return Tier.CURATED
 
 
 def real_publisher(url: str, title: str = "") -> str:

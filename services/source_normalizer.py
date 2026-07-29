@@ -65,8 +65,22 @@ class SourceNormalizer:
                     filtered += 1
                     continue
                     
-            # 2. Keep keywords check
-            if keep_keywords and not self.check_keywords_match(item.title, item.content, keep_keywords):
+            # 2. Keep keywords — AGGREGATOR ONLY (B5).
+            # keep_keywords exists to narrow a keyword firehose, where the source
+            # carries no trust of its own. Applying it to a source the user
+            # deliberately picked inverts its purpose: measured on the live DB,
+            # 21 of 39 curated presets had ZERO articles despite 510 successful
+            # fetches each — arXiv (340 fresh papers/day), Hugging Face, Cloudflare
+            # and Anthropic Status were all dropped here because an official post
+            # rarely repeats the vendor's own brand name in its title, while
+            # gnews/reddit items always match (the keyword was in the query). That
+            # single asymmetry is a large part of why 94% of the corpus came from
+            # aggregators. Curated/first-party sources are trusted wholesale; the
+            # junk floor and the fusion gate remain their quality control.
+            from services.provenance import HIGH_WEIGHT, tier_for_url as _tfu
+            _item_tier = _tfu(item.url, item.tier or Tier.CURATED)
+            if keep_keywords and _item_tier not in HIGH_WEIGHT and \
+                    not self.check_keywords_match(item.title, item.content, keep_keywords):
                 filtered += 1
                 continue
                 

@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>MajoSleuth · 三个视觉世界（灵感阶段）</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#EFEDE8;color:#1A1815;
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+       padding:44px 24px 90px}
+  .page{max-width:1180px;margin:0 auto}
+  .top h1{font-family:"Songti SC",Georgia,serif;font-weight:400;font-size:28px;margin:0 0 8px}
+  .top p{font-size:13px;line-height:1.8;color:#6B665E;margin:0 0 12px;max-width:760px}
+  .cap{margin:52px 0 12px}
+  .cap b{font-size:15px}
+  .cap span{font-size:12.5px;color:#6B665E;line-height:1.7;display:block;margin-top:5px;max-width:820px}
+  .frame{width:1120px;height:660px;border-radius:14px;overflow:hidden;position:relative;
+         box-shadow:0 18px 50px rgba(0,0,0,.16)}
+  @media(max-width:1200px){.frame{transform:scale(.83);transform-origin:top left;margin-bottom:-112px}}
+
+  /* 模拟图片：不用外链，全部 CSS 生成 */
+  .ph{position:relative;overflow:hidden;background:#2A2733}
+  .ph::after{content:"";position:absolute;inset:0;
+             background:linear-gradient(to top,rgba(0,0,0,.55),transparent 60%)}
+  .ph-spider{background:
+     radial-gradient(120% 90% at 20% 30%,#5B2C8D 0%,transparent 55%),
+     radial-gradient(90% 80% at 78% 62%,#D6335C 0%,transparent 52%),
+     radial-gradient(70% 60% at 55% 80%,#1B3FA8 0%,transparent 60%),#150F26}
+  .ph-chip{background:
+     radial-gradient(80% 70% at 25% 25%,#8FA7C9 0%,transparent 60%),
+     radial-gradient(70% 70% at 75% 70%,#3B4A63 0%,transparent 60%),#20262F}
+  .ph-doc{background:
+     radial-gradient(90% 80% at 30% 20%,#C97C4A 0%,transparent 55%),
+     radial-gradient(70% 70% at 80% 75%,#7A4B2E 0%,transparent 60%),#33241A}
+  .ph-eu{background:
+     radial-gradient(85% 80% at 25% 30%,#2C5E8F 0%,transparent 58%),
+     radial-gradient(70% 60% at 78% 70%,#1D3350 0%,transparent 60%),#16202E}
+  .ph-lab{background:
+     radial-gradient(80% 70% at 30% 30%,#4E8E6E 0%,transparent 58%),
+     radial-gradient(70% 70% at 75% 72%,#254A3A 0%,transparent 60%),#16241D}
+  .ph-forum{background:
+     radial-gradient(80% 70% at 35% 28%,#9A6E4E 0%,transparent 58%),
+     radial-gradient(70% 70% at 72% 74%,#4A3A2E 0%,transparent 60%),#241C16}
+
+  /* 平台标记：内容自带的彩色语言 */
+  .pm{width:16px;height:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;
+      font-size:8.5px;font-weight:700;color:#fff;letter-spacing:0;flex:0 0 16px}
+  .pm.x{background:#111}.pm.rd{background:#FF4500}.pm.wb{background:#E6162D}
+  .pm.of{background:#1D6FE0}.pm.md{background:#6B665E}.pm.yt{background:#FF0033}
+
+  /* ============ A · 每日刊 ============ */
+  .A{background:#F6F2E9;padding:0;display:flex;flex-direction:column}
+  .A .masthead{padding:26px 40px 14px;text-align:center;border-bottom:2px solid #1A1815}
+  .A .masthead .over{font-size:10px;letter-spacing:.34em;color:#8C8578;margin-bottom:9px}
+  .A .masthead h2{font-family:"Songti SC","Source Han Serif SC",Georgia,serif;font-weight:400;
+                  font-size:42px;letter-spacing:.22em;margin:0 0 10px;color:#1A1815;padding-left:.22em}
+  .A .masthead .issue{font-size:11px;color:#6B665E;letter-spacing:.05em;
+                      display:flex;justify-content:center;gap:16px;padding-bottom:12px}
+  .A .body{flex:1;display:grid;grid-template-columns:1.55fr 1fr .78fr;gap:0;min-height:0;overflow:hidden}
+  .A .lead{padding:22px 26px 0 40px;border-right:1px solid #DDD6C8;min-width:0}
+  .A .kicker{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;letter-spacing:.14em;
+             color:#C8402F;font-weight:600;margin-bottom:10px}
+  .A .kicker i{width:6px;height:6px;background:#C8402F;border-radius:50%;display:inline-block}
+  .A .lead h3{font-family:"Songti SC",Georgia,serif;font-weight:400;font-size:31px;line-height:1.34;
+              margin:0 0 12px;color:#100E0C}
+  .A .lead .photo{height:168px;border-radius:3px;margin-bottom:13px}
+  .A .deck{font-size:13.5px;line-height:1.95;color:#3D3931;margin:0 0 12px;
+           column-count:2;column-gap:22px;column-rule:1px solid #E4DDCE}
+  .A .byline{font-size:10.5px;color:#8C8578;letter-spacing:.03em;border-top:1px solid #DDD6C8;
+             padding-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .A .mid{padding:22px 26px 0;border-right:1px solid #DDD6C8;min-width:0}
+  .A .sect{font-size:10px;letter-spacing:.2em;color:#8C8578;padding-bottom:8px;
+           border-bottom:1px solid #1A1815;margin-bottom:14px}
+  .A .story{padding-bottom:15px;margin-bottom:15px;border-bottom:1px solid #E4DDCE}
+  .A .story h4{font-family:"Songti SC",Georgia,serif;font-weight:400;font-size:18px;line-height:1.45;
+               margin:0 0 7px;color:#100E0C}
+  .A .story .thumb{height:96px;border-radius:3px;margin-bottom:9px}
+  .A .story p{font-size:12px;line-height:1.8;color:#5C574D;margin:0 0 7px}
+  .A .story .src{font-size:10px;color:#8C8578;display:flex;align-items:center;gap:6px}
+  .A .diffbox{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.9;
+              background:#EFE9DB;border-left:2px solid #1A1815;padding:8px 10px;color:#3D3931;margin:8px 0}
+  .A .rail{padding:22px 26px 0 22px;background:#F1ECE0;min-width:0}
+  .A .qt{font-size:12.5px;color:#3D3931;padding:8px 0;border-bottom:1px solid #E4DDCE;
+         display:flex;justify-content:space-between;gap:8px}
+  .A .qt span{font-size:10px;color:#9C9588;white-space:nowrap}
+  .A .foot{border-top:2px solid #1A1815;padding:9px 40px;font-size:10.5px;color:#8C8578;
+           display:flex;justify-content:space-between;letter-spacing:.04em}
+
+  /* ============ B · 玻璃景深 ============ */
+  .B{background:
+      radial-gradient(60% 60% at 20% 15%,#EDE6DC 0%,transparent 60%),
+      radial-gradient(70% 70% at 85% 25%,#D9D3CB 0%,transparent 60%),
+      radial-gradient(80% 80% at 60% 100%,#B9B2A8 0%,transparent 60%),#C8C2B8;
+      padding:26px;position:relative}
+  .B::before{content:"";position:absolute;inset:0;
+     background:repeating-linear-gradient(115deg,rgba(255,255,255,.10) 0 2px,transparent 2px 90px);
+     filter:blur(1px)}
+  .B .pane{position:relative;height:100%;border-radius:22px;padding:18px 20px;
+           background:rgba(255,255,255,.28);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+           border:1px solid rgba(255,255,255,.55);box-shadow:0 30px 70px rgba(60,52,44,.28);
+           display:flex;gap:18px;color:#2A2620}
+  .B .rail{width:62px;flex:0 0 62px;display:flex;flex-direction:column;align-items:center;gap:14px;
+           padding-top:6px}
+  .B .rail .b{width:40px;height:40px;border-radius:13px;background:rgba(255,255,255,.34);
+              border:1px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;
+              box-shadow:0 3px 10px rgba(60,52,44,.10)}
+  .B .rail .b.on{background:rgba(255,255,255,.85);box-shadow:0 6px 16px rgba(60,52,44,.20)}
+  .B .rail .b i{display:block;width:15px;height:15px;border:1.6px solid #4A443C;border-radius:4px}
+  .B .rail .b.on i{border-color:#1E1A16}
+  .B .col{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+  .B .head{display:flex;align-items:center;gap:12px}
+  .B .head .greet{font-size:19px;font-weight:600;letter-spacing:-.01em}
+  .B .head .sub{font-size:11.5px;color:#6B655C}
+  .B .head .search{margin-left:auto;height:34px;width:230px;border-radius:11px;
+       background:rgba(255,255,255,.42);border:1px solid rgba(255,255,255,.6);
+       display:flex;align-items:center;padding:0 12px;font-size:12px;color:#7A736A}
+  .B .head .ava{width:34px;height:34px;border-radius:11px;
+       background:radial-gradient(70% 70% at 30% 30%,#F0C48A,#B97A4A)}
+  .B .stage{flex:1;display:grid;grid-template-columns:1.35fr .85fr;gap:14px;min-height:0}
+  /* 重要性 = 物理高度 */
+  .B .lift{border-radius:18px;padding:2px;position:relative;
+     background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);
+     box-shadow:0 26px 46px rgba(60,52,44,.30),0 0 44px rgba(255,214,150,.55);
+     transform:translateY(-4px) scale(1.012)}
+  .B .lift .inner{border-radius:16px;overflow:hidden;height:100%;position:relative}
+  .B .lift .txt{position:absolute;left:0;right:0;bottom:0;padding:20px 22px;color:#fff}
+  .B .lift .tag{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;
+     background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.4);
+     backdrop-filter:blur(10px);padding:4px 10px;border-radius:20px;margin-bottom:10px}
+  .B .lift h3{font-size:25px;line-height:1.32;margin:0 0 8px;font-weight:600;letter-spacing:-.01em;
+              text-shadow:0 2px 18px rgba(0,0,0,.4)}
+  .B .lift p{font-size:12.5px;line-height:1.7;margin:0 0 14px;color:rgba(255,255,255,.86);max-width:82%}
+  .B .btns{display:flex;gap:9px}
+  .B .btn{height:36px;padding:0 18px;border-radius:12px;display:flex;align-items:center;gap:8px;
+          font-size:12.5px;font-weight:500}
+  .B .btn.w{background:#fff;color:#1E1A16}
+  .B .btn.g{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:#fff;
+            backdrop-filter:blur(10px)}
+  .B .side{display:flex;flex-direction:column;gap:11px;min-height:0}
+  .B .flat{border-radius:15px;background:rgba(255,255,255,.30);border:1px solid rgba(255,255,255,.5);
+           box-shadow:0 6px 16px rgba(60,52,44,.10);padding:12px 14px}
+  .B .sunk{border-radius:15px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+           box-shadow:inset 0 2px 8px rgba(60,52,44,.14);padding:12px 14px;opacity:.72}
+  .B .flat h4,.B .sunk h4{font-size:13.5px;line-height:1.5;margin:0 0 7px;font-weight:600}
+  .B .meta{font-size:10.5px;color:#6B655C;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .B .depthkey{position:absolute;right:26px;bottom:14px;font-size:10px;color:#5F594F;
+               background:rgba(255,255,255,.5);padding:6px 11px;border-radius:20px;
+               border:1px solid rgba(255,255,255,.6)}
+  .B .row{display:flex;gap:10px;align-items:center}
+  .B .row .t{width:48px;height:38px;border-radius:9px;flex:0 0 48px}
+
+  /* ============ C · 接收机 ============ */
+  .C{background:linear-gradient(160deg,#E6E1D6,#D6D0C4);padding:22px;display:flex;gap:18px;
+     font-family:-apple-system,"PingFang SC",sans-serif}
+  .C .device{flex:0 0 236px;background:#F2EEE4;border-radius:20px;padding:18px 16px;
+     box-shadow:0 2px 0 #fff inset,0 10px 22px rgba(80,72,60,.14);display:flex;flex-direction:column}
+  .C .brand{font-size:11px;letter-spacing:.22em;color:#8C8578;margin-bottom:4px}
+  .C .brandn{font-size:16px;font-weight:700;letter-spacing:-.01em;margin-bottom:16px;color:#2A2620}
+  .C .chlabel{font-size:9.5px;letter-spacing:.2em;color:#9C9588;margin-bottom:9px}
+  .C .ch{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;margin-bottom:6px;
+         background:#EAE5D9;box-shadow:0 1px 0 #fff inset}
+  .C .ch.on{background:#fff;box-shadow:0 4px 12px rgba(80,72,60,.14)}
+  .C .ch .knob{width:22px;height:22px;border-radius:8px;flex:0 0 22px;position:relative;
+               box-shadow:0 2px 4px rgba(0,0,0,.18)}
+  .C .ch .nm{font-size:12.5px;color:#3D3931;line-height:1.25;font-weight:500}
+  .C .ch .st{font-size:9.5px;color:#9C9588;margin-top:2px}
+  .C .ch .bell{margin-left:auto;font-size:9px;color:#fff;background:#E2603C;border-radius:20px;
+               padding:2px 6px;font-weight:700}
+  .C .meter{margin-top:auto;background:#EAE5D9;border-radius:14px;padding:12px;box-shadow:0 1px 0 #fff inset}
+  .C .meter .lb{font-size:9.5px;letter-spacing:.16em;color:#9C9588;margin-bottom:8px}
+  .C .bars{display:flex;gap:3px;align-items:flex-end;height:30px}
+  .C .bars i{flex:1;background:#C9C2B4;border-radius:2px}
+  .C .meter .cap2{font-size:10px;color:#7A736A;margin-top:8px}
+  .C .screen{flex:1;background:#FBF9F4;border-radius:20px;padding:20px 22px;min-width:0;
+     box-shadow:0 2px 0 #fff inset,0 10px 22px rgba(80,72,60,.14);display:flex;flex-direction:column}
+  .C .sh{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .C .sh .dot{width:9px;height:9px;border-radius:50%}
+  .C .sh h3{font-size:17px;margin:0;font-weight:700;color:#2A2620}
+  .C .sh .tag{font-size:10.5px;color:#7A736A;background:#EFEAE0;padding:4px 9px;border-radius:8px}
+  .C .sh .right{margin-left:auto;font-size:10.5px;color:#9C9588}
+  .C .card{display:flex;gap:14px;padding:14px;border-radius:16px;margin-bottom:10px;background:#fff;
+           box-shadow:0 3px 10px rgba(80,72,60,.09)}
+  .C .card.hot{box-shadow:0 8px 20px rgba(226,96,60,.22);border:1.5px solid #F3C6B6}
+  .C .card .im{width:104px;height:74px;border-radius:11px;flex:0 0 104px}
+  .C .card h4{font-size:14.5px;line-height:1.45;margin:0 0 6px;color:#221F1A;font-weight:600}
+  .C .card .ln{font-size:10.5px;color:#8C8578;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .C .pill{font-size:9.5px;padding:2.5px 8px;border-radius:20px;font-weight:600}
+  .C .pill.hot{background:#FDEDE7;color:#D2502C}
+  .C .pill.ok{background:#E7F1E9;color:#3E7A52}
+  .C .pill.raw{background:#F0EEE8;color:#8C8578}
+  .C .spine{display:flex;align-items:center;gap:3px;margin-top:8px}
+  .C .spine i{width:6px;height:6px;border-radius:50%;background:#D8D2C6}
+  .C .spine i.f{background:#8C8578}.C .spine i.o{background:#E2603C}
+  .C .spine i.sq{width:5px;height:12px;border-radius:2px;background:#2A2620}
+  .C .spine .lb{font-size:10px;color:#9C9588;margin-left:7px}
+  .C .end{margin-top:auto;text-align:center;font-size:11px;color:#A49D90;padding-top:12px}
+
+  .note{margin-top:56px;border-top:1px solid #D8D2C6;padding-top:22px;
+        display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+  .note h5{font-size:12.5px;margin:0 0 7px}
+  .note p{font-size:12px;line-height:1.8;color:#5C574D;margin:0}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <h1>三个视觉世界 · 灵感阶段</h1>
+    <p>不收敛、不定稿。共同的两个修正：① <b>色彩从内容里来</b>——新闻配图、平台标识本身就是一套彩色语言，之前被我剥光了；② <b>要有材质和景深</b>——层级靠光影和物理感表达，不靠边框和徽章。</p>
+  </div>
+
+  <!-- ================= A ================= -->
+  <div class="cap"><b>A · 每日刊（Daily Edition）</b>
+    <span>反其道：所有 AI 应用都是深色，这个是暖白纸。核心记忆点是「你的应用每天出一期报纸」——有刊号、有刊头、有版面。把「3 分钟摄入一天」变成一个人人都懂的物件。天然能延伸到 OnlyFourBot 网站和你的节目片头，是三个方向里品牌资产最强的。</span></div>
+  <div class="frame A">
+    <div class="masthead">
+      <div class="over">为 ARFI 一人排版 · 本期无广告 · 无算法推荐</div>
+      <h2>MAJOSLEUTH</h2>
+      <div class="issue"><span>第 247 期</span><span>2026 年 7 月 28 日 星期二</span><span>今日 3 事 · 过滤噪音 1,109 条</span><span>上次见面 7月26日</span></div>
+    </div>
+    <div class="body">
+      <div class="lead">
+        <div class="kicker"><i></i>头条 · 值得打扰你</div>
+        <h3>供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h3>
+        <div class="photo ph ph-chip"></div>
+        <p class="deck">代工厂端最早在 7 月 21 日流出产线排期，随后六天内三个独立平台先后跟进讨论，官方公告于 7 月 27 日间接确认了时间窗。这条从「未证实线报」走到「已证实」用了 6 天——比你订阅的任何一家媒体的报道都早 4 天。</p>
+        <div class="byline">
+          <span class="pm rd">R</span><span class="pm x">X</span><span class="pm wb">微</span><span class="pm md">媒</span><span class="pm of">官</span>
+          6 个来源 · 最早 7月21日 论坛 · 官方 7月27日确认 · 点标题看证据
+        </div>
+      </div>
+
+      <div class="mid">
+        <div class="sect">要闻</div>
+        <div class="story">
+          <div class="thumb ph ph-doc"></div>
+          <h4>Anthropic API changelog 新增 3 条目，1 条影响你在用的流式接口</h4>
+          <div class="diffbox">+ streaming: message_delta 事件<br>+ 弃用 completion 端点（10-01）<br>+ 批处理速率限制说明</div>
+          <div class="src"><span class="pm of">官</span>官方一手 · 页面 diff · 今天 09:41</div>
+        </div>
+        <div class="story" style="border:0">
+          <h4>论坛出现三张疑似新机后盖照片</h4>
+          <p>仅单一来源，尚无第二方跟进。按你的设置，这类线报不会推送通知，只在本刊出现。</p>
+          <div class="src"><span class="pm rd">R</span>1 个来源 · 未证实线报 · 40 分钟前</div>
+        </div>
+      </div>
+
+      <div class="rail">
+        <div class="sect">今日安静</div>
+        <div class="qt">国产 GPU 与制程<span>无进展</span></div>
+        <div class="qt">FDA 罕见病审批<span>无进展</span></div>
+        <div class="qt">欧盟数字市场法案<span>已读</span></div>
+        <div class="qt" style="border:0">自媒体选题线报<span>6 条线报</span></div>
+        <div class="sect" style="margin-top:22px">本期成本</div>
+        <div class="qt">模型调用<span>$0.11</span></div>
+        <div class="qt" style="border:0">抓取 1,284 条<span>免费</span></div>
+      </div>
+    </div>
+    <div class="foot"><span>MAJOSLEUTH · 本地生成 · 数据未离开这台电脑</span><span>下一期将于明早 07:30 出刊 · 也可现在手动出刊</span></div>
+  </div>
+
+  <!-- ================= B ================= -->
+  <div class="cap"><b>B · 玻璃与景深（Glass & Depth）</b>
+    <span>贴近你给的第一张参考，但加了功能理由：<b>重要性 = 物理高度</b>。值得打扰的浮起来（更亮、投影更重、带一点暖光），普通的平放，已读的凹陷下去。层级不靠徽章不靠颜色，靠光。Tauri 在 macOS 上本来就能开毛玻璃，这是能真做出来的材质，不是贴图。</span></div>
+  <div class="frame B">
+    <div class="pane">
+      <div class="rail">
+        <div class="b on"><i></i></div>
+        <div class="b"><i style="border-radius:50%"></i></div>
+        <div class="b"><i style="border-radius:2px;height:11px"></i></div>
+        <div class="b"><i style="border-radius:50%;width:13px;height:13px"></i></div>
+      </div>
+      <div class="col">
+        <div class="head">
+          <div>
+            <div class="greet">下午好，Arfi</div>
+            <div class="sub">今天有 1 件事值得你停下来看 · 其余 8 条已归档</div>
+          </div>
+          <div class="search">告诉我你想知道什么…</div>
+          <div class="ava"></div>
+        </div>
+        <div class="stage">
+          <div class="lift">
+            <div class="inner ph ph-spider">
+              <div class="txt">
+                <div class="tag">◉ 共振 · 3 个平台 40 分钟内同时讨论</div>
+                <h3>供应链称 Siri 端侧模型改用<br>自研芯片，量产指向明年春季</h3>
+                <p>最早由代工厂端流出，六天后官方公告间接确认。比你订阅的媒体早 4 天。</p>
+                <div class="btns">
+                  <div class="btn w">▸ 看证据链</div>
+                  <div class="btn g">⤓ 存进选题库</div>
+                  <div class="btn g">···</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="side">
+            <div class="flat">
+              <div class="row">
+                <div class="t ph ph-doc"></div>
+                <div style="min-width:0">
+                  <h4>Anthropic changelog 新增 3 条目</h4>
+                  <div class="meta"><span class="pm of">官</span>官方一手 · 09:41</div>
+                </div>
+              </div>
+            </div>
+            <div class="flat">
+              <div class="row">
+                <div class="t ph ph-forum"></div>
+                <div style="min-width:0">
+                  <h4>论坛出现疑似新机后盖照片</h4>
+                  <div class="meta"><span class="pm rd">R</span>单源 · 未证实线报 · 40 分钟前</div>
+                </div>
+              </div>
+            </div>
+            <div class="sunk">
+              <div class="row">
+                <div class="t ph ph-eu"></div>
+                <div style="min-width:0">
+                  <h4>欧盟数字市场法案第二轮问询</h4>
+                  <div class="meta">已读 · 2 天前 · 3 个来源</div>
+                </div>
+              </div>
+            </div>
+            <div class="sunk">
+              <div class="row">
+                <div class="t ph ph-lab"></div>
+                <div style="min-width:0">
+                  <h4>FDA 罕见病审批：本周无进展</h4>
+                  <div class="meta">安静 · 系统仍在替你看 6 个源</div>
+                </div>
+              </div>
+            </div>
+            <div class="flat" style="text-align:center;color:#6B655C;font-size:11.5px">到底了 · 你已追平</div>
+          </div>
+        </div>
+      </div>
+      <div class="depthkey">浮起 = 值得打扰 · 平放 = 新进展 · 凹陷 = 已读</div>
+    </div>
+  </div>
+
+  <!-- ================= C ================= -->
+  <div class="cap"><b>C · 接收机（The Receiver）</b>
+    <span>把应用当成你桌上的一台<b>情报接收机</b>：暖灰机身、软阴影、圆润的实体感。色彩在这里有明确职责——<b>每个关注目标是一个频道，各有自己的颜色</b>，颜色在全应用一致，用几天就形成肌肉记忆（"橙色那条是 Siri"）。比"只准一种颜色"友好得多，又不是乱配色。参考你给的第二张的亲和力，但去掉游戏感。</span></div>
+  <div class="frame C">
+    <div class="device">
+      <div class="brand">MAJO</div>
+      <div class="brandn">Sleuth 接收机</div>
+      <div class="chlabel">频道 · 你的关注</div>
+      <div class="ch on">
+        <div class="knob" style="background:linear-gradient(160deg,#FF9A5A,#E2603C)"></div>
+        <div><div class="nm">Apple Siri 与端侧模型</div><div class="st">3 项进展 · 2 小时前</div></div>
+        <div class="bell">1</div>
+      </div>
+      <div class="ch">
+        <div class="knob" style="background:linear-gradient(160deg,#7FB0F0,#3D6FD0)"></div>
+        <div><div class="nm">Anthropic API 变更</div><div class="st">1 项进展 · 09:41</div></div>
+      </div>
+      <div class="ch">
+        <div class="knob" style="background:linear-gradient(160deg,#9BD8AE,#4E9A6B)"></div>
+        <div><div class="nm">国产 GPU 与制程</div><div class="st">安静 · 昨天</div></div>
+      </div>
+      <div class="ch">
+        <div class="knob" style="background:linear-gradient(160deg,#D9A9E8,#9B5FBF)"></div>
+        <div><div class="nm">FDA 罕见病审批</div><div class="st">安静 · 3 天前</div></div>
+      </div>
+      <div class="ch">
+        <div class="knob" style="background:linear-gradient(160deg,#F2D98A,#C8A23C)"></div>
+        <div><div class="nm">自媒体选题线报</div><div class="st">6 条未证实 · 40 分钟前</div></div>
+      </div>
+      <div class="meter">
+        <div class="lb">值班中 · 本周信号</div>
+        <div class="bars">
+          <i style="height:40%"></i><i style="height:62%"></i><i style="height:30%"></i>
+          <i style="height:78%"></i><i style="height:46%;background:#E2603C"></i>
+          <i style="height:26%"></i><i style="height:54%"></i>
+        </div>
+        <div class="cap2">正在看 27 个源 · 今日花费 $0.11</div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="sh">
+        <div class="dot" style="background:#E2603C"></div>
+        <h3>Apple Siri 与端侧模型</h3>
+        <div class="tag">从现在起报新 · 回填 7 天</div>
+        <div class="right">自上次以来 3 项 · 上次 7月26日 09:12</div>
+      </div>
+
+      <div class="card hot">
+        <div class="im ph ph-chip"></div>
+        <div style="min-width:0">
+          <h4>供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h4>
+          <div class="ln"><span class="pill hot">共振 · 值得打扰</span><span class="pill ok">已证实</span>2 小时前 · 6 个来源</div>
+          <div class="spine">
+            <i class="o"></i><i class="o"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i>
+            <i class="sq"></i>
+            <span class="lb">线报 → 多源跟进 → 官方确认，用了 6 天</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="im ph ph-doc"></div>
+        <div style="min-width:0">
+          <h4>Anthropic API changelog 新增 3 条目，1 条影响你在用的流式接口</h4>
+          <div class="ln"><span class="pill ok">官方一手</span>今天 09:41 · 页面 diff</div>
+          <div class="spine"><i class="sq"></i><span class="lb">直接来自官方页面变更，无需佐证</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="im ph ph-forum"></div>
+        <div style="min-width:0">
+          <h4>论坛出现三张疑似新机后盖照片</h4>
+          <div class="ln"><span class="pill raw">未证实线报</span>40 分钟前 · 1 个来源</div>
+          <div class="spine"><i></i><span class="lb">只有一个来源，等第二方跟进</span></div>
+        </div>
+      </div>
+
+      <div class="end">到底了 · 你已追平这个频道</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <div><h5>关于配色</h5><p>三个方向都没有主色。A 是纸 + 印刷红；B 几乎无色，靠光；C 的颜色属于频道不属于界面。真正的色彩来自新闻配图和平台标识——那是内容自带的，不是我们刷上去的。</p></div>
+    <div><h5>关于层级</h5><p>A 用版面（头条 / 要闻 / 边栏），B 用景深（浮起 / 平放 / 凹陷），C 用材质（发光的卡片 / 普通卡片）。三种都比"加一个彩色徽章"更接近真实世界的阅读经验。</p></div>
+    <div><h5>还能混</h5><p>比如 B 的玻璃壳 + A 的报纸内页；或 C 的频道色 + B 的景深。灵感阶段不必二选一，先挑出你一眼有反应的元素。</p></div>
+  </div>
+</div>
+</body>
+</html>

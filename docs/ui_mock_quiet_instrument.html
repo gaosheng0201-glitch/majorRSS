@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>MajoSleuth · 安静的仪器 — UI 方向 mock</title>
+<style>
+  :root{
+    --ink:#100F0D;
+    --ink-rail:#0B0A09;
+    --paper:#EAE5DA;
+    --dim:#8B857A;
+    --faint:#55504A;
+    --hair:rgba(234,229,218,.09);
+    --hair-strong:rgba(234,229,218,.16);
+    --signal:#E8A33D;
+    --serif:"Songti SC","Source Han Serif SC","Noto Serif SC",Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#1C1B18;color:var(--paper);font-family:var(--sans);padding:40px 24px 80px}
+  .page{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--serif);font-weight:400;font-size:26px;margin:0 0 6px}
+  .lede{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em;margin:0 0 40px}
+  .cap{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em;margin:34px 0 10px}
+  .cap b{color:var(--paper);font-weight:400}
+  .frame{width:1120px;height:700px;background:var(--ink);border:1px solid var(--hair-strong);
+         border-radius:10px;overflow:hidden;display:flex;position:relative;
+         box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  @media(max-width:1200px){.frame{transform:scale(.82);transform-origin:top left;margin-bottom:-125px}}
+
+  /* ---------- 意图轨（保守骨架：就是一条大家都认识的侧栏） ---------- */
+  .rail{width:236px;flex:0 0 236px;background:var(--ink-rail);border-right:1px solid var(--hair);
+        display:flex;flex-direction:column;padding:18px 0 14px}
+  .brand{font-family:var(--serif);font-size:15px;padding:0 18px 20px;color:var(--paper)}
+  .brand small{font-family:var(--mono);font-size:9px;color:var(--faint);letter-spacing:.18em;display:block;margin-top:3px}
+  .rail-label{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.16em;padding:0 18px 8px}
+  .intent{padding:9px 18px 9px 16px;border-left:2px solid transparent;cursor:default;position:relative}
+  .intent .n{font-family:var(--serif);font-size:14.5px;color:var(--dim);line-height:1.3}
+  .intent .m{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px;letter-spacing:.04em}
+  .intent.on{border-left-color:var(--paper);background:rgba(234,229,218,.035)}
+  .intent.on .n{color:var(--paper)}
+  .intent.on .m{color:var(--dim)}
+  .intent .dot{position:absolute;right:16px;top:13px;width:5px;height:5px;border-radius:50%;
+               background:var(--signal);box-shadow:0 0 7px rgba(232,163,61,.55)}
+  .rail-foot{margin-top:auto;padding:0 18px}
+  .rail-foot .row{font-family:var(--sans);font-size:12.5px;color:var(--dim);padding:7px 0}
+  .heart{font-family:var(--mono);font-size:10px;color:var(--faint);border-top:1px solid var(--hair);
+         margin-top:10px;padding-top:11px;display:flex;align-items:center;gap:7px}
+  .heart i{width:4px;height:4px;border-radius:50%;background:var(--faint);display:inline-block}
+
+  /* ---------- 阅读面 ---------- */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .intentline{height:46px;flex:0 0 46px;border-bottom:1px solid var(--hair);display:flex;align-items:center;
+              padding:0 30px;gap:10px}
+  .intentline .ph{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.03em}
+  .intentline .caret{width:1px;height:13px;background:var(--dim)}
+  .intentline .right{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.08em}
+  .read{flex:1;overflow:hidden;padding:26px 30px 0}
+  .col{max-width:640px}
+  .h-date{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.16em;margin-bottom:18px}
+  .item{padding:16px 0;border-bottom:1px solid var(--hair)}
+  .item h2{font-family:var(--serif);font-weight:400;font-size:19px;line-height:1.5;margin:0;color:var(--paper);letter-spacing:.01em}
+  .item.old h2{color:var(--dim)}
+  .meta{display:flex;align-items:center;gap:10px;margin-top:9px}
+  .meta .txt{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.04em}
+  .why{font-family:var(--mono);font-size:10.5px;color:var(--signal);margin-top:8px;letter-spacing:.03em;opacity:.92}
+  .diff{font-family:var(--mono);font-size:11px;line-height:1.85;margin-top:10px;padding:9px 12px;
+        background:rgba(234,229,218,.03);border-left:1px solid var(--hair-strong);color:var(--dim)}
+  .diff s{color:var(--paper);text-decoration:none}
+  .waterline{display:flex;align-items:center;gap:12px;margin:22px 0 6px}
+  .waterline hr{flex:1;border:0;border-top:1px solid var(--hair-strong);margin:0}
+  .waterline span{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.14em}
+  .end{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.1em;text-align:center;padding:26px 0}
+
+  /* ---------- 证据面 ---------- */
+  .evid{position:absolute;right:0;top:0;bottom:0;width:396px;background:#0D0C0A;
+        border-left:1px solid var(--hair-strong);padding:22px 24px;box-shadow:-24px 0 50px rgba(0,0,0,.45)}
+  .evid .k{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.16em;margin-bottom:14px}
+  .evid .claim{font-family:var(--serif);font-size:16px;line-height:1.6;color:var(--paper)}
+  .evid .claim u{text-decoration:none;border-bottom:1px dotted var(--signal);background:rgba(232,163,61,.09)}
+  .evid .src{margin-top:20px;padding-top:14px;border-top:1px solid var(--hair)}
+  .evid .src .hd{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.05em;display:flex;gap:8px;align-items:center}
+  .evid .src p{font-family:var(--sans);font-size:12.5px;line-height:1.75;color:var(--dim);margin:9px 0 0}
+  .evid .src p mark{background:rgba(232,163,61,.16);color:var(--paper)}
+  .evid .list{margin-top:18px;font-family:var(--mono);font-size:10.5px;color:var(--faint);line-height:2.1}
+
+  /* ---------- 静默态 ---------- */
+  .silence{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 30px 60px;max-width:660px}
+  .silence h2{font-family:var(--serif);font-weight:400;font-size:30px;line-height:1.5;margin:0;color:var(--paper)}
+  .silence .sub{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:16px;letter-spacing:.04em;line-height:1.9}
+  .actions{margin-top:26px;display:flex;gap:10px}
+  .btn{font-family:var(--sans);font-size:12.5px;padding:8px 15px;border:1px solid var(--hair-strong);
+       border-radius:5px;color:var(--paper);background:transparent}
+  .btn.pri{background:var(--paper);color:#100F0D;border-color:var(--paper)}
+  .hint{font-family:var(--sans);font-size:11.5px;color:var(--faint);margin-top:18px}
+
+  /* ---------- 设置面：故意无聊 ---------- */
+  .set{flex:1;padding:26px 34px;overflow:hidden}
+  .set h2{font-family:var(--sans);font-weight:600;font-size:16px;margin:0 0 4px;color:var(--paper)}
+  .set .note{font-family:var(--sans);font-size:12px;color:var(--dim);margin:0 0 24px}
+  .grp{border-top:1px solid var(--hair);padding:18px 0}
+  .grp .gt{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--paper);margin-bottom:14px}
+  .fr{display:flex;gap:20px;align-items:flex-start;margin-bottom:14px}
+  .fr label{width:150px;flex:0 0 150px;font-family:var(--sans);font-size:12.5px;color:var(--paper);padding-top:7px}
+  .fr .ctl{flex:1;max-width:420px}
+  .inp{width:100%;height:31px;border:1px solid var(--hair-strong);border-radius:5px;background:rgba(255,255,255,.02);
+       font-family:var(--sans);font-size:12.5px;color:var(--paper);padding:0 10px;display:flex;align-items:center}
+  .inp.sel::after{content:"⌄";margin-left:auto;color:var(--dim)}
+  .fr .desc{font-family:var(--sans);font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.6}
+  .saved{font-family:var(--sans);font-size:11.5px;color:var(--dim);margin-top:6px}
+  .saved b{color:#7FB08A;font-weight:400}
+
+  /* ---------- 图例 ---------- */
+  .legend{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:44px;
+          border-top:1px solid rgba(255,255,255,.1);padding-top:26px}
+  .legend h3{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.16em;font-weight:400;margin:0 0 14px}
+  .sw{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .sw i{width:22px;height:22px;border-radius:4px;border:1px solid rgba(255,255,255,.12);display:inline-block}
+  .spec{margin-bottom:12px}
+  .spec .s1{font-family:var(--serif);font-size:19px;color:var(--paper)}
+  .spec .s2{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.04em}
+  .spec .s3{font-family:var(--sans);font-size:12.5px;color:var(--paper)}
+  .spec em{font-family:var(--mono);font-size:9.5px;color:var(--faint);font-style:normal;display:block;margin-top:3px;letter-spacing:.1em}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>安静的仪器 · Quiet Instrument</h1>
+<p class="lede">MAJOSLEUTH UI 方向 MOCK · 2026-07-28 · 骨架保守（谁都会用），表皮独特（一眼记得住）</p>
+
+<!-- ============ 1. 主界面 ============ -->
+<p class="cap"><b>01 主界面</b> — 左边是熟悉的侧栏，只是列的是「意图」不是「页面」；右边是为阅读排的版。元信息一行，图形只做加成。</p>
+<div class="frame">
+  <div class="rail">
+    <div class="brand">MajoSleuth<small>ONLY FOUR BOT</small></div>
+    <div class="rail-label">关注目标</div>
+    <div class="intent on">
+      <div class="n">Apple Siri 与端侧模型</div>
+      <div class="m">3 项进展 · 2 小时前</div>
+      <div class="dot"></div>
+    </div>
+    <div class="intent">
+      <div class="n">Anthropic API 变更</div>
+      <div class="m">1 项进展 · 今天 09:41</div>
+    </div>
+    <div class="intent">
+      <div class="n">国产 GPU 与制程</div>
+      <div class="m">安静 · 昨天</div>
+    </div>
+    <div class="intent">
+      <div class="n">FDA 罕见病审批</div>
+      <div class="m">安静 · 3 天前</div>
+    </div>
+    <div class="intent">
+      <div class="n">自媒体选题线报</div>
+      <div class="m">6 条未证实线报 · 40 分钟前</div>
+    </div>
+    <div class="rail-foot">
+      <div class="row">+ 新建关注目标</div>
+      <div class="row">所有来源</div>
+      <div class="row">设置</div>
+      <div class="heart"><i></i>值班中 · 正在看 27 个源</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="intentline">
+      <span class="caret"></span>
+      <span class="ph">告诉我你想知道什么，或调整现在这个目标（例：少给我营销号）</span>
+      <span class="right">7月28日 周二</span>
+    </div>
+    <div class="read"><div class="col">
+      <div class="h-date">自上次以来 · 3 项进展</div>
+
+      <div class="item">
+        <h2>供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h2>
+        <div class="meta">
+          <svg width="132" height="14">
+            <line x1="2" y1="7" x2="130" y2="7" stroke="#55504A" stroke-width="1"/>
+            <circle cx="14" cy="7" r="2.2" fill="none" stroke="#E8A33D" stroke-width="1"/>
+            <circle cx="26" cy="7" r="2.2" fill="none" stroke="#E8A33D" stroke-width="1"/>
+            <circle cx="33" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="41" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="52" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="58" cy="7" r="2.2" fill="#E8A33D"/>
+            <rect x="96" y="2.5" width="4" height="9" fill="#EAE5DA"/>
+          </svg>
+          <span class="txt">2 小时前 · 6 个来源 · 已证实</span>
+        </div>
+        <div class="why">为什么打扰你：3 个独立平台在 40 分钟内同时讨论，随后官方确认</div>
+      </div>
+
+      <div class="item">
+        <h2>Anthropic API changelog 新增 3 条目，其中 1 条影响你在用的流式接口</h2>
+        <div class="meta">
+          <svg width="132" height="14">
+            <line x1="2" y1="7" x2="130" y2="7" stroke="#55504A" stroke-width="1"/>
+            <rect x="118" y="2.5" width="4" height="9" fill="#EAE5DA"/>
+          </svg>
+          <span class="txt">今天 09:41 · 官方一手 · 页面 diff</span>
+        </div>
+        <div class="diff">
+          <s>+ streaming: 新增 message_delta 事件类型</s><br>
+          <s>+ 弃用 completion 端点（2026-10-01）</s><br>
+          + 文档：批处理速率限制说明
+        </div>
+      </div>
+
+      <div class="item">
+        <h2>论坛出现三张疑似新机后盖照片，仅单源、未证实</h2>
+        <div class="meta">
+          <svg width="132" height="14">
+            <line x1="2" y1="7" x2="130" y2="7" stroke="#55504A" stroke-width="1"/>
+            <circle cx="104" cy="7" r="2.2" fill="none" stroke="#8B857A" stroke-width="1"/>
+          </svg>
+          <span class="txt">40 分钟前 · 1 个来源 · 未证实线报</span>
+        </div>
+      </div>
+
+      <div class="waterline"><hr><span>你上次在这里 · 7月26日 09:12</span><hr></div>
+
+      <div class="item old">
+        <h2>欧盟数字市场法案第二轮问询，涉及默认助手绑定</h2>
+        <div class="meta">
+          <svg width="132" height="14">
+            <line x1="2" y1="7" x2="130" y2="7" stroke="#55504A" stroke-width="1"/>
+            <circle cx="30" cy="7" r="2.2" fill="#55504A"/>
+            <circle cx="44" cy="7" r="2.2" fill="#55504A"/>
+            <rect x="70" y="3" width="4" height="8" fill="#8B857A"/>
+          </svg>
+          <span class="txt">2 天前 · 3 个来源 · 已证实</span>
+        </div>
+      </div>
+
+      <div class="end">到底了 · 你已追平</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ============ 2. 证据面 ============ -->
+<p class="cap"><b>02 证据面</b> — 点任意一句 AI 写的话，右侧滑出它依据的源片段。没有引用的句子不允许被渲染出来。</p>
+<div class="frame">
+  <div class="rail">
+    <div class="brand">MajoSleuth<small>ONLY FOUR BOT</small></div>
+    <div class="rail-label">关注目标</div>
+    <div class="intent on"><div class="n">Apple Siri 与端侧模型</div><div class="m">3 项进展 · 2 小时前</div><div class="dot"></div></div>
+    <div class="intent"><div class="n">Anthropic API 变更</div><div class="m">1 项进展 · 今天 09:41</div></div>
+    <div class="intent"><div class="n">国产 GPU 与制程</div><div class="m">安静 · 昨天</div></div>
+    <div class="intent"><div class="n">FDA 罕见病审批</div><div class="m">安静 · 3 天前</div></div>
+    <div class="intent"><div class="n">自媒体选题线报</div><div class="m">6 条未证实线报 · 40 分钟前</div></div>
+    <div class="rail-foot">
+      <div class="row">+ 新建关注目标</div><div class="row">所有来源</div><div class="row">设置</div>
+      <div class="heart"><i></i>值班中 · 正在看 27 个源</div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="intentline"><span class="caret"></span><span class="ph">告诉我你想知道什么</span><span class="right">7月28日 周二</span></div>
+    <div class="read"><div class="col" style="max-width:560px">
+      <div class="h-date">线索 · 自 7月21日 起 6 个来源</div>
+      <div class="item">
+        <h2>供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h2>
+        <div class="meta">
+          <svg width="132" height="14">
+            <line x1="2" y1="7" x2="130" y2="7" stroke="#55504A" stroke-width="1"/>
+            <circle cx="14" cy="7" r="2.2" fill="none" stroke="#E8A33D" stroke-width="1"/>
+            <circle cx="26" cy="7" r="2.2" fill="none" stroke="#E8A33D" stroke-width="1"/>
+            <circle cx="33" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="41" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="52" cy="7" r="2.2" fill="#E8A33D"/>
+            <circle cx="58" cy="7" r="2.2" fill="#E8A33D"/>
+            <rect x="96" y="2.5" width="4" height="9" fill="#EAE5DA"/>
+          </svg>
+          <span class="txt">2 小时前 · 6 个来源 · 已证实</span>
+        </div>
+      </div>
+    </div></div>
+  </div>
+  <div class="evid">
+    <div class="k">证据 · 这句话凭什么</div>
+    <div class="claim">量产窗口指向<u>明年春季</u>，最早由代工厂端流出，<u>六天后</u>由官方公告间接确认。</div>
+    <div class="src">
+      <div class="hd">
+        <svg width="10" height="10"><circle cx="5" cy="5" r="3" fill="none" stroke="#8B857A"/></svg>
+        论坛 · 7月21日 08:14 · 最早出现
+      </div>
+      <p>…产线排期表显示 <mark>Q2 初启动</mark>，与去年同期相比提前约三周，模组供应商已收到备料通知…</p>
+    </div>
+    <div class="src">
+      <div class="hd">
+        <svg width="10" height="10"><rect x="3" y="0" width="4" height="10" fill="#EAE5DA"/></svg>
+        官方公告 · 7月27日 10:02 · 一手来源
+      </div>
+      <p>…相关功能将于<mark>明年春季</mark>随系统更新向部分机型开放…</p>
+    </div>
+    <div class="list">
+      其余 4 个来源（媒体转述）<br>
+      · 7月22日 科技媒体 A<br>
+      · 7月22日 科技媒体 B<br>
+      · 7月23日 综合门户 C<br>
+      · 7月25日 行业周报 D
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. 静默态 ============ -->
+<p class="cap"><b>03 静默态</b> — 大多数时候应用应该几乎是空的。空状态不是错误，是产品的目标状态，所以它必须被当成一屏成品来设计，并写清下一步。</p>
+<div class="frame">
+  <div class="rail">
+    <div class="brand">MajoSleuth<small>ONLY FOUR BOT</small></div>
+    <div class="rail-label">关注目标</div>
+    <div class="intent on"><div class="n">Apple Siri 与端侧模型</div><div class="m">安静 · 6 小时前</div></div>
+    <div class="intent"><div class="n">Anthropic API 变更</div><div class="m">安静 · 今天 09:41</div></div>
+    <div class="intent"><div class="n">国产 GPU 与制程</div><div class="m">安静 · 昨天</div></div>
+    <div class="intent"><div class="n">FDA 罕见病审批</div><div class="m">安静 · 3 天前</div></div>
+    <div class="intent"><div class="n">自媒体选题线报</div><div class="m">安静 · 5 小时前</div></div>
+    <div class="rail-foot">
+      <div class="row">+ 新建关注目标</div><div class="row">所有来源</div><div class="row">设置</div>
+      <div class="heart"><i></i>值班中 · 正在看 27 个源</div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="intentline"><span class="caret"></span><span class="ph">告诉我你想知道什么</span><span class="right">7月28日 周二</span></div>
+    <div class="silence">
+      <h2>今天没有需要打扰你的事。</h2>
+      <div class="sub">
+        过去 24 小时 · 抓取 1,284 条 · 过滤噪音 1,109 条 · 归并重复 167 条<br>
+        8 条静默进展已记入线索，不值得单独提醒。
+      </div>
+      <div class="actions">
+        <div class="btn">查看 8 条静默进展</div>
+        <div class="btn pri">+ 新建关注目标</div>
+      </div>
+      <div class="hint">「静默进展」= 有变化但没有跨过打扰门槛的内容，随时可看，永远不弹通知。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4. 设置面 ============ -->
+<p class="cap"><b>04 设置面 —— 故意无聊</b> 这里是唯一必须长得像普通软件的地方：左标签右控件、每项一句人话说明、改完立刻反馈。用户在这儿要的是确定性，不是气质。</p>
+<div class="frame">
+  <div class="rail">
+    <div class="brand">MajoSleuth<small>ONLY FOUR BOT</small></div>
+    <div class="rail-label">关注目标</div>
+    <div class="intent"><div class="n">Apple Siri 与端侧模型</div><div class="m">3 项进展 · 2 小时前</div><div class="dot"></div></div>
+    <div class="intent"><div class="n">Anthropic API 变更</div><div class="m">1 项进展 · 今天 09:41</div></div>
+    <div class="intent"><div class="n">国产 GPU 与制程</div><div class="m">安静 · 昨天</div></div>
+    <div class="intent"><div class="n">FDA 罕见病审批</div><div class="m">安静 · 3 天前</div></div>
+    <div class="intent"><div class="n">自媒体选题线报</div><div class="m">6 条未证实线报 · 40 分钟前</div></div>
+    <div class="rail-foot">
+      <div class="row">+ 新建关注目标</div><div class="row">所有来源</div>
+      <div class="row" style="color:var(--paper)">设置</div>
+      <div class="heart"><i></i>值班中 · 正在看 27 个源</div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="set">
+      <h2>设置</h2>
+      <p class="note">这些设置保存在你本机。抓取、Cookie、知识状态都不出这台电脑。</p>
+
+      <div class="grp">
+        <div class="gt">模型</div>
+        <div class="fr">
+          <label>提供方</label>
+          <div class="ctl">
+            <div class="inp sel">Anthropic（自带 Key）</div>
+            <div class="desc">也支持 OpenAI 兼容端点，填本地地址即可用 Ollama / LM Studio。</div>
+          </div>
+        </div>
+        <div class="fr">
+          <label>API Key</label>
+          <div class="ctl">
+            <div class="inp">••••••••••••••••••••••••  sk-…4f2a</div>
+            <div class="desc">加密存放在本机钥匙串，不会随任何分享内容离开这台电脑。</div>
+            <div class="saved"><b>✓ 已保存</b> · 刚刚验证通过</div>
+          </div>
+        </div>
+        <div class="fr">
+          <label>向量模型</label>
+          <div class="ctl">
+            <div class="inp sel">本地（推荐 · 免费 · 不联网）</div>
+            <div class="desc">用来判断相关、去重和归并线索。选本地则这一步完全不花钱。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="gt">打扰</div>
+        <div class="fr">
+          <label>系统通知</label>
+          <div class="ctl">
+            <div class="inp sel">仅重要与共振（推荐）</div>
+            <div class="desc">「共振」= 多个平台在短时间内同时讨论同一件事。其余变化只在每日简报里出现。</div>
+          </div>
+        </div>
+        <div class="fr">
+          <label>免打扰时段</label>
+          <div class="ctl">
+            <div class="inp">23:00 — 08:00</div>
+            <div class="desc">这段时间内的提醒会攒到早上一起给你。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="gt">花费</div>
+        <div class="fr">
+          <label>每日上限</label>
+          <div class="ctl">
+            <div class="inp">$0.50</div>
+            <div class="desc">达到上限后停止调用模型，抓取和去重不受影响。本月已用 $3.12。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 图例 ============ -->
+<div class="legend">
+  <div>
+    <h3>一色系统 · 彩色只有一种含义</h3>
+    <div class="sw"><i style="background:#100F0D"></i>#100F0D 墨底（偏暖，不是纯黑，不是紫蓝渐变）</div>
+    <div class="sw"><i style="background:#EAE5DA"></i>#EAE5DA 米白 · 事实层</div>
+    <div class="sw"><i style="background:#8B857A"></i>#8B857A 灰 · 仪器层</div>
+    <div class="sw"><i style="background:#55504A"></i>#55504A 暗灰 · 结构线与已读</div>
+    <div class="sw"><i style="background:#E8A33D"></i>#E8A33D 琥珀 · <span style="color:#E8A33D">唯一含义：值得打扰你</span></div>
+    <div class="sw" style="margin-top:12px;color:var(--faint)">出现第二种彩色含义 = 设计缺陷</div>
+  </div>
+  <div>
+    <h3>两种字体各司其职</h3>
+    <div class="spec"><div class="s1">衬线 · 发生了什么</div><em>标题与结论 · 一眼就知道自己在读事实</em></div>
+    <div class="spec"><div class="s2">等宽 · 2 小时前 · 6 个来源 · 已证实</div><em>时间 / 佐证 / 状态 / 成本 · 全部元信息</em></div>
+    <div class="spec"><div class="s3">无衬线 · 按钮、表单、说明文字</div><em>需要动手的地方，用大家最熟的样子</em></div>
+
+    <h3 style="margin-top:22px">证据脊 · 图形只做加成，文字永远在</h3>
+    <div class="sw"><svg width="26" height="12"><circle cx="13" cy="6" r="2.2" fill="none" stroke="#8B857A"/></svg>空心 = 社交 / 线报（未证实）</div>
+    <div class="sw"><svg width="26" height="12"><circle cx="13" cy="6" r="2.2" fill="#8B857A"/></svg>实心 = 媒体转述</div>
+    <div class="sw"><svg width="26" height="12"><rect x="11" y="1" width="4" height="10" fill="#EAE5DA"/></svg>方块 = 一手 / 官方（出现即已证实）</div>
+    <div class="sw"><svg width="46" height="12"><line x1="0" y1="6" x2="46" y2="6" stroke="#55504A"/><circle cx="8" cy="6" r="2.2" fill="#E8A33D"/><circle cx="15" cy="6" r="2.2" fill="#E8A33D"/><circle cx="21" cy="6" r="2.2" fill="#E8A33D"/></svg>刻度聚成一簇 = 共振（横轴是时间）</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
