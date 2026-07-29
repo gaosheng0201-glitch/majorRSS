@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>MajoSleuth · 八个配色与质感世界</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#E9E7E2;color:#1A1815;
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+       padding:44px 26px 90px}
+  .page{max-width:1240px;margin:0 auto}
+  h1{font-family:"Songti SC",Georgia,serif;font-weight:400;font-size:28px;margin:0 0 10px}
+  .intro{font-size:13px;line-height:1.85;color:#5C574D;margin:0 0 8px;max-width:840px}
+  .dims{font-size:12px;color:#7A736A;margin:14px 0 34px;line-height:1.9;max-width:840px;
+        border-left:2px solid #C9C2B4;padding-left:14px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:30px}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .w{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 8px 26px rgba(0,0,0,.10)}
+  .wh{padding:15px 18px 0;display:flex;align-items:baseline;gap:9px}
+  .wh b{font-size:15px}
+  .wh span{font-size:11px;color:#9C9588;letter-spacing:.1em}
+  .wy{font-size:12px;line-height:1.75;color:#5C574D;margin:7px 18px 13px}
+  .chips{display:flex;gap:0;height:26px}
+  .chips i{flex:1;display:flex;align-items:center;justify-content:center;
+           font-size:8.5px;letter-spacing:.04em;font-family:"SF Mono",ui-monospace,Menlo,monospace}
+  .sample{min-height:206px;position:relative;overflow:hidden}
+  .sm-h{line-height:1.42;margin:0}
+  .pm{width:15px;height:15px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;
+      font-size:8px;font-weight:700;color:#fff;flex:0 0 15px}
+  .pm.x{background:#111}.pm.rd{background:#FF4500}.pm.wb{background:#E6162D}.pm.of{background:#1D6FE0}
+
+  /* ---------- 01 牛皮纸档案 ---------- */
+  .s1{background:#D6C4A0;padding:20px 22px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E"),
+        linear-gradient(160deg,#DCCBA8,#CDB894)}
+  .s1 .tape{position:absolute;top:-14px;left:38px;width:96px;height:30px;transform:rotate(-4deg);
+            background:rgba(255,255,255,.34);border-left:1px dashed rgba(0,0,0,.10);border-right:1px dashed rgba(0,0,0,.10)}
+  .s1 .no{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:10px;color:#6E5F45;
+          letter-spacing:.14em;margin-bottom:12px}
+  .s1 .sm-h{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:15.5px;color:#2B2419;
+            letter-spacing:-.01em;max-width:88%}
+  .s1 .rule{height:1px;background:rgba(60,48,30,.28);margin:14px 0 10px}
+  .s1 .meta{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:10px;color:#6E5F45;
+            display:flex;align-items:center;gap:7px}
+  .s1 .stamp{position:absolute;right:24px;bottom:18px;border:2.5px solid #A83A2B;color:#A83A2B;
+             font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.2em;
+             padding:6px 12px;transform:rotate(-9deg);opacity:.82;border-radius:3px}
+  .s1 .clip{position:absolute;right:26px;top:16px;width:14px;height:38px;border:2.5px solid #8C8578;
+            border-radius:8px;opacity:.5}
+
+  /* ---------- 02 暗房显影 ---------- */
+  .s2{background:#17120F;padding:20px 22px;color:#E9E0D2}
+  .s2::before{content:"";position:absolute;inset:0;
+     background:radial-gradient(60% 50% at 78% 18%,rgba(214,69,47,.30),transparent 70%)}
+  .s2 .row{position:relative;display:flex;gap:14px}
+  .s2 .neg{width:74px;height:74px;border-radius:4px;flex:0 0 74px;
+     background:linear-gradient(150deg,#4A3C55,#6E4340);filter:blur(0px);border:3px solid #241D18}
+  .s2 .sm-h{font-family:"Songti SC",Georgia,serif;font-size:19px;color:#F2EAD9}
+  .s2 .stage{position:relative;margin-top:16px;display:flex;gap:10px;align-items:center}
+  .s2 .st{flex:1;height:34px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+          font-size:10px;letter-spacing:.06em;border:1px solid rgba(233,224,210,.14)}
+  .s2 .st.a{color:rgba(233,224,210,.30);background:rgba(233,224,210,.03)}
+  .s2 .st.b{color:rgba(233,224,210,.62);background:rgba(233,224,210,.07)}
+  .s2 .st.c{color:#17120F;background:#E9E0D2;font-weight:600;border-color:#E9E0D2}
+  .s2 .cap{position:relative;font-size:10.5px;color:#9A8C7C;margin-top:11px;letter-spacing:.03em}
+  .s2 .meta{position:relative;font-size:10.5px;color:#9A8C7C;display:flex;gap:7px;align-items:center;margin-top:9px}
+
+  /* ---------- 03 宣纸朱砂 ---------- */
+  .s3{background:#F4EFE4;padding:20px 24px;display:flex;gap:18px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n2'%3E%3CfeTurbulence baseFrequency='1.2' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)' opacity='0.10'/%3E%3C/svg%3E")}
+  .s3 .vert{writing-mode:vertical-rl;font-family:"Songti SC",serif;font-size:13px;letter-spacing:.4em;
+            color:#8A8172;border-left:1px solid #D6CDBC;padding-left:10px}
+  .s3 .seal{width:34px;height:34px;background:#B33A2B;color:#F4EFE4;border-radius:4px;
+            font-family:"Songti SC",serif;font-size:11px;display:flex;align-items:center;justify-content:center;
+            line-height:1.05;text-align:center;margin-bottom:14px}
+  .s3 .sm-h{font-family:"Songti SC","Source Han Serif SC",serif;font-size:22px;color:#1F1C17;line-height:1.5}
+  .s3 .meta{font-size:11px;color:#8A8172;margin-top:14px;display:flex;gap:8px;align-items:center;
+            border-top:1px solid #DED5C4;padding-top:10px}
+  .s3 .red{color:#B33A2B}
+
+  /* ---------- 04 深海声呐 ---------- */
+  .s4{background:radial-gradient(90% 90% at 15% 10%,#123240 0%,#08151D 70%);padding:20px 22px;color:#CFE6E0}
+  .s4::before{content:"";position:absolute;left:-60px;top:-60px;width:300px;height:300px;border-radius:50%;
+     border:1px solid rgba(79,209,181,.16);box-shadow:0 0 0 42px rgba(79,209,181,.05),0 0 0 84px rgba(79,209,181,.035)}
+  .s4 .sm-h{position:relative;font-size:18.5px;font-weight:600;color:#E4F3EF;letter-spacing:-.01em}
+  .s4 .ping{position:relative;display:flex;align-items:center;gap:8px;margin:14px 0 12px}
+  .s4 .ping i{width:7px;height:7px;border-radius:50%;background:#4FD1B5;box-shadow:0 0 10px #4FD1B5}
+  .s4 .ping i.dim{background:rgba(79,209,181,.32);box-shadow:none}
+  .s4 .ping i.gold{background:#C9A227;box-shadow:0 0 12px rgba(201,162,39,.7);width:8px;height:14px;border-radius:2px}
+  .s4 .ping span{font-size:10.5px;color:#7FA9A2;margin-left:5px}
+  .s4 .meta{position:relative;font-size:10.5px;color:#7FA9A2;display:flex;gap:7px;align-items:center}
+  .s4 .gold{color:#C9A227}
+
+  /* ---------- 05 Riso 套印 ---------- */
+  .s5{background:#F6F2E4;padding:20px 22px;
+      background-image:radial-gradient(#0000000f 1px,transparent 1.1px);background-size:5px 5px}
+  .s5 .blob{position:absolute;right:-30px;top:-20px;width:190px;height:190px;border-radius:50%;
+            background:#FF4D6D;mix-blend-mode:multiply;opacity:.72}
+  .s5 .blob2{position:absolute;right:34px;top:52px;width:140px;height:140px;border-radius:50%;
+             background:#2B6FFF;mix-blend-mode:multiply;opacity:.62}
+  .s5 .sm-h{position:relative;font-size:23px;font-weight:800;color:#141414;letter-spacing:-.02em;
+            max-width:66%;line-height:1.28}
+  .s5 .kick{position:relative;display:inline-block;background:#FF4D6D;color:#fff;font-size:10px;
+            font-weight:700;padding:3px 9px;letter-spacing:.1em;margin-bottom:11px}
+  .s5 .meta{position:relative;font-size:11px;color:#3A3A3A;margin-top:14px;display:flex;gap:7px;
+            align-items:center;font-weight:500;border-top:2px solid #141414;padding-top:10px;max-width:66%}
+
+  /* ---------- 06 冷白瓷 ---------- */
+  .s6{background:#F4F4F1;padding:22px 24px}
+  .s6 .card{background:#FBFBF9;border-radius:16px;padding:18px 20px;
+            box-shadow:0 1px 2px rgba(30,36,46,.05),0 12px 26px rgba(30,36,46,.09)}
+  .s6 .sm-h{font-size:18px;font-weight:600;color:#1E242E;letter-spacing:-.01em}
+  .s6 .meta{font-size:11px;color:#7E8794;margin-top:12px;display:flex;gap:8px;align-items:center}
+  .s6 .bar{height:5px;border-radius:4px;background:#E6E8EA;margin-top:16px;overflow:hidden;display:flex}
+  .s6 .bar i{height:100%}
+  .s6 .glaze{position:absolute;right:26px;top:26px;width:54px;height:54px;border-radius:50%;
+             background:radial-gradient(60% 60% at 35% 30%,#8FB7D6,#2F5D8A)}
+  .s6 .tag{font-size:10px;color:#2F5D8A;background:#E7EEF5;padding:3px 9px;border-radius:20px}
+
+  /* ---------- 07 地形图 ---------- */
+  .s7{background:#0E1D18;padding:20px 22px;color:#D6E4D8}
+  .s7::before{content:"";position:absolute;inset:-40%;
+     background:repeating-radial-gradient(circle at 30% 60%,transparent 0 16px,rgba(126,192,150,.13) 16px 17px)}
+  .s7 .sm-h{position:relative;font-size:18.5px;font-weight:600;color:#E8F3E9}
+  .s7 .mark{position:relative;display:inline-flex;align-items:center;gap:7px;margin-bottom:12px;
+            font-size:10px;letter-spacing:.14em;color:#C8F04A}
+  .s7 .mark i{width:9px;height:9px;border:2px solid #C8F04A;border-radius:50%;
+              box-shadow:0 0 0 4px rgba(200,240,74,.14)}
+  .s7 .meta{position:relative;font-size:10.5px;color:#8AA893;margin-top:14px;display:flex;gap:7px;align-items:center;
+            border-top:1px solid rgba(214,228,216,.14);padding-top:11px}
+  .s7 .lime{color:#C8F04A}
+
+  /* ---------- 08 温暖午夜 ---------- */
+  .s8{background:linear-gradient(165deg,#241F2C,#191622);padding:20px 22px;color:#F0E6D8}
+  .s8 .row{display:flex;gap:14px;align-items:flex-start}
+  .s8 .th{width:66px;height:66px;border-radius:16px;flex:0 0 66px;
+     background:linear-gradient(150deg,#E8A57A,#B96A55)}
+  .s8 .sm-h{font-size:18px;font-weight:600;color:#F5EDE1;letter-spacing:-.005em}
+  .s8 .pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;padding:4px 10px;border-radius:20px;
+            background:rgba(232,139,90,.18);color:#E8A57A;margin-bottom:10px}
+  .s8 .meta{font-size:10.5px;color:#A79B92;margin-top:11px;display:flex;gap:7px;align-items:center}
+  .s8 .sage{color:#8FB79A}
+  .s8 .soft{margin-top:14px;background:rgba(240,230,216,.05);border-radius:13px;padding:10px 12px;
+            font-size:11px;color:#BCAFA4;line-height:1.6}
+
+  .foot{margin-top:44px;border-top:1px solid #C9C2B4;padding-top:22px;font-size:12.5px;line-height:1.9;color:#5C574D}
+  .foot b{color:#1A1815}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>八个配色与质感世界</h1>
+  <p class="intro">同一条情报（Siri 芯片那条），换八种材质渲染，方便横向比。每格右下是它自己表达「已证实 / 共振」的方式——注意各家用的机制都不同：印章、显影、朱批、回波、套印、釉色、等高线、暖光。</p>
+  <div class="dims">挑的时候可以先定四个维度：<b>明 or 暗</b> · <b>暖 or 冷</b> · <b>纸 / 玻璃 / 金属 / 织物</b> · <b>有纹理 or 干净</b>。<br>说出你对哪一格「有反应」就行，不用说得出为什么——我来反推规则。</div>
+
+  <div class="grid">
+
+    <!-- 01 -->
+    <div class="w">
+      <div class="wh"><b>01 牛皮纸档案</b><span>DOSSIER</span></div>
+      <p class="wy">直接呼应 Sleuth 这个名字：情报是一份调查卷宗。打字机字体 + 档案编号 + 红色印章。质感是纸纤维和胶带。全世界没有一个 AI 应用长这样，而且"证据/溯源"在这套语言里是天生的。</p>
+      <div class="sample s1">
+        <div class="tape"></div>
+        <div class="no">卷宗 No. 0247 · 目标：APPLE SIRI · 开卷 2026-07-21</div>
+        <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h3>
+        <div class="rule"></div>
+        <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm wb">微</span><span class="pm of">官</span> 6 份材料 · 最早 07-21 · 官方 07-27 归档</div>
+        <div class="stamp">已证实</div>
+        <div class="clip"></div>
+      </div>
+      <div class="chips">
+        <i style="background:#D6C4A0;color:#5C4F38">#D6C4A0</i>
+        <i style="background:#2B2419;color:#D6C4A0">#2B2419</i>
+        <i style="background:#A83A2B;color:#fff">#A83A2B</i>
+        <i style="background:#6E5F45;color:#fff">#6E5F45</i>
+      </div>
+    </div>
+
+    <!-- 02 -->
+    <div class="w">
+      <div class="wh"><b>02 暗房显影</b><span>DARKROOM</span></div>
+      <p class="wy">暖黑 + 相纸米 + 安全灯红。核心隐喻绝配：<b>线索被证实的过程 = 照片显影的过程</b>。LEAD 是模糊的负片，多源佐证逐渐清晰，官方证实时完全显影。生命周期第一次有了物理表达。</p>
+      <div class="sample s2">
+        <div class="row">
+          <div class="neg"></div>
+          <div>
+            <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产指向明年春季</h3>
+            <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm of">官</span> 6 个来源 · 显影完成</div>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="st a">线报</div>
+          <div class="st b">多源佐证</div>
+          <div class="st c">已证实</div>
+        </div>
+        <div class="cap">显影进度即置信度 —— 越清晰越可信，不需要任何徽章</div>
+      </div>
+      <div class="chips">
+        <i style="background:#17120F;color:#E9E0D2">#17120F</i>
+        <i style="background:#E9E0D2;color:#17120F">#E9E0D2</i>
+        <i style="background:#D6452F;color:#fff">#D6452F</i>
+        <i style="background:#9A8C7C;color:#fff">#9A8C7C</i>
+      </div>
+    </div>
+
+    <!-- 03 -->
+    <div class="w">
+      <div class="wh"><b>03 宣纸朱砂</b><span>RICE PAPER</span></div>
+      <p class="wy">宣白、墨、朱砂三色，竖排刊头 + 印章。中文内容天然合身，且在一堆硅谷味 UI 里辨识度极高。批注/重要标记用朱笔——"朱批"这个动作本身就是产品语义（值得你看的，被红笔圈出来）。</p>
+      <div class="sample s3">
+        <div class="vert">情报　第二四七号</div>
+        <div>
+          <div class="seal">已证</div>
+          <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h3>
+          <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm of">官</span> 六源佐证 · <span class="red">朱批：值得你看</span></div>
+        </div>
+      </div>
+      <div class="chips">
+        <i style="background:#F4EFE4;color:#5C574D">#F4EFE4</i>
+        <i style="background:#1F1C17;color:#F4EFE4">#1F1C17</i>
+        <i style="background:#B33A2B;color:#fff">#B33A2B</i>
+        <i style="background:#8A8172;color:#fff">#8A8172</i>
+      </div>
+    </div>
+
+    <!-- 04 -->
+    <div class="w">
+      <div class="wh"><b>04 深海声呐</b><span>SONAR</span></div>
+      <p class="wy">墨青底 + 薄荷绿回波 + 铜金一手来源。"雷达"这个词的字面兑现，但走潜艇声呐而不是军绿雷达——冷静、有深度、比纯黑温暖。每个来源是一次回波，官方来源是金色的硬回波。</p>
+      <div class="sample s4">
+        <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产指向明年春季</h3>
+        <div class="ping">
+          <i class="dim"></i><i class="dim"></i><i></i><i></i><i></i><i></i><i class="gold"></i>
+          <span>7 次回波 · 最后一次是<span class="gold"> 官方硬回波</span></span>
+        </div>
+        <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm wb">微</span><span class="pm of">官</span> 6 个来源 · 2 小时前 · 共振强度 0.87</div>
+      </div>
+      <div class="chips">
+        <i style="background:#08151D;color:#CFE6E0">#08151D</i>
+        <i style="background:#4FD1B5;color:#08151D">#4FD1B5</i>
+        <i style="background:#C9A227;color:#08151D">#C9A227</i>
+        <i style="background:#7FA9A2;color:#08151D">#7FA9A2</i>
+      </div>
+    </div>
+
+    <!-- 05 -->
+    <div class="w">
+      <div class="wh"><b>05 Riso 套印</b><span>RISOGRAPH</span></div>
+      <p class="wy">独立杂志/小报的粗野印刷感：荧光粉 + 荧光蓝双色套印、网点、重叠错位。最"有态度"的一版，跟你自媒体的调性最合，社交平台截图传播力最强。代价是长时间阅读会累，需要克制用在头条区。</p>
+      <div class="sample s5">
+        <div class="blob"></div><div class="blob2"></div>
+        <div class="kick">共振 · 值得打扰</div>
+        <h3 class="sm-h">供应链称 Siri 改用自研芯片</h3>
+        <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm of">官</span> 6 个来源 / 已证实 / 比媒体早 4 天</div>
+      </div>
+      <div class="chips">
+        <i style="background:#F6F2E4;color:#141414">#F6F2E4</i>
+        <i style="background:#141414;color:#F6F2E4">#141414</i>
+        <i style="background:#FF4D6D;color:#fff">#FF4D6D</i>
+        <i style="background:#2B6FFF;color:#fff">#2B6FFF</i>
+      </div>
+    </div>
+
+    <!-- 06 -->
+    <div class="w">
+      <div class="wh"><b>06 冷白瓷</b><span>CERAMIC</span></div>
+      <p class="wy">最克制的一版：瓷白、极软阴影、无边框，一点釉蓝做强调。气质是实验室/医疗器械的洁净——"去噪"的隐喻。最容易做得高级，也最容易变得没记忆点，记忆点得靠釉色和阴影的手感撑。</p>
+      <div class="sample s6">
+        <div class="glaze"></div>
+        <div class="card">
+          <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产指向明年春季</h3>
+          <div class="meta"><span class="tag">已证实</span><span class="pm rd">R</span><span class="pm x">X</span><span class="pm of">官</span> 6 个来源 · 2 小时前</div>
+          <div class="bar">
+            <i style="width:28%;background:#C3CBD4"></i><i style="width:46%;background:#7E97AE"></i><i style="width:26%;background:#2F5D8A"></i>
+          </div>
+        </div>
+      </div>
+      <div class="chips">
+        <i style="background:#F4F4F1;color:#1E242E">#F4F4F1</i>
+        <i style="background:#1E242E;color:#F4F4F1">#1E242E</i>
+        <i style="background:#2F5D8A;color:#fff">#2F5D8A</i>
+        <i style="background:#7E8794;color:#fff">#7E8794</i>
+      </div>
+    </div>
+
+    <!-- 07 -->
+    <div class="w">
+      <div class="wh"><b>07 地形图</b><span>TOPOGRAPHIC</span></div>
+      <p class="wy">深绿黑底铺等高线纹理，荧光黄绿做唯一标记色。隐喻是"信息地貌"——等高线的密集处就是事件在聚集。比网格背景有机，比雷达扫描柔和，暗色但不冷冰。</p>
+      <div class="sample s7">
+        <div class="mark"><i></i>共振点 · 三平台 40 分钟内</div>
+        <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产指向明年春季</h3>
+        <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm wb">微</span><span class="pm of">官</span> 6 个来源 · <span class="lime">已证实</span> · 比媒体早 4 天</div>
+      </div>
+      <div class="chips">
+        <i style="background:#0E1D18;color:#D6E4D8">#0E1D18</i>
+        <i style="background:#2E5A48;color:#E8F3E9">#2E5A48</i>
+        <i style="background:#C8F04A;color:#0E1D18">#C8F04A</i>
+        <i style="background:#8AA893;color:#0E1D18">#8AA893</i>
+      </div>
+    </div>
+
+    <!-- 08 -->
+    <div class="w">
+      <div class="wh"><b>08 温暖午夜</b><span>WARM MIDNIGHT</span></div>
+      <p class="wy">暗色但去掉冰冷：偏紫棕的暖夜 + 奶油白字 + 桃橘 + 鼠尾草绿。像家里的夜灯，不像终端。是八个里唯一"深色且友好"的，如果你还是想要深色主界面（长时间看不刺眼），这版最安全，同时不撞紫蓝渐变。</p>
+      <div class="sample s8">
+        <div class="row">
+          <div class="th"></div>
+          <div>
+            <div class="pill">◉ 值得打扰 · 共振</div>
+            <h3 class="sm-h">供应链称 Siri 端侧模型改用自研芯片，量产指向明年春季</h3>
+            <div class="meta"><span class="pm rd">R</span><span class="pm x">X</span><span class="pm of">官</span> 6 个来源 · <span class="sage">已证实</span> · 2 小时前</div>
+          </div>
+        </div>
+        <div class="soft">为什么打扰你：3 个独立平台在 40 分钟内同时讨论，随后官方确认。比你订阅的媒体早 4 天。</div>
+      </div>
+      <div class="chips">
+        <i style="background:#1E1A28;color:#F0E6D8">#1E1A28</i>
+        <i style="background:#F0E6D8;color:#1E1A28">#F0E6D8</i>
+        <i style="background:#E8A57A;color:#1E1A28">#E8A57A</i>
+        <i style="background:#8FB79A;color:#1E1A28">#8FB79A</i>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>可以混。</b>常见的成熟做法是「主界面用安静的那个，头条/告警用有态度的那个」——比如 06 冷白瓷做日常阅读 + 05 Riso 做每日头条卡片；或 08 温暖午夜做应用壳 + 01 档案质感做证据面。<br>
+    <b>也可以按场景分。</b>01/03 更像"归档与溯源"，02/04/07 更像"监测与信号"，05 更像"对外传播"（网站、社交截图），06/08 更像"长时间日用"。你的应用这三件事都要做，未必只能有一种皮。
+  </div>
+</div>
+</body>
+</html>

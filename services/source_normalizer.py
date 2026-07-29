@@ -6,7 +6,7 @@ from db.models import RawArticle
 from repositories.repository import DBRepository
 from scrapers.url_normalizer import auto_route
 from services.adapters import SourceItem
-from services.provenance import Tier, tier_for_url
+from services.provenance import Tier, tier_for_url, HIGH_WEIGHT
 
 class SourceNormalizer:
     def __init__(self):
@@ -77,8 +77,7 @@ class SourceNormalizer:
             # single asymmetry is a large part of why 94% of the corpus came from
             # aggregators. Curated/first-party sources are trusted wholesale; the
             # junk floor and the fusion gate remain their quality control.
-            from services.provenance import HIGH_WEIGHT, tier_for_url as _tfu
-            _item_tier = _tfu(item.url, item.tier or Tier.CURATED)
+            _item_tier = tier_for_url(item.url, item.tier or Tier.CURATED)
             if keep_keywords and _item_tier not in HIGH_WEIGHT and \
                     not self.check_keywords_match(item.title, item.content, keep_keywords):
                 filtered += 1
@@ -89,13 +88,37 @@ class SourceNormalizer:
                 filtered += 1
                 continue
 
-            # 3b. Promotional / marketplace posts (ads, voucher resales). The
-            # relevance gate can't catch these — they're topically ON-target (a
-            # "Gemini Pro voucher" ad scored 0.648 vs a Gemini tracker). Screened
-            # deterministically here, before any embed/fusion cost.
-            if noise_filter.is_promotional(item.title, item.url):
-                filtered += 1
-                continue
+            # 3b. Editorial screens (A1–A5). All deterministic and zero-cost, run
+            # before any embed/fusion spend. The relevance gate cannot catch these
+            # — they are topically ON-target (the "Gemini Pro voucher" ad scored
+            # 0.648 against a Gemini tracker).
+            #
+            # TIER-SCOPED: aggregator items only. A source the user hand-picked is
+            # trusted wholesale — a vendor's own "we built X" post is a real
+            # launch, and a curated feed's release tag may be exactly what they
+            # asked to watch. Only the keyword firehose gets screened.
+            if _item_tier not in HIGH_WEIGHT:
+                if noise_filter.is_promotional(item.title, item.url):
+                    filtered += 1
+                    continue
+                # A1: bare version tags / empty titles with no body to summarize.
+                if noise_filter.is_contentless(item.title, item.content):
+                    filtered += 1
+                    continue
+                # A3: r/u_* profile posts that are ALSO self-promo/contentless.
+                # (A blanket profile-sub drop was measured to kill real Opus 5
+                # scoops, so the screen is guarded — see noise_filter.)
+                if noise_filter.is_low_value_profile_post(item.title, item.content, item.url):
+                    filtered += 1
+                    continue
+                # A4: third-party self-launches ("I built X that uses Claude").
+                if noise_filter.is_self_launch(item.title, item.url):
+                    filtered += 1
+                    continue
+                # A5: ambiguous-term collisions (zodiac Gemini, the dCi Grok engine).
+                if noise_filter.ambiguous_without_context(item.title, item.content):
+                    filtered += 1
+                    continue
                 
             # 3. Canonicalize URL
             canonical_url = auto_route(item.url)

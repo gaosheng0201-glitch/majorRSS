@@ -119,6 +119,19 @@
 
 **④ 首次使用可自证。** 空状态里写清"下一步做什么"（一个按钮：新建关注目标）；每个新概念（意图 / 线索 / 佐证 / 共振）在首次出现处有一句人话解释，可关掉。不做引导蒙层教程——需要教程才会用，说明结构错了。
 
+## 4.8 外部趋势校验（2026-07-29 联网核对）
+
+四条与本项目直接相关的外部信号：
+
+1. **玻璃已经不是差异化了，是系统默认。** Apple Liquid Glass 铺满 iOS/macOS 26 后遭遇可读性批评，2026 年 6 月 WWDC 上 Apple 自己回调、加了从"极清透"到"完全着色"的滑杆。结论：走玻璃方向 = 和系统以及所有跟风应用撞脸，且要替 Apple 已经踩过的可读性坑买单。玻璃可以作为**窗口壳**，不适合作为**内容承载面**。
+2. **纹理与"不完美"是明确的反向潮流。** 2026 的图形趋势集中在颗粒、噪点、risograph、手作痕迹、档案（archival）美学，动因明确写着"对 AI 生成的完美感的疲劳"。对一个 AI 产品来说这是反直觉但有效的定位：**AI 做的活儿，长着人手做的样子**。
+3. **Calm Tech 已经是一个被命名的运动**，与本项目「注意力保护」原则字面重合（留白是一等公民、把注意力当最稀缺资源、在中心与边缘之间平滑切换）。这条不是我们自己编的产品哲学，是有外部势能的。
+4. **"function-forward" 与仪表盘叙事化**：把网格当前景元素、等宽字体承担数据层、"dashboard 变成故事而不是电子表格"。→ 原方案里「等宽字承担仪器层」保留有效；「深色+琥珀终端皮肤」不必保留。
+
+来源：[TechCrunch · Apple 回调 Liquid Glass](https://techcrunch.com/2026/06/08/apple-is-tweaking-its-controversial-liquid-glass-design/) · [It's Nice That · 2026 图形趋势](https://www.itsnicethat.com/features/forward-thinking-graphic-trends-2026-graphic-design-120126) · [Kittl · 2026 设计趋势](https://www.kittl.com/blogs/graphic-design-trends-2026/) · [Envato · 2026 UX 趋势：平静界面](https://elements.envato.com/learn/ux-ui-design-trends) · [Tubik · 2026 UI 趋势](https://tubikstudio.com/blog/ui-design-trends-2026/)
+
+配色/质感候选见 [ui_mock_palettes.html](ui_mock_palettes.html)（八格）。
+
 ## 5. 参考（按用途分类，都不是拿来抄布局的）
 
 **仪器与信息密度**：Bloomberg Terminal（琥珀单色 + 等宽 + 零装饰，最接近我们要的气质）；航管 / 航海雷达显示；Teenage Engineering OP-1、TX-6 的丝印刻度语言；Dieter Rams / Braun 的仪表面板。
