@@ -186,12 +186,12 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 
 | # | 事项 | 说明 | 量级 |
 |---|---|---|---|
-| **B1** ⭐ | 新鲜度断言 | 修健康检查盲区："最新条目老于该源应有节奏 → FAILED 而非 empty"，看**条目日期**不看 HTTP 状态。抓 syndication-200-但停更8月 / nitter-200-空体 / 第三方feed停更三类陷阱。**本梯队唯一要写的代码** | ~半天 |
-| **B2′** ⭐ | 早期信号预设数据（两道分置） | **零新机制**。监控道预设：OpenRouter `/models`、models.dev（会变文档→diff通知）；雷达道 curated 预设：TestingCatalog leak RSS、SDK `releases.atom`×5、openai news。全部 2026-07-23 实测可用 | 纯数据 |
-| **B3** | nitter.net 替换死 rsshub 账号源 | rsshub.app twitter 路由永久死（302→google/404）；nitter.net 7/7 实测通过。0字节/429 = 重试后 FAILED（依赖 B1 语义） | ~2h |
-| **B4** | 预设账号源补回退梯队 + 修 platform 字段 | 现在预设 account 源单线锁死 rsshub 且 platform="rsshub" 导致授权永远挂不上；与 B3 同处改 | 小 |
-| **B5** | 排查 21/39 零产出精选源 + gemini 补 `source_scope` | arxiv 4 feed 全零不像巧合；gemini 目标裸奔是最大碰撞簇根源 | ~半天 |
-| **B6** | 一手信任按路径细分 | `openai.com/index/*` 保 PRIMARY；`/customer-stories`、社论降级——一手信任不给对方公关部消费 | 小 |
+| **B1** ✅ | 新鲜度断言 | 修健康检查盲区："最新条目老于该源应有节奏 → FAILED 而非 empty"，看**条目日期**不看 HTTP 状态。抓 syndication-200-但停更8月 / nitter-200-空体 / 第三方feed停更三类陷阱。**本梯队唯一要写的代码** | ~半天 |
+| **B2′** ✅ | 早期信号预设数据（两道分置） | **零新机制**。监控道预设：OpenRouter `/models`、models.dev（会变文档→diff通知）；雷达道 curated 预设：TestingCatalog leak RSS、SDK `releases.atom`×5、openai news。全部 2026-07-23 实测可用 | 纯数据 |
+| **B3** ✅ | nitter.net 替换死 rsshub 账号源 | rsshub.app twitter 路由永久死（302→google/404）；nitter.net 7/7 实测通过。0字节/429 = 重试后 FAILED（依赖 B1 语义） | ~2h |
+| **B4** ✅ | 预设账号源补回退梯队 + 修 platform 字段 | 现在预设 account 源单线锁死 rsshub 且 platform="rsshub" 导致授权永远挂不上；与 B3 同处改 | 小 |
+| **B5** ✅ | 排查 21/39 零产出精选源 + gemini 补 `source_scope` | arxiv 4 feed 全零不像巧合；gemini 目标裸奔是最大碰撞簇根源 | ~半天 |
+| **B6** ✅ | 一手信任按路径细分 | `openai.com/index/*` 保 PRIMARY；`/customer-stories`、社论降级——一手信任不给对方公关部消费 | 小 |
 
 ## 第二梯队 · 降噪 / 编辑价值（审计行动包）
 

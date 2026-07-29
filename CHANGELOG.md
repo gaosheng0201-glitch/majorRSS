@@ -82,6 +82,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **中断纠偏记录**：实现过程中会话被中断，恢复后逐文件甄别半成品——迁移 0009/去均值结构/gate 列保留；**中断前定的阈值 0.10 被边际校准推翻**（会误杀 4 条已知信号，含 0.086 的 Gemini 3.6 上线与 0.066 的 xAI 诉讼）改为 0.05；③④⑤⑥ 从零补齐。全部单测+集成测试+实机验证后一次提交。
 - **元教训（今后的验证关口）**：①②同属"changelog 写着已做、现实中从未生效"——relevance 门跑了数月拦截数为 0、索引声明了却不存在。验证必须验**效果**（真拦到东西没有、索引真的在不在），不能只验**行为**（代码跑通不报错）。
 
+##### 第一梯队：供给侧与健康（2026-07-28，B1–B6 —— "噪音问题有一半是供给问题"）
+
+审计结论是屏幕被垃圾填满、部分原因是**好的那一层是黑的**：7 个追踪账号 0 成功、21/39 精选源零产出、gemini 目标裸奔。本梯队专修供给侧。
+
+- **B1 新鲜度断言**（`services/source_health.py` + `scraper_service.py`）：**HTTP 200 不等于源还活着**。实地验证的三类"看着健康实则已死"：`syndication.twitter.com` 返回 200 + 格式完好的 JSON，但最新条目 **8 个月前**（该账号天天发）；`nitter.net` 对脚本 UA 和限流都返回 **200 + 空体**；第三方生成 feed 仓库还在动、发布的 XML 早已冻结。对雷达而言**静默陈旧比明确报错更危险**——它悄悄抽掉一整个话题，仪表盘却全绿。新增 `record_fetch` 改按**条目日期**判活：投递过却持续空返回（`EMPTY_RESPONSE`）、有条目但最新超期且此前更新鲜（`STALE_CONTENT`）→ 走 `record_failure` 退避/隔离并让同组回退梯队接手。三条护栏：无投递历史的新源/低频源永不惩罚、无日期条目不误判、恢复新内容即转健康。
+- **B2′ 早期信号源（纯数据，零新机制）**：新增 `ai_early_signals` 预设集合——TestingCatalog 泄露 feed（实测当日头条即「Anthropic preparing for potential Claude Opus 5 rollout」，正是作者最初追问的那条爆料）+ 库中已有的 SDK releases。OpenRouter `/models`、models.dev 属**会变的文档**，按架构裁决归**监控道**而非雷达管线，连同实测体积（585KB / 3.2MB）与配置建议写入 `docs/early_signal_sources.md`。
+- **B3/B4 人物雷达复活**（`services/source_resolver.py` + `scraper_service.py`）：7 个追踪账号从未成功，两个原因叠加——预设账号源被锁死在**单条 rsshub 路由**（无回退）而公共实例已永久禁用 twitter 路由；且其 `platform="rsshub"` 导致 `_enrich_routes_with_auth` 永远匹配不上 twitter 授权档案，**授权了也用不上**。改：预设与关键词账号共用同一 helper 生成三级回退——**nitter.net 优先**（零凭证，7/7 实测通过）→ rsshub（自建实例才有意义）→ 授权 agentic 快照，全部 `platform="twitter"` 以便挂授权；`_route_group` 认得预设梯队命名，三级同组、首成即停，避免每轮都触发昂贵的浏览器梯队。**依赖 B1**：没有新鲜度断言，nitter 的空响应会被读成"今天没新闻"而永不回退。
+- **B5 `keep_keywords` 只作用于聚合层**（`services/source_normalizer.py`）：查"21/39 精选源零产出"，根因出人意料——**这些源根本没坏**：各有约 **510 次成功抓取**且内容新鲜（arXiv 每天 340 篇、HuggingFace 833 篇、Cloudflare/Anthropic Status 均为当日）。全部在入库时被 `keep_keywords` 丢弃：该过滤器要求标题/正文含品牌词，而**官方发布很少重复自己的品牌名**，聚合器条目却必然命中（关键词本就是搜索词）。于是过滤器把用途搞反了——**该收窄的消防栓一条没拦，用户亲手挑的精选源被删干净**，这正是 94% 语料来自聚合器的结构性根因之一。改为仅对 AGGREGATED 生效；精选/一手源整体信任（质量由垃圾地板 + 融合门控把关）。顺带给 **gemini 目标补上它从未有过的 `source_scope`**（此前纯关键词裸奔，是最大碰撞簇来源）。
+- **B6 一手信任按路径细分**（`services/provenance.py`）：PRIMARY 无条件绕过融合门，于是**域名级信任被对方公关部消费**——审计抓到 openai.com 的客户故事与社论享受和模型发布同等付费待遇。`/customer-stories`、`/global-affairs`、`/careers`、`/pricing` 等营销路径降为 CURATED（仍受信任、仍免关键词过滤，但要像其他源一样挣摘要）；`/index/`、`/news/` 等真公告路径保持 PRIMARY。
+
 ##### 多日实跑暴露的两个"未结算"缺陷（2026-07-28，作者连跑数日后反馈）
 
 作者报告三个体感：待处理任务每天变多、老新闻被顶上 feed 但没有内容增量、新闻不够新。查证后：**两个真缺陷 + 一个误会**，两者同属一类病——**某阶段"故意不处理"某些内容，却没把它们标记为已结算**，于是在别处表现为无限增长或反复重做。
