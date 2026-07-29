@@ -76,6 +76,12 @@ def build_backend():
         "--hidden-import", "services.processor_service",
         "--hidden-import", "services.db_cleanup_service",
         "--hidden-import", "services.source_resolver",
+        # Imported lazily inside the scrape loop, so PyInstaller cannot see it
+        # statically. Left implicit it would raise inside the loop's generic
+        # except and silently disable host pacing — the exact class of invisible
+        # failure this pass exists to remove.
+        "--hidden-import", "services.host_politeness",
+        "--hidden-import", "services.browser_pool",
         "--hidden-import", "repositories.repository",
         "--hidden-import", "migrations.runner",
         "--hidden-import", "scrapers.auth_helper",
