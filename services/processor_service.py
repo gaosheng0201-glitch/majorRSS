@@ -27,6 +27,47 @@ FUSION_MAX_MEMBERS = int(os.environ.get("FUSION_MAX_MEMBERS", "12"))
 FUSION_MIN_SOURCES = int(os.environ.get("FUSION_MIN_SOURCES", "3"))
 
 
+# Feed boilerplate that precedes the real text. Measured on live data: arXiv
+# items begin "arXiv:2607.20452v1 Announce Type: new", which is metadata, not the
+# abstract.
+_BOILERPLATE = re.compile(
+    r"^\s*(?:arxiv:\S+\s*)?(?:announce\s+type:\s*\w+\s*)?"
+    r"(?:abstract:\s*)?", re.I)
+
+
+def _lead_snippet(content: str, title: str = "", limit: int = 300) -> str:
+    """The source's own opening, cleaned for display.
+
+    RawArticle.content keeps its HTML (clean_html only strips script/style), so
+    tags must come off here or they land in the feed verbatim — measured:
+    "<p>Changes since langchain-openai==1.4.0</p>". Feed boilerplate is dropped,
+    and a first line that merely repeats the headline is skipped so the card does
+    not say the same thing twice.
+    """
+    from bs4 import BeautifulSoup
+    try:
+        text = BeautifulSoup(content or "", "html.parser").get_text(" ", strip=True)
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", content or "")
+    text = _BOILERPLATE.sub("", re.sub(r"\s+", " ", text)).strip()
+    if not text:
+        return ""
+    norm_title = re.sub(r"\W+", "", (title or "")).lower()
+    parts = [p.strip() for p in re.split(r"(?<=[。．.!?！？])\s+", text) if p.strip()]
+    out = []
+    for p in parts:
+        if re.sub(r"\W+", "", p).lower() == norm_title:
+            continue                      # a line that is just the headline again
+        out.append(p)
+        if sum(len(x) for x in out) >= 80:  # one short sentence is rarely enough
+            break
+    if not out:
+        # Everything the body had was the headline again (common for feeds whose
+        # <description> just echoes the title). Say nothing rather than twice.
+        return "" if re.sub(r"\W+", "", text).lower() == norm_title else text[:limit].strip()
+    return " ".join(out)[:limit].strip()
+
+
 def _extractive_summary(thread, members, tracker) -> str:
     """The 抽取式 path (愿景 line 184: 合成优先抽取式；置信不足只给原文关键句+链接).
 
@@ -36,16 +77,7 @@ def _extractive_summary(thread, members, tracker) -> str:
     more faithful than a paraphrase (愿景 line 35: 真相与溯源). Zero LLM.
     """
     lead = members[0]
-    body = (lead.content or "").strip()
-    # First substantial sentence/line — the source's own words, never a rewrite.
-    snippet = ""
-    for part in re.split(r"(?<=[。．.!?！？])\s+|\n+", body):
-        part = part.strip()
-        if len(part) >= 24:
-            snippet = part[:300]
-            break
-    if not snippet:
-        snippet = body[:300]
+    snippet = _lead_snippet(lead.content or "", lead.title or "")
     links = "\n".join(f"- [{m.title}]({m.url})" for m in members[:8])
     return (f"[TITLE: {lead.title}]\n\n{snippet}\n\n---\n"
             f"**:material/menu_book: 摘要引用来源:**\n{links}"
