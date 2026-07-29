@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>MajoSleuth · 三个结构（不靠风格的方案）</title>
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --paper:#F5F3EE; --ink:#141310; --mid:#6E6A62; --hair:#CFC9BE; --hair2:#E2DCD1;
+    --red:#B8321F;
+    --serif:"Songti SC","Source Han Serif SC",Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  }
+  body{margin:0;background:#E7E4DE;color:var(--ink);font-family:var(--sans);padding:44px 26px 90px}
+  .page{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--serif);font-weight:400;font-size:28px;margin:0 0 10px}
+  .intro{font-size:13px;line-height:1.9;color:#57534B;margin:0 0 6px;max-width:860px}
+  .intro b{color:#141310}
+
+  /* 展柜：什么死了 / 什么活着 */
+  .exhibit{margin:26px 0 46px;background:#F5F3EE;border-radius:10px;padding:20px 22px}
+  .exhibit h3{font-size:11px;letter-spacing:.18em;color:var(--mid);margin:0 0 14px;font-weight:400;
+              font-family:var(--mono)}
+  .ex{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+  .ex .lb{font-size:11.5px;color:var(--mid);margin-bottom:10px}
+  .ex .items{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{border-radius:6px;padding:8px 10px;font-size:10.5px;line-height:1.4;min-width:96px;
+        font-family:var(--mono)}
+  .dead{background:#EBE6DC;color:#8C857A;text-decoration:line-through;text-decoration-color:#C1B8A8}
+  .alive{background:#141310;color:#F5F3EE}
+  .ex .note{font-size:11.5px;color:#57534B;line-height:1.8;margin-top:12px}
+
+  .cap{margin:46px 0 12px}
+  .cap b{font-size:15.5px}
+  .cap span{display:block;font-size:12.5px;color:#57534B;line-height:1.8;margin-top:6px;max-width:880px}
+  .frame{width:1120px;height:600px;border-radius:8px;overflow:hidden;position:relative;
+         box-shadow:0 14px 40px rgba(0,0,0,.14);background:var(--paper)}
+  @media(max-width:1200px){.frame{transform:scale(.83);transform-origin:top left;margin-bottom:-102px}}
+  .swap{font-size:11.5px;color:#6E6A62;margin-top:12px;font-family:var(--mono)}
+
+  /* ============ T1 台账 ============ */
+  .T1{padding:0;display:flex;flex-direction:column}
+  .T1 .hd{display:flex;align-items:baseline;gap:14px;padding:20px 30px 14px;border-bottom:2px solid var(--ink)}
+  .T1 .hd .nm{font-family:var(--serif);font-size:17px;letter-spacing:.1em}
+  .T1 .hd .dt{font-family:var(--mono);font-size:10.5px;color:var(--mid);letter-spacing:.08em}
+  .T1 .hd .rt{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--mid)}
+  .T1 .colhead{display:grid;grid-template-columns:82px 1fr 128px 96px 82px;gap:0;
+     font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--mid);
+     padding:9px 30px;border-bottom:1px solid var(--hair)}
+  .T1 .row{display:grid;grid-template-columns:82px 1fr 128px 96px 82px;gap:0;align-items:center;
+     padding:15px 30px;border-bottom:1px solid var(--hair2)}
+  .T1 .row.mark{background:linear-gradient(90deg,rgba(184,50,31,.05),transparent 42%)}
+  .T1 .t{font-family:var(--mono);font-size:10.5px;color:var(--mid);line-height:1.5}
+  .T1 .t b{display:block;color:var(--ink);font-weight:400;font-size:12px}
+  .T1 .ttl{font-family:var(--serif);font-size:17px;line-height:1.45;padding-right:26px}
+  .T1 .row.mark .ttl::before{content:"";display:inline-block;width:5px;height:5px;background:var(--red);
+     border-radius:50%;vertical-align:middle;margin-right:9px;margin-top:-3px}
+  .T1 .ev{display:flex;gap:5px;align-items:center}
+  .T1 .ev i{width:7px;height:7px;border:1px solid var(--mid);border-radius:50%}
+  .T1 .ev i.f{background:var(--mid)}
+  .T1 .ev i.o{background:var(--ink);border-color:var(--ink);border-radius:0;width:5px;height:13px}
+  .T1 .st{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink)}
+  .T1 .st.w{color:var(--mid)}
+  .T1 .cost{font-family:var(--mono);font-size:10.5px;color:var(--mid);text-align:right}
+  .T1 .ft{margin-top:auto;border-top:2px solid var(--ink);padding:11px 30px;display:flex;
+     justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--mid);letter-spacing:.06em}
+
+  /* ============ T2 Unigrid ============ */
+  .T2{padding:0;display:flex;flex-direction:column}
+  .T2 .band{background:var(--ink);color:var(--paper);padding:11px 34px;display:flex;
+     align-items:baseline;gap:20px;font-family:var(--mono);font-size:10px;letter-spacing:.2em}
+  .T2 .band .n{font-family:var(--sans);font-size:13px;font-weight:700;letter-spacing:.24em}
+  .T2 .band .r{margin-left:auto;opacity:.62}
+  .T2 .body{flex:1;display:grid;grid-template-columns:repeat(12,1fr);gap:0;padding:26px 34px 0}
+  .T2 .lead{grid-column:1/9;padding-right:34px;border-right:1px solid var(--hair)}
+  .T2 .lead .lbl{font-family:var(--mono);font-size:9px;letter-spacing:.22em;color:var(--red);margin-bottom:14px}
+  .T2 .lead h2{font-family:var(--sans);font-weight:700;font-size:37px;line-height:1.18;
+     letter-spacing:-.02em;margin:0 0 18px}
+  .T2 .lead p{font-size:13px;line-height:1.9;color:#3D3931;margin:0;max-width:88%}
+  .T2 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:26px;
+     border-top:1px solid var(--ink);padding-top:12px}
+  .T2 .facts div .k{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;color:var(--mid)}
+  .T2 .facts div .v{font-family:var(--sans);font-size:21px;font-weight:700;margin-top:5px;letter-spacing:-.01em}
+  .T2 .facts div .v small{font-size:11px;font-weight:400;color:var(--mid)}
+  .T2 .side{grid-column:9/13;padding-left:26px}
+  .T2 .side .sh{font-family:var(--mono);font-size:9px;letter-spacing:.22em;color:var(--mid);
+     border-bottom:1px solid var(--ink);padding-bottom:8px;margin-bottom:12px}
+  .T2 .side .it{padding:11px 0;border-bottom:1px solid var(--hair2)}
+  .T2 .side .it h4{font-size:14px;line-height:1.5;margin:0;font-weight:600}
+  .T2 .side .it .m{font-family:var(--mono);font-size:9.5px;color:var(--mid);margin-top:6px;letter-spacing:.04em}
+  .T2 .side .quiet{margin-top:16px;font-family:var(--mono);font-size:9.5px;color:var(--mid);line-height:2}
+
+  /* ============ T3 面板 ============ */
+  .T3{background:#DEDBD4;padding:26px 28px;display:flex;gap:22px}
+  .T3 .panel{background:#EDEBE5;border:1px solid #C8C4BA;border-radius:3px;padding:16px 18px}
+  .T3 .left{flex:0 0 250px;display:flex;flex-direction:column;gap:14px}
+  .T3 .lbl{font-family:var(--mono);font-size:8.5px;letter-spacing:.22em;color:#7A756B;margin-bottom:11px}
+  .T3 .ch{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D8D4CA}
+  .T3 .ch:last-child{border-bottom:0}
+  .T3 .ch i{width:8px;height:8px;border-radius:50%;border:1px solid #8C877D;flex:0 0 8px}
+  .T3 .ch i.on{background:var(--red);border-color:var(--red)}
+  .T3 .ch .n{font-size:12.5px;color:#221F1A}
+  .T3 .ch .v{margin-left:auto;font-family:var(--mono);font-size:10px;color:#7A756B}
+  .T3 .gauge{display:flex;align-items:flex-end;gap:2px;height:38px;margin-top:4px}
+  .T3 .gauge i{flex:1;background:#C2BDB2}
+  .T3 .gauge i.hi{background:#221F1A}
+  .T3 .num{font-family:var(--mono);font-size:26px;letter-spacing:-.02em;margin-top:10px}
+  .T3 .num small{font-size:10px;color:#7A756B;letter-spacing:.1em;margin-left:6px}
+  .T3 .main{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .T3 .rec{display:flex;gap:16px;align-items:flex-start;padding:15px 18px;background:#EDEBE5;
+     border:1px solid #C8C4BA;border-radius:3px}
+  .T3 .rec.hot{border-color:var(--red);border-left-width:3px}
+  .T3 .rec .idx{font-family:var(--mono);font-size:9.5px;color:#7A756B;letter-spacing:.1em;
+     padding-top:3px;flex:0 0 62px}
+  .T3 .rec h4{font-size:16px;line-height:1.5;margin:0 0 9px;font-weight:600;color:#191712}
+  .T3 .rec .ln{font-family:var(--mono);font-size:9.5px;color:#7A756B;letter-spacing:.06em;
+     display:flex;gap:14px;flex-wrap:wrap}
+  .T3 .rec .ln b{color:#191712;font-weight:400}
+  .T3 .rec .ln .r{color:var(--red)}
+  .T3 .strip{display:flex;gap:3px;margin-top:11px}
+  .T3 .strip i{height:3px;flex:1;background:#CFCAC0}
+  .T3 .strip i.a{background:#8C877D}.T3 .strip i.b{background:#221F1A}
+  .T3 .foot{margin-top:auto;display:flex;gap:18px;font-family:var(--mono);font-size:9.5px;
+     color:#7A756B;letter-spacing:.08em;padding-top:6px}
+
+  .close{margin-top:52px;border-top:1px solid #C9C2B4;padding-top:24px;font-size:13px;line-height:1.95;
+         color:#3D3931;max-width:900px}
+  .close b{color:#141310}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>三个结构 · 不靠风格活着的方案</h1>
+  <p class="intro">上一轮八个都是<b>皮肤</b>——皮肤按定义就会过时，而且越"当下"的皮肤死得越快。这一轮换成<b>结构</b>：记忆点长在版面逻辑里，不长在材质、颜色、光影里。判据很简单——<b>把颜色全抽掉、把纹理全去掉，它还认得出是它吗？</b>下面三个都能通过这一关。</p>
+
+  <div class="exhibit">
+    <h3>十八年的证据</h3>
+    <div class="ex">
+      <div>
+        <div class="lb">死掉的 —— 全是「效果」，平均寿命 3–5 年</div>
+        <div class="items">
+          <div class="chip dead">拟物高光<br>2008</div>
+          <div class="chip dead">长阴影<br>2013</div>
+          <div class="chip dead">扁平霓虹<br>2016</div>
+          <div class="chip dead">新拟态<br>2020</div>
+          <div class="chip dead">紫蓝渐变<br>2023</div>
+          <div class="chip dead">毛玻璃<br>2025</div>
+        </div>
+      </div>
+      <div>
+        <div class="lb">活着的 —— 全是「系统」，寿命 15–70 年</div>
+        <div class="items">
+          <div class="chip alive">瑞士网格<br>1957</div>
+          <div class="chip alive">Unigrid<br>1977</div>
+          <div class="chip alive">Bloomberg<br>1982</div>
+          <div class="chip alive">iA Writer<br>2010</div>
+          <div class="chip alive">Things<br>2017</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">规律：靠<b>渲染技巧</b>取得辨识度的都死了（技巧会被系统内置，一内置就烂大街）；靠<b>信息组织方式</b>取得辨识度的都活着。上一轮我给你的档案纸、暗房、riso，全在左边那一列的路上。</div>
+  </div>
+
+  <!-- ================= T1 ================= -->
+  <div class="cap"><b>T1 · 台账（Ledger）</b>
+    <span>把时间做成一根固定的轴，每条线索是账簿上的一行，证据在固定的列里累积。灵感来源是火车时刻表和复式账簿——这两样东西的版式一百五十年没变过，因为它们解决的是同一个问题：<b>让一堆事实按同一个坐标可比</b>。软件里几乎没人这么做，所以它同时满足"眼熟"和"没见过"。记忆点是那根时间轴和那几根发丝线，跟颜色无关。</span></div>
+  <div class="frame T1">
+    <div class="hd">
+      <span class="nm">MAJOSLEUTH</span>
+      <span class="dt">情报台账 · 2026-07-28</span>
+      <span class="rt">上次结账 07-26 09:12 · 本页 4 行 · 静默 8 行未列</span>
+    </div>
+    <div class="colhead">
+      <span>时间</span><span>线索</span><span>证据累积</span><span>状态</span><span style="text-align:right">成本</span>
+    </div>
+
+    <div class="row mark">
+      <div class="t"><b>14:20</b>2 小时前</div>
+      <div class="ttl">供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</div>
+      <div class="ev"><i></i><i></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="o"></i></div>
+      <div class="st">已证实</div>
+      <div class="cost">$0.04</div>
+    </div>
+
+    <div class="row">
+      <div class="t"><b>09:41</b>今天</div>
+      <div class="ttl">Anthropic API changelog 新增 3 条目，1 条影响你在用的流式接口</div>
+      <div class="ev"><i class="o"></i></div>
+      <div class="st">官方一手</div>
+      <div class="cost">$0.00</div>
+    </div>
+
+    <div class="row">
+      <div class="t"><b>15:48</b>40 分钟前</div>
+      <div class="ttl">论坛出现三张疑似新机后盖照片</div>
+      <div class="ev"><i></i></div>
+      <div class="st w">未证实</div>
+      <div class="cost">$0.00</div>
+    </div>
+
+    <div class="row" style="opacity:.55">
+      <div class="t"><b>07-26</b>2 天前</div>
+      <div class="ttl">欧盟数字市场法案第二轮问询，涉及默认助手绑定</div>
+      <div class="ev"><i class="f"></i><i class="f"></i><i class="o"></i></div>
+      <div class="st w">已读</div>
+      <div class="cost">$0.02</div>
+    </div>
+
+    <div class="ft">
+      <span>○ 社交 · ● 媒体 · ▮ 一手来源 —— 横向即时间顺序</span>
+      <span>本日合计 $0.11 · 过滤 1,109 条 · 到底了</span>
+    </div>
+  </div>
+  <div class="swap">抽掉颜色 → 仍然是它。换成深色 → 仍然是它。身份在「固定列 + 发丝线 + 时间轴」里。</div>
+
+  <!-- ================= T2 ================= -->
+  <div class="cap"><b>T2 · Unigrid（极端尺度对比）</b>
+    <span>Vignelli 给美国国家公园做的那套系统，1977 年至今没改过，今天印出来仍然不土。做法是：一条黑带 + 一个刚性栅格 + <b>把字号拉到极端两端</b>（9pt 的标签 vs 37pt 的标题），中间尺寸一律不用。没有卡片、没有圆角、没有阴影——所以没有东西可以过时。红只出现在一个地方：值得打扰的那条。</span></div>
+  <div class="frame T2">
+    <div class="band">
+      <span class="n">MAJOSLEUTH</span>
+      <span>情报 · 第 247 期</span>
+      <span>2026 · 07 · 28</span>
+      <span class="r">上次见面 07-26 · 值班中 · 27 源</span>
+    </div>
+    <div class="body">
+      <div class="lead">
+        <div class="lbl">值得打扰 · 共振 · 三平台 40 分钟内</div>
+        <h2>供应链称 Siri 端侧模型<br>改用自研芯片</h2>
+        <p>最早由代工厂端流出，六天后官方公告间接确认量产窗口指向明年春季。比你订阅的任何一家媒体早 4 天。</p>
+        <div class="facts">
+          <div><div class="k">来源</div><div class="v">6 <small>个独立</small></div></div>
+          <div><div class="k">最早</div><div class="v">07.21 <small>论坛</small></div></div>
+          <div><div class="k">证实</div><div class="v">07.27 <small>官方</small></div></div>
+          <div><div class="k">领先</div><div class="v">4 <small>天</small></div></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="sh">其余进展</div>
+        <div class="it">
+          <h4>Anthropic API changelog 新增 3 条目</h4>
+          <div class="m">官方一手 · 09:41 · 页面 DIFF</div>
+        </div>
+        <div class="it">
+          <h4>论坛出现三张疑似新机后盖照片</h4>
+          <div class="m">单源 · 未证实 · 40 分钟前</div>
+        </div>
+        <div class="it" style="opacity:.5">
+          <h4>欧盟数字市场法案第二轮问询</h4>
+          <div class="m">已读 · 3 个来源 · 2 天前</div>
+        </div>
+        <div class="quiet">
+          安静的目标<br>
+          国产 GPU 与制程 —— 无进展<br>
+          FDA 罕见病审批 —— 无进展<br>
+          静默进展 8 条 —— 不值得提醒
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="swap">身份在「黑带 + 栅格 + 尺度断层」里。字体可换、颜色可换、深浅可换，它还是它。</div>
+
+  <!-- ================= T3 ================= -->
+  <div class="cap"><b>T3 · 面板（Instrument Panel）</b>
+    <span>Braun / Nagra / Aicher 那一路：<b>不透明的哑光面板、硬边、1px 分区、极小的字母间距标签、大号等宽数字</b>。关键差别是它<b>没有任何模拟效果</b>——没有玻璃、没有阴影、没有渐变，所以没有可老化的部分。1965 年的仪器面板今天看仍然对，2065 年也一样。这版比上一轮的"接收机"硬，去掉了软阴影和塑料感。</span></div>
+  <div class="frame T3">
+    <div class="left">
+      <div class="panel" style="flex:1">
+        <div class="lbl">关注目标 · 5</div>
+        <div class="ch"><i class="on"></i><span class="n">Apple Siri</span><span class="v">3</span></div>
+        <div class="ch"><i></i><span class="n">Anthropic API</span><span class="v">1</span></div>
+        <div class="ch"><i></i><span class="n">国产 GPU</span><span class="v">—</span></div>
+        <div class="ch"><i></i><span class="n">FDA 罕见病</span><span class="v">—</span></div>
+        <div class="ch"><i></i><span class="n">选题线报</span><span class="v">6</span></div>
+      </div>
+      <div class="panel">
+        <div class="lbl">本周信号</div>
+        <div class="gauge">
+          <i style="height:38%"></i><i style="height:60%"></i><i style="height:28%"></i>
+          <i style="height:76%"></i><i class="hi" style="height:46%"></i><i style="height:24%"></i><i style="height:52%"></i>
+        </div>
+        <div class="num">27<small>源在监</small></div>
+      </div>
+      <div class="panel">
+        <div class="lbl">今日成本</div>
+        <div class="num">0.11<small>美元</small></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="rec hot">
+        <div class="idx">001<br>14:20</div>
+        <div style="min-width:0">
+          <h4>供应链称 Siri 端侧模型改用自研芯片，量产窗口指向明年春季</h4>
+          <div class="ln"><span>来源 <b>6</b></span><span>状态 <b>已证实</b></span><span>领先媒体 <b>4 天</b></span><span class="r">共振 · 值得打扰</span></div>
+          <div class="strip"><i></i><i></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="b"></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="rec">
+        <div class="idx">002<br>09:41</div>
+        <div style="min-width:0">
+          <h4>Anthropic API changelog 新增 3 条目，1 条影响你在用的流式接口</h4>
+          <div class="ln"><span>来源 <b>1</b></span><span>状态 <b>官方一手</b></span><span>方式 <b>页面 DIFF</b></span></div>
+          <div class="strip"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="b"></i><i></i></div>
+        </div>
+      </div>
+      <div class="rec">
+        <div class="idx">003<br>15:48</div>
+        <div style="min-width:0">
+          <h4>论坛出现三张疑似新机后盖照片</h4>
+          <div class="ln"><span>来源 <b>1</b></span><span>状态 <b>未证实</b></span><span>等待第二方</span></div>
+          <div class="strip"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="a"></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="foot"><span>共 3 条 · 静默 8 条未列</span><span>到底了</span><span style="margin-left:auto">上次 07-26 09:12</span></div>
+    </div>
+  </div>
+  <div class="swap">身份在「哑光面板 + 硬边分区 + 大号等宽数字」里。没有模拟材质 = 没有会老化的部分。</div>
+
+  <div class="close">
+    <b>为什么这三个不会过时：</b>它们的辨识度全部来自「信息怎么排」，而不是「表面怎么渲染」。渲染技巧一旦被操作系统内置（阴影、玻璃、渐变都经历过），你的独特性就当场归零；而版面逻辑不会被内置，因为它是你这个产品特有的信息结构长出来的。<br><br>
+    <b>三个的性格差别：</b>T1 台账最冷静、密度最高，适合每天看很多条的人；T2 Unigrid 最有编辑主张，一屏只讲一件事，最像"给你一个人办的报"；T3 面板最像专业设备，适合"我的监测系统在运转"这种心理。<br><br>
+    <b>三个都能套任意皮。</b>浅色深色、衬线无衬线、暖调冷调都换得动，身份不变——这正是"五年不过时"的技术定义：<b>可以换皮而不失去自己</b>。
+  </div>
+</div>
+</body>
+</html>
