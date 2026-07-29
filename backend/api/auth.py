@@ -56,11 +56,19 @@ def create_auth_profile(profile_in: AuthProfileCreate, session: Session = Depend
     # to write directly to the UUID storage_ref.
     from playwright.sync_api import sync_playwright
     import json
-    
+
+    # Packaged builds otherwise inherit Playwright's frozen-mode default of
+    # looking for browsers inside the bundle, which we do not ship — the login
+    # window would simply never appear. Fail with the install instruction instead.
+    from services.browser_pool import ensure_browsers_path
+    browsers_problem = ensure_browsers_path()
+    if browsers_problem:
+        raise HTTPException(status_code=503, detail=browsers_problem)
+
     platform = AUTH_PLATFORMS[profile_in.platform]
     success = False
     msg = ""
-    
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(

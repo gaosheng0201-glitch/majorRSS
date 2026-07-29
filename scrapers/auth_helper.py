@@ -179,26 +179,27 @@ def live_check_cookie_health(platform_key: str, cookie_path: str) -> tuple:
 
     check_url = platform.get("check_url") or f"https://{platform['domains'][0]}"
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+        # one_off_browser (not a bare sync_playwright) so this survives being
+        # called from a thread that already runs the scraper's pooled driver —
+        # Playwright allows one sync instance per thread — and so it reports a
+        # missing browser install as itself rather than as a launch failure.
+        from services.browser_pool import one_off_browser
+        with one_off_browser() as browser:
+            context = browser.new_context(
+                storage_state=storage_state,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+            page.goto(check_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(2000)
             try:
-                context = browser.new_context(
-                    storage_state=storage_state,
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-                page = context.new_page()
-                page.goto(check_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(2000)
-                try:
-                    page_text = page.inner_text("body")
-                except Exception:
-                    page_text = ""
-                matched = detect_login_wall(platform, page.url, page_text)
-                if matched:
-                    return False, f"Login wall detected ({matched})"
-                return True, "Session accepted by platform"
-            finally:
-                browser.close()
+                page_text = page.inner_text("body")
+            except Exception:
+                page_text = ""
+            matched = detect_login_wall(platform, page.url, page_text)
+            if matched:
+                return False, f"Login wall detected ({matched})"
+            return True, "Session accepted by platform"
     except Exception as e:
         # A network failure is not proof of an expired session — report it as
         # inconclusive rather than flipping the profile to Expired.
@@ -218,7 +219,12 @@ def interactive_login(platform_key: str):
     platform = AUTH_PLATFORMS[platform_key]
     from db.config import get_cookie_path
     output_file = get_cookie_path(platform["cookie_file"])
-    
+
+    from services.browser_pool import ensure_browsers_path
+    browsers_problem = ensure_browsers_path()
+    if browsers_problem:
+        return False, f"❌ {browsers_problem}"
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(

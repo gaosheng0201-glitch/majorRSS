@@ -4,13 +4,17 @@ import json
 import hashlib
 
 from services.log_service import get_logger
-from services.browser_pool import acquire_page
+from services.browser_pool import acquire_page, one_off_browser
 from services.content_extract import extract_main_text
 
 logger = get_logger("scraper.tier3")
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+# Floor for "this page actually said something". Deliberately low: enough to
+# reject a bare <title> or an error line, not so high it discards a short post.
+_MIN_SNAPSHOT_CHARS = 200
 
 
 class CookieExpiredException(Exception):
@@ -66,7 +70,15 @@ class AgenticScraper:
         return detected_platform, cookie_file, storage_state, context_key
 
     def _drive_page(self, page, detected_platform, cookie_file, storage_state, has_storage) -> str:
-        page.goto(self.url, wait_until="networkidle", timeout=60000)
+        # NOT networkidle: the sites that need a browser at all (x.com, weibo,
+        # anything with a live feed) poll forever, so networkidle never fires and
+        # every fetch burned the full 60s timeout before failing. Load the DOM,
+        # then give the page a bounded moment to hydrate.
+        page.goto(self.url, wait_until="domcontentloaded", timeout=30000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass  # a chatty page is normal here, not a failure
 
         if detected_platform:
             from scrapers.auth_helper import detect_login_wall
@@ -117,37 +129,53 @@ class AgenticScraper:
         has_storage = storage_state is not None
 
         # Preferred path: pooled persistent context (reused browser, stable
-        # fingerprint). Fall back to a one-off browser only if the pool errors,
-        # so a pool problem never silently loses a scrape.
+        # fingerprint). The one-off fallback is for a POISONED POOL only — if the
+        # page itself failed (timeout, navigation error, login wall) a second
+        # browser will fail identically, and retrying just doubled the cost of
+        # every doomed fetch. So the fallback is scoped to page ACQUISITION.
         try:
-            with acquire_page(context_key=context_key, storage_state=storage_state, user_agent=_UA) as page:
-                if self.cookie_string:
-                    self._add_cookie_string(page)
-                html = self._drive_page(page, detected_platform, cookie_file, storage_state, has_storage)
-        except CookieExpiredException:
-            raise
+            page_cm = acquire_page(context_key=context_key, storage_state=storage_state, user_agent=_UA)
+            page = page_cm.__enter__()
         except Exception as e:
-            logger.warning(f"Pooled fetch failed ({e}); falling back to one-off browser.")
-            html = self._fetch_one_off(detected_platform, cookie_file, storage_state, has_storage)
+            logger.warning(f"Browser pool unavailable ({e}); falling back to one-off browser.")
+            return self._finish(
+                self._fetch_one_off(detected_platform, cookie_file, storage_state, has_storage),
+                return_html)
+        try:
+            if self.cookie_string:
+                self._add_cookie_string(page)
+            html = self._drive_page(page, detected_platform, cookie_file, storage_state, has_storage)
+        finally:
+            page_cm.__exit__(None, None, None)
 
+        return self._finish(html, return_html)
+
+    def _finish(self, html: str, return_html: bool) -> str:
         if not html:
             return ""
         if return_html:
-            return html
-        return extract_main_text(html)
+            return html          # monitors diff raw HTML; they judge substance themselves
+        text = extract_main_text(html)
+        # A rendered page that yields only a line of text is a shell, not content:
+        # a login wall the detector did not match, an error page, or an app frame
+        # that never hydrated. Unauthenticated x.com, for one, extracts to exactly
+        # its <title>. Passing that on manufactured articles whose body is a page
+        # title and — worse for monitors — a fingerprint that changes whenever the
+        # title does. Report nothing rather than something false.
+        if len(text.strip()) < _MIN_SNAPSHOT_CHARS:
+            logger.warning(
+                f"Agentic snapshot of {self.url} yielded only {len(text.strip())} chars "
+                f"— treating as empty (likely a login wall or unrendered shell).")
+            return ""
+        return text
 
     def _fetch_one_off(self, detected_platform, cookie_file, storage_state, has_storage) -> str:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            try:
-                kwargs = {"user_agent": _UA, "viewport": {"width": 1280, "height": 800}}
-                if storage_state:
-                    kwargs["storage_state"] = storage_state
-                context = browser.new_context(**kwargs)
-                page = context.new_page()
-                if self.cookie_string:
-                    self._add_cookie_string(page)
-                return self._drive_page(page, detected_platform, cookie_file, storage_state, has_storage)
-            finally:
-                browser.close()
+        with one_off_browser() as browser:
+            kwargs = {"user_agent": _UA, "viewport": {"width": 1280, "height": 800}}
+            if storage_state:
+                kwargs["storage_state"] = storage_state
+            context = browser.new_context(**kwargs)
+            page = context.new_page()
+            if self.cookie_string:
+                self._add_cookie_string(page)
+            return self._drive_page(page, detected_platform, cookie_file, storage_state, has_storage)

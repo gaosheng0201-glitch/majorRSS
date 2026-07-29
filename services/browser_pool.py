@@ -12,13 +12,75 @@ threads), so the pool is THREAD-LOCAL — each thread lazily owns its own
 Playwright + browser + context cache. Threads persist in the pool, so reuse
 spans both the URLs of one scrape and successive cycles.
 """
+import os
+import sys
 import threading
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Optional
 
 from services.log_service import get_logger
 
 logger = get_logger("browser_pool")
+
+_UNRESOLVED = object()
+_browsers_verdict = _UNRESOLVED
+
+
+def _default_browsers_dir() -> Path:
+    """Playwright's own per-platform cache location, i.e. where `playwright
+    install` puts browsers."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "ms-playwright"
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ms-playwright"
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ms-playwright"
+
+
+def ensure_browsers_path() -> Optional[str]:
+    """Point Playwright at browsers that actually exist, and say so when they don't.
+
+    Playwright's own `_transport.py` does, verbatim:
+
+        if getattr(sys, "frozen", False):
+            env.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+
+    "0" means "browsers live inside the package", which is true for PyInstaller
+    builds that bundle them — ours does not. The result was that every agentic
+    fetch in the packaged app looked in `driver/package/.local-browsers/…`, found
+    nothing, and failed: 0 successes out of 399 attempts, which silently took the
+    whole browser/auth capability offline (and with it the only route to
+    login-walled platforms). Because Playwright uses setdefault, presetting the
+    variable is enough to override it.
+
+    Returns None when browsers are available, or a human-readable reason when
+    they are missing, so callers can surface something actionable instead of the
+    misleading errors this used to produce. Resolved once per process: the
+    verdict is cached so the value we set ourselves is never mistaken on a later
+    call for an operator-supplied one.
+    """
+    global _browsers_verdict
+    if _browsers_verdict is not _UNRESOLVED:
+        return _browsers_verdict
+    _browsers_verdict = _resolve_browsers_path()
+    return _browsers_verdict
+
+
+def _resolve_browsers_path() -> Optional[str]:
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH") not in (None, "", "0"):
+        return None                       # operator set it explicitly; respect that
+    bundled = Path(getattr(sys, "_MEIPASS", "")) / "playwright" / "driver" / "package" / ".local-browsers"
+    if getattr(sys, "frozen", False) and bundled.is_dir() and any(bundled.iterdir()):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"   # genuinely bundled
+        return None
+    shared = _default_browsers_dir()
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(shared)
+    if not shared.is_dir() or not any(shared.glob("chromium*")):
+        return (f"Playwright browsers are not installed at {shared}. "
+                f"Run `playwright install chromium` once to enable browser-based "
+                f"(agentic / authorized) sources.")
+    logger.info(f"Playwright browsers: {shared}")
+    return None
 
 _DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -57,6 +119,9 @@ def _thread_state():
 
 def _ensure_browser(st):
     from playwright.sync_api import sync_playwright
+    problem = ensure_browsers_path()
+    if problem:
+        raise RuntimeError(problem)
     if st["browser"] is not None and st["browser"].is_connected():
         return st["browser"]
     # (Re)start playwright + browser for this thread.
@@ -114,6 +179,36 @@ def acquire_page(context_key: Optional[str] = None, storage_state=None, user_age
     finally:
         try:
             page.close()
+        except Exception:
+            pass
+
+
+@contextmanager
+def one_off_browser():
+    """A throwaway browser for the fallback path, reusing THIS thread's
+    Playwright driver when it already has one.
+
+    Playwright's sync API permits exactly one running instance per thread. The
+    fallback used to call `sync_playwright().start()` unconditionally, so once
+    the pool had started one in the same thread the fallback died with "Sync API
+    inside the asyncio loop" — an error about the *second* start, which masked
+    whatever actually broke the pooled attempt (in practice: missing browsers).
+    Only the browser is one-off; the driver is shared and left running.
+    """
+    problem = ensure_browsers_path()
+    if problem:
+        raise RuntimeError(problem)
+    st = _thread_state()
+    owns_driver = st["pw"] is None
+    if owns_driver:
+        from playwright.sync_api import sync_playwright
+        st["pw"] = sync_playwright().start()
+    browser = st["pw"].chromium.launch(headless=True)
+    try:
+        yield browser
+    finally:
+        try:
+            browser.close()
         except Exception:
             pass
 
