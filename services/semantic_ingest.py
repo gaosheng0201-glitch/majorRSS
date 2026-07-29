@@ -214,6 +214,16 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     created = 0
     updated = 0
     gated = 0
+    # Arbiter accounting (author request 2026-07-29): the LLM event-arbiter is
+    # the one generation call in the "cheap"半 of the pipeline, so its call
+    # volume must be visible per cycle to judge whether raising
+    # THREAD_HIGH_CONFIDENCE was worth it. Spend itself is billed under the
+    # EventArbiter action in tokenusage → Billing 的「成本构成」卡.
+    arb_calls = 0              # gray-zone merges actually sent to the LLM
+    arb_splits = 0             # …of which the LLM rejected as a different event
+    arb_failed = 0             # …calls that errored (embedding decision kept)
+    arb_skipped_confident = 0  # merges accepted on embedding confidence alone
+    arb_skipped_budget = 0     # gray-zone merges that ran out of budget
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
         for article, vec in embedded:
@@ -272,11 +282,24 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
             if (tid is not None and arbiter is not None and arb_budget > 0
                     and sim < sm.THREAD_HIGH_CONFIDENCE):
                 arb_budget -= 1
+                arb_calls += 1
                 rep_title = (thread_by_id[tid].title or "")
                 same = _llm_same_event(arbiter, rep_title, article.title or "")
                 if same is False:
-                    logger.info(f"Arbiter split: '{(article.title or '')[:40]}' ≠ event of thread {tid}")
+                    arb_splits += 1
+                    logger.info(f"Arbiter split (sim={sim:.2f}): '{(article.title or '')[:40]}' "
+                                f"≠ event of thread {tid}")
                     tid = None
+                elif same is None:
+                    arb_failed += 1
+            elif tid is not None and arbiter is not None and arb_budget <= 0 \
+                    and sim < sm.THREAD_HIGH_CONFIDENCE:
+                arb_skipped_budget += 1
+            elif tid is not None and sim >= sm.THREAD_HIGH_CONFIDENCE:
+                # Merged on embedding confidence alone. Counted so the share of
+                # unexamined merges stays visible — if this dominates and
+                # over-merges persist, THREAD_HIGH_CONFIDENCE is still too low.
+                arb_skipped_confident += 1
             if tid is None:
                 # A brand-new thread from a first-party source is CONFIRMED
                 # outright (an official announcement); otherwise it starts LEAD.
@@ -356,10 +379,16 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
             session.commit()
 
     logger.info(f"Semantic ingest: embedded {len(embedded)}, threads +{created} ~{updated}, "
-                f"gated {gated}, embed_skipped {embed_skipped}")
+                f"gated {gated}, embed_skipped {embed_skipped} | "
+                f"arbiter: {arb_calls} calls, {arb_splits} splits, {arb_failed} failed, "
+                f"{arb_skipped_confident} skipped(confident), {arb_skipped_budget} skipped(budget)")
     return {"embedded": len(embedded), "threads_created": created,
             "threads_updated": updated, "relevance_gated": gated,
-            "embed_skipped": embed_skipped}
+            "embed_skipped": embed_skipped,
+            "arbiter_calls": arb_calls, "arbiter_splits": arb_splits,
+            "arbiter_failed": arb_failed,
+            "arbiter_skipped_confident": arb_skipped_confident,
+            "arbiter_skipped_budget": arb_skipped_budget}
 
 
 def refresh_resonance(window_days: int = 14) -> int:

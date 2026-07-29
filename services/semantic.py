@@ -56,7 +56,17 @@ THREAD_CANDIDATE_FLOOR = 0.05
 # confident enough to skip the LLM event-arbiter. Between the thread threshold
 # and this, a merge is plausible-but-risky (same entity, maybe different event),
 # so an LLM confirms it's the same event (services/semantic_ingest).
-THREAD_HIGH_CONFIDENCE = 0.55
+#
+# Raised 0.55 → 0.80 (2026-07-29) after a measured over-merge: thread 134 pulled
+# "Google DeepMind dismantles the AlphaFold team" into a 16-source thread about
+# Hassabis lobbying Washington, and the summary then led with the odd one out.
+# That article's centered similarity to the thread was 0.547 — right at the old
+# bar, i.e. exactly the gray zone the arbiter exists for, yet it merged. Same
+# entity + same organisation reliably scores in the 0.5–0.7 band, so the old bar
+# let a whole class of same-entity/different-event merges through unexamined.
+# The arbiter is one cheap one-word completion (~245 tokens); per-cycle counts are
+# logged and billed under EventArbiter so the cost share stays measurable.
+THREAD_HIGH_CONFIDENCE = 0.80
 
 # Global corpus mean for anisotropy correction, maintained by the ingest layer.
 _CORPUS_MEAN: Optional[List[float]] = None
