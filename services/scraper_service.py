@@ -324,6 +324,19 @@ def scrape_single_tracker(tracker_id: int):
                              error=f"source_health:{skip_reason}")
                 continue
 
+            # Host politeness: source_health is keyed per ENDPOINT, so a 429 on
+            # one of this host's ~23 routes taught the other 22 nothing and they
+            # kept firing into the same refusal (reddit: 24% success, 498 429s).
+            # Rate limits are issued per HOST, so pacing and cooldown live there.
+            from services import host_politeness
+            host_skip = host_politeness.wait_for_slot(route.url_or_command)
+            if host_skip:
+                logger.info(f"Skipping route {route.route_id}: {host_skip}")
+                tracer.event("FETCH", status="SKIPPED", route_id=route.route_id, adapter=adapter_name,
+                             input_data=desensitize_url(route.url_or_command),
+                             error=f"host_politeness:{host_skip}")
+                continue
+
             # Account guard: an authorized route spends the account's fragile,
             # rationed credit. Skip when the circuit is open or the hourly budget
             # is spent; queued work waits rather than hammering the account.
@@ -379,6 +392,8 @@ def scrape_single_tracker(tracker_id: int):
                 # masquerading as a quiet feed.
                 stale_reason = source_health.record_fetch(health_key, items, latency_ms=duration)
                 fetched_ok = stale_reason is None
+                # The host answered us — clear any cooldown it was serving.
+                host_politeness.record_success(route.url_or_command)
                 if account_key:
                     account_guard.record_yield(account_key, items=len(items))
                 tracer.event("FETCH",
@@ -425,6 +440,9 @@ def scrape_single_tracker(tracker_id: int):
                 logger.warning(f"Fetch failed for {route.url_or_command} [{error_type}]: {e}")
                 db.set_pipeline_status(tracker.name, "Probe Failed", f"[{domain}] {error_type}: {e}")
                 source_health.record_failure(health_key, error_type=error_type)
+                # ...and if the host refused us rather than this one endpoint,
+                # park every route on it instead of discovering that 22 more times.
+                host_politeness.record_failure(route.url_or_command, error_type)
                 # Rate-limit / captcha on an authorized route = account risk signal.
                 if account_key and error_type in ("RATE_LIMITED", "CAPTCHA_REQUIRED"):
                     account_guard.record_risk_signal(account_key, signal=error_type)
