@@ -6,7 +6,7 @@ from db.models import RawArticle
 from repositories.repository import DBRepository
 from scrapers.url_normalizer import auto_route
 from services.adapters import SourceItem
-from services.provenance import Tier, tier_for_url, HIGH_WEIGHT
+from services.provenance import Tier, tier_for_url, HIGH_WEIGHT, is_untrusted_code_host_path
 
 class SourceNormalizer:
     def __init__(self):
@@ -97,7 +97,14 @@ class SourceNormalizer:
             # trusted wholesale — a vendor's own "we built X" post is a real
             # launch, and a curated feed's release tag may be exactly what they
             # asked to watch. Only the keyword firehose gets screened.
-            if _item_tier not in HIGH_WEIGHT:
+            # Code-host user content (a github repo that is not a release, a HF
+            # model card) is screened even though it lands in CURATED: it arrived
+            # via an aggregator and is published by anyone, so it did not earn the
+            # "the user picked this source" exemption. Measured: 20 "Show HN: my
+            # side project" posts were inheriting github.com's first-party trust
+            # and skipping every screen.
+            _screened = _item_tier not in HIGH_WEIGHT or is_untrusted_code_host_path(item.url)
+            if _screened:
                 if noise_filter.is_promotional(item.title, item.url):
                     filtered += 1
                     continue

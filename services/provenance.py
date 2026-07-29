@@ -81,6 +81,28 @@ def is_marketing_path(url: str) -> bool:
     return any(m in path for m in _MARKETING_PATH_MARKERS)
 
 
+# github.com hosts BOTH official vendor releases and anything any user pushes.
+# Trusting the whole domain let 20 "Show HN: my side project" posts inherit
+# PRIMARY and skip the editorial screens entirely (measured). Only release and
+# changelog paths are first-party; everything else is ordinary user content and
+# must earn its place like any other aggregator item.
+_CODE_HOST_DOMAINS = ("github.com", "github.io", "gitlab.com", "huggingface.co")
+_CODE_HOST_OFFICIAL_PATHS = ("/releases", "/tags", "/changelog", "/blog", "/security/advisories")
+
+
+def is_untrusted_code_host_path(url: str) -> bool:
+    """True for a code-hosting URL that is NOT a release/changelog — i.e. ordinary
+    user-published content that should not inherit the domain's first-party trust."""
+    d = domain(url)
+    if not any(d == h or d.endswith("." + h) for h in _CODE_HOST_DOMAINS):
+        return False
+    try:
+        path = urllib.parse.urlparse(url or "").path.lower()
+    except Exception:
+        path = (url or "").lower()
+    return not any(p in path for p in _CODE_HOST_OFFICIAL_PATHS)
+
+
 def is_first_party(url: str) -> bool:
     d = domain(url)
     if any(d.endswith(sfx) for sfx in _FIRST_PARTY_SUFFIXES):
@@ -97,7 +119,8 @@ def tier_for_url(url: str, base: str) -> str:
     should not be spendable by the vendor's marketing team."""
     if base == Tier.AGGREGATED:
         return Tier.AGGREGATED
-    if is_first_party(url) and not is_marketing_path(url):
+    if is_first_party(url) and not is_marketing_path(url) \
+            and not is_untrusted_code_host_path(url):
         return Tier.PRIMARY
     return Tier.CURATED
 
