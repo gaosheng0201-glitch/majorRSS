@@ -196,6 +196,41 @@ _DISAMBIGUATORS = (
 )
 
 
+# --- A6: community housekeeping / recurring bot posts / job & referral spam ----
+# The author observed that lead is still full of junk and that emoji titles are
+# usually worthless. Measured on the corpus: 172 titles carry emoji, but emoji is
+# a CORRELATE, not a cause, and using it directly would drop
+# "🚨 Google has revealed the first details about Gemini 4" — an unreleased-model
+# leak, exactly what the radar exists for — and "📰 TSLA: Tesla Q2 Profits Slide
+# 5%", real financial news that earned a summary. Same trap as the r/u_* blanket
+# rule that would have killed the Opus 5 scoops.
+# So screen the CAUSES instead, each near-zero false positive:
+_SUB_HOUSEKEEPING = re.compile(
+    r"welcome to r/|introduce yourself|read this first|start here\b"
+    r"|^\s*\[?(?:meta|mod\s*post|announcement)\]?\s*[:\]]", re.I)
+# Recurring scheduled posts: a daily thread is a container, never an event.
+_RECURRING_POST = re.compile(
+    r"\bdaily (?:rng|prompt|thread|discussion|astrology|horoscope|chat)\b"
+    r"|\b(?:daily|weekly|monthly)\s+\w+\s+thread\b"
+    r"|\bhoroscope\b|\bastrology\b", re.I)
+# Job boards and referral/invite farming. Deliberately NOT "apply now": measured,
+# that catches vendor programme announcements ("Apply Now for Build with Gemini
+# XPRIZE", "Apply Now: Google DeepMind AI for the Planet Accelerator").
+_JOB_REFERRAL = re.compile(
+    r"\bjobs?\s+hiring\b|\bhiring\s+(?:now|asap)\b|\bwork\s+from\s+home\b"
+    r"|\bremote\s+jobs?\b|\bnow\s+hiring\b"
+    r"|\breferral\s+(?:link|code)\b|\binvite\s+code\b|\buse\s+my\s+link\b"
+    r"|\bgrab\s+\d+\s*[⚡🎁]", re.I)
+
+
+def is_community_housekeeping(title: str, url: str = "") -> bool:
+    """Subreddit meta posts, recurring scheduled threads, job/referral spam —
+    structural containers with no event in them."""
+    t = title or ""
+    return bool(_SUB_HOUSEKEEPING.search(t) or _RECURRING_POST.search(t)
+                or _JOB_REFERRAL.search(t))
+
+
 def ambiguous_without_context(title: str, content: str = "") -> bool:
     """True when the item matched only because of an ambiguous term and carries
     no lab/product context — the zodiac / engine-code / CRT-television collisions."""

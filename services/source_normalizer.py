@@ -126,6 +126,10 @@ class SourceNormalizer:
                 if noise_filter.ambiguous_without_context(item.title, item.content):
                     filtered += 1
                     continue
+                # A6: subreddit meta posts, recurring bot threads, job/referral spam.
+                if noise_filter.is_community_housekeeping(item.title, item.url):
+                    filtered += 1
+                    continue
                 
             # 3. Canonicalize URL
             canonical_url = auto_route(item.url)
