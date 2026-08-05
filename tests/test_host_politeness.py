@@ -103,3 +103,29 @@ def test_a_skipped_route_does_not_consume_a_slot():
     before = hp._next_free["reddit.com"]
     hp.reserve("https://www.reddit.com/search.rss?q=late")
     assert hp._next_free["reddit.com"] == before
+
+
+def test_a_missing_browser_is_our_fault_not_the_endpoint_s():
+    # The packaged app could not find a browser for days. Every x.com route
+    # recorded the failure as its own — 7 failures, 0 successes, one short of
+    # permanent quarantine — for a bug on our side. Classification is what keeps
+    # that out of endpoint health (see NOT_ENDPOINT_FAULT in scraper_service).
+    from services.error_classifier import classify_error, CAPABILITY_UNAVAILABLE
+    from services.scraper_service import NOT_ENDPOINT_FAULT
+
+    for exc in (RuntimeError("Playwright browsers are not installed at /x. "
+                             "Run `playwright install chromium` once"),
+                Exception("BrowserType.launch: Executable doesn't exist at "
+                          "/Users/x/chromium_headless_shell-1217/headless_shell")):
+        assert classify_error(exc) == CAPABILITY_UNAVAILABLE
+        assert classify_error(exc) in NOT_ENDPOINT_FAULT
+
+
+def test_a_real_source_failure_is_still_the_endpoint_s():
+    from services.error_classifier import classify_error
+    from services.scraper_service import NOT_ENDPOINT_FAULT
+
+    for exc in (Exception("HTTP Error: 404 Client Error: Not Found"),
+                Exception("HTTP Error: 502 Server Error: Bad Gateway"),
+                Exception("RSS Parse Error: not well-formed")):
+        assert classify_error(exc) not in NOT_ENDPOINT_FAULT

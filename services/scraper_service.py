@@ -12,7 +12,13 @@ from scrapers.tier3_agentic import AgenticScraper, CookieExpiredException
 from services.source_resolver import SourceResolver, SourceRoute
 from services.source_normalizer import SourceNormalizer
 from services.adapters import RssAdapter, RssHubAdapter, AgenticAdapter, SourceItem
-from services.error_classifier import classify_error, format_error
+from services.error_classifier import (classify_error, format_error,
+                                       CAPABILITY_UNAVAILABLE, RATE_LIMITED)
+
+# Failures that are not the endpoint's fault, so they must not shape its health:
+# a host-wide refusal, or a capability missing on our side. Both are recorded at
+# the scope that owns them (host_politeness / the capability's own diagnostic).
+NOT_ENDPOINT_FAULT = (RATE_LIMITED, CAPABILITY_UNAVAILABLE)
 from services.log_service import get_logger
 
 db = DBRepository()
@@ -439,15 +445,20 @@ def scrape_single_tracker(tracker_id: int):
                 error_type = classify_error(e)
                 logger.warning(f"Fetch failed for {route.url_or_command} [{error_type}]: {e}")
                 db.set_pipeline_status(tracker.name, "Probe Failed", f"[{domain}] {error_type}: {e}")
-                # Record the failure at the scope that actually owns it. A 429 is
-                # issued per HOST: charging it to the endpoint too is double
-                # punishment for one fault, and it is the endpoint that pays the
-                # larger price — measured on the live DB, 16 reddit endpoints
-                # carried RATE_LIMITED penalties (5 quarantined outright, others
-                # backed off up to 2.4h) for a refusal none of them caused. The
-                # host cooldown already stops the traffic; the endpoint should
-                # keep a clean record so it can run the moment the host reopens.
-                if error_type != "RATE_LIMITED":
+                # Record the failure at the scope that actually owns it. Endpoint
+                # health exists to answer "is THIS source worth retrying" — so a
+                # failure no endpoint could have avoided must not be charged to
+                # one. Two kinds qualify, and both were measured doing real harm:
+                #   RATE_LIMITED — issued per host. 16 reddit endpoints carried
+                #     penalties (5 quarantined) for a refusal none of them caused.
+                #   CAPABILITY_UNAVAILABLE — our browser was missing, so all 7
+                #     x.com routes sat at 7 failures / 0 successes, one short of
+                #     permanent quarantine, for a bug on our side.
+                # The damage is also self-concealing: a quarantined route never
+                # runs, never succeeds, and so never clears — which is how a fixed
+                # pipeline can keep looking broken. Backoff on this class would
+                # only delay the retry that proves the capability is back.
+                if error_type not in NOT_ENDPOINT_FAULT:
                     source_health.record_failure(health_key, error_type=error_type)
                 host_politeness.record_failure(route.url_or_command, error_type)
                 # Rate-limit / captcha on an authorized route = account risk signal.

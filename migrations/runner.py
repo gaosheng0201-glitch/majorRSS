@@ -25,7 +25,8 @@ def run_migrations():
             "0009_indexes_and_gate_marker",
             "0010_fusion_increment_snapshot",
             "0011_from_account",
-            "0012_release_rate_limit_quarantine"
+            "0012_release_rate_limit_quarantine",
+            "0013_release_capability_failures"
         ]
         
         for m in migrations:
@@ -333,6 +334,30 @@ def run_migrations():
                             "UPDATE sourcehealth SET consecutive_failures = 0, "
                             "state = 'healthy', next_eligible_at = NULL "
                             "WHERE last_error_type = 'RATE_LIMITED'"))
+                    session.commit()
+
+                elif m == "0013_release_capability_failures":
+                    # Companion to 0012, for the other not-the-endpoint's-fault
+                    # class. While the packaged app could not find a browser, the
+                    # 7 x.com routes recorded 7 failures and 0 successes each —
+                    # one short of permanent quarantine — for a bug on our side.
+                    # With the browser fixed they were still serving ~5.5h
+                    # backoffs, so the repair stayed invisible.
+                    #
+                    # Scope: never succeeded AND last error unclassified. That is
+                    # exactly the browser-outage signature (verified: 7 rows, all
+                    # x.com). Deliberately safe to over-apply — a route released
+                    # in error simply fails once more and re-earns its backoff
+                    # within one cycle, whereas leaving it costs a capability
+                    # that looks broken for hours after it was fixed.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    if "sourcehealth" in inspector.get_table_names():
+                        conn.execute(text(
+                            "UPDATE sourcehealth SET consecutive_failures = 0, "
+                            "state = 'healthy', next_eligible_at = NULL "
+                            "WHERE total_success = 0 AND last_error_type = 'UNKNOWN_ERROR'"))
                     session.commit()
 
                 sv = SchemaVersion(version_id=m)
