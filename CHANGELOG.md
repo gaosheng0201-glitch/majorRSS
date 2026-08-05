@@ -108,8 +108,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **广告混入雷达：相关性门是"话题相关"不是"编辑价值"**（新增 `services/noise_filter.py` + `services/source_normalizer.py`）：reddit `r/DiscountOffer90` 的「[OFFER] Gemini Ai Pro 代金券 $4.99」广告，对 Gemini 目标的相关度高达 **0.648**（阈值 0.35）——因为它字面就是"关于 Gemini"。**向量无法区分"关于 X 的新闻"与"卖 X 的广告"**，调高阈值只会先杀死真新闻。故加一道**正交的确定性入库筛**：① 社区市场标签（`[OFFER]/[WTS]/[WTB]/[H]…[W]` 等结构化前缀）；② 促销子版块（`/r/<sub>` 名按 camelCase/数字分词后匹配 discount/deal/coupon/giveaway… ，故 `r/IdealSociety` 不会被 "Ideal" 里的 "deal" 误伤）。**刻意不用松散词**（coupon / "30% off" / cheap）——"Nvidia 降价 30% off"是真新闻；此处精度优先于召回：漏掉一条广告只是小烦扰，误杀一条独家是产品事故。在 embed/fusion 之前拦下，零成本。
   - **同轮迭代（实测驱动）**：首版只按 camelCase/数字/下划线分词，漏掉**全小写连写**的版块名（`r/subscriptionsharing`、`r/DiscountandVouchers`）→ 补一道**高辨识度子串**匹配（discount/coupon/giveaway/forsale/cheap/promo/subscriptionsharing/accountsharing…），仍刻意排除 `deal`/`sale`/`share` 这类会命中 `IdealSociety`、`wholesale` 的词。回溯全库共识别并清理 **16 条**促销贴（账号代购、Steam key 交易、游戏飞船交易、银币买卖等，全部来自 reddit 关键词搜索）。
 
+##### P4 前置：每条获取管线都要真的能跑（2026-07-29 ~ 08-05，作者要求"p4 之前要确保每个获取信息管线正确运行，auth 态的我还完全没有测试呢"）
+
+先按 `pipelineevent` 实测每条入口的健康度，而不是凭日志印象：
+
+| 路由 | 运行 | 成功 | 症状 |
+|---|---|---|---|
+| preset | 17486 | 13086 (75%) | 主力，正常 |
+| gnews | 2167 | 2155 (99%) | 健康 |
+| hn | 2157 | 1321 (61%) | 416× 502 |
+| reddit | 2157 | 511 (**24%**) | 498× 429 |
+| nitter | 420 | 219 (52%) | B3/B4 后恢复 |
+| rsshub | 399 | **0** | 公共实例已永久停用 twitter 路由（已知，非缺陷） |
+| agentic | 399 | **0** | 浏览器找不到 |
+
+`authprofile` 表为空——**授权态从未运行过一次**。本轮修复的四类问题有一个共同点：**它们都自我掩盖**，看到的症状从来不是原因。
+
+- **①agentic 0/399：Playwright 自己假设打包应用自带浏览器**（`services/browser_pool.py` + `scrapers/tier3_agentic.py` + `backend/api/auth.py` + `scrapers/auth_helper.py`）。根因是 Playwright `_transport.py` 里的一行——`if getattr(sys, "frozen", False): env.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")`。`"0"` 意为"浏览器在包内"，对打包时收了浏览器的应用成立，我们没收，于是打包版永远去 `driver/package/.local-browsers/` 找一个**从未存在过的目录**。整个浏览器能力（连同通往登录墙平台的唯一路径）静默下线。因其用的是 `setdefault`，抢先设好即可覆盖：新增 `ensure_browsers_path()`（有打包浏览器则用包内，否则指向 OS 缓存；确实缺失时返回**可执行的安装指引**而非启动失败），授权建档 / cookie 活检 / 交互登录三条路径同样接入——它们本会以完全相同的方式失败。
+  - 连带三个**被它掩盖**的缺陷：`_fetch_one_off` 在池子已起过 Playwright 的同一线程里再起一个（sync API 每线程限一个），抛出的 "Sync API inside the asyncio loop" 是**关于回退本身**的错误，把真正的原因挡在后面（改用 `one_off_browser()` 复用本线程驱动）；回退对**任何**池内失败都触发，包括页面超时——第二个浏览器会以同样方式失败，等于给注定失败的抓取加倍计价（改为只在**取页失败**时回退，那是它唯一能修的东西）；`goto` 用 `wait_until="networkidle"`，而**需要浏览器的站点恰恰是持续轮询的那些**，networkidle 永不触发、每次烧满 60s 超时，x.com 要 120s 才失败（改 `domcontentloaded` + 5s 有界沉降，**120s → 15s**）。
+  - **渲染后正文不足 200 字符视为空**：未登录的 x.com 恰好只抽得出 `<title>`（25 字符），而 `adapters.py` 只挡 `if not text` —— 页面标题一直在被当作正文；对监控道更糟，标题一变就是一次**假变更事件**。
+- **②reddit 24%：作用域错误，不是端点故障**（新增 `services/host_politeness.py`）。单条路由都没问题。`source_health` 按**端点**退避（有意为之：一条失效的 gnews 关键词搜索不该拖垮共享 `news.google.com` 的所有目标，其 docstring 一直写着"域名级礼貌是另一件事"——那件事从未被实现）。而 429 是按**主机**下发的：一轮生成 ~23 条 reddit 路由连发，第一个 429 教不会另外 22 个。新模块补上缺失的作用域：同主机请求间隔化（未授权 reddit 6s、HN 2s、志愿者维护的公共实例 5s）、429 冻结整个主机（翻倍至 1 小时）、单次 5xx 是噪音但连续 3 次是主机在要求让路、任何成功即解除。
+  - 只加间隔会**把限速换成饿死**：6s 间隔下 23 条需两分多钟，而路由顺序稳定，同样几条会永远抢到名额、其余永不运行。故每轮**从上轮用尽名额处接着服务**——实测每轮 4 条、6 轮覆盖全部 23 条。被让路的路由记为 SKIPPED 并带原因，让上限出现在管线日志里，而不是伪装成"已覆盖"。
+- **③一次主机级拒绝被记了两笔账**（`services/scraper_service.py` + 迁移 `0012`）。冷却生效后日志仍满是 `quarantined` 和 `backoff:8732s`——旧规则把一次 host-wide 拒绝同时记到主机和当时在飞的每个端点头上，而**端点付出的代价高得多**：隔离是自我维持的，被隔离的路由永不运行 → 永不成功 → 永不解除。实测 16 条 reddit 端点背着 `RATE_LIMITED` 处罚（5 条已彻底隔离、退避最长 2.4 小时），无一条是它自己造成的。
+- **④同一条规则的另一半：能力缺失也不是端点的错**（`services/error_classifier.py` + 迁移 `0013`）。装上修好的构建跑第一轮，浏览器管线明明活了却仍**全部跳过**——`source_health:backoff:19682s`。旧版找不到浏览器的那些天，每一次失败都被记在端点头上：7 条 x.com 路由全是 `7 次失败 / 0 次成功`，**再失败一次就永久隔离，而错在我们自己**。③当时是按特例处理的；它不是特例，是一条规则：**端点健康回答的是"这个源值不值得重试"，那么源没造成、也无法避免的失败就不该塑造它**。两类统一为 `NOT_ENDPOINT_FAULT`（`RATE_LIMITED` 归主机层 / 新增 `CAPABILITY_UNAVAILABLE` 归其自身诊断），而非继续堆 if 分支。`CAPABILITY_UNAVAILABLE` 排在 `SOURCE_UNAVAILABLE` 之前分类，免得错误信息里的浏览器路径被误读成"源挂了"。迁移按"从未成功 + 错误未分类"定范围（**正是浏览器停摆的签名**，实测 7 行全为 x.com），刻意宽松：误放的路由一轮内会再失败并重新挣回退避，而漏放则让一个已修好的能力持续数小时看起来是坏的。
+- **⑤账号来源改为入口盖章**（`services/provenance.py` → `SourceRoute.is_account` → `SourceItem.from_account` → `RawArticle.from_account`，迁移 `0011`）。见下方架构审查 Drift 2。
+- **实机前后对比（同一天，旧构建全天 vs 新构建修复后一轮）**：429 **15 → 1**、502 **8 → 0**、浏览器缺失 **7 → 0**、成功 58；剩余 8 条 `endpoint health` 跳过全部核实为**真实故障**（rsshub 公共实例永久停用 ×6、HN 真 502 ×2），不该被"修"。agentic 路由现为 `SUCCESS / 0 items`——**这正是未授权下的正确行为**：空壳被 200 字符下限如实报告为"没有内容"，而不是伪造成正文。
+- **授权流程首次运行**：交互登录窗口确实弹出（`[browser_pool] Playwright browsers: …` + `Waiting for user to login`），作者选择暂不登录（等准备小号，避免主账号风险）。原实现失败时只给一行"required cookie not found"并丢弃全部证据，无从区分"没登录就关窗"与"登录了但 session cookie 落在没查的地方"——这正是它长期无法测试的一大原因。改为报告捕获到多少 cookie、来自哪些域、分别是什么，**只记名称与域名**：cookie 的值就是凭据本身，绝不可进日志或 API 响应。
+- **测试 24 → 41**：新增 `tests/test_host_politeness.py`（作用域 bug 本身、冷却范围、5xx 阈值、增长与解除、轮转公平与覆盖、被让路不占名额、能力缺失 vs 真实源故障的分类）与 `tests/test_account_provenance.py`（旧启发式的两个失效方向、关键词消防栓永非人物雷达、门控读取盖章）。
+- **仍挂账（需作者裁决）**：打包不含浏览器（chromium 336M + headless_shell 189M）。当前依赖机器上已有的 `playwright install`——开发机有，新用户没有。选项：打进安装包 / 首次运行按需下载 / 让 agentic 保持可选能力。
+
+##### 架构漂移审查（2026-07-29，作者要求）
+
+作者原话：*"明明是架构层偏移了但是通过局部补丁去修复，最后架构层还是偏移的但是局部修复了感觉不到，容易在积累很多后爆发。"* 查到 3 处漂移（2 处系本人近期造成）、5 处干净：
+
+- **Drift 1（本人）：规划期决策塞进运行时**。`gnews_locale_params()` 用正则看关键词字形猜 Google News 版本，但愿景语言三原则①明确"**话题的信源地理分布是话题属性**"——那是**懂话题的规划器**该决定的（Apple Siri = EN 一手 + ja 供应链 + zh 爆料），正则只知道"这个词是汉字"。且愿景里 gnews 的 `hl/gl` 只是**分路机制的例子**，Portfolio 本该驱动全部路由（reddit 版块、账号、地区媒体、登记库）。成因是连日"观察症状→测量→打补丁"丢了中枢。**校正**：2026-07-29 那批语言修复降级为**兜底**（无规划器输出时的确定性 fallback），**P4.0 重新定位为架构中枢而非"以后要加的功能"**。作者裁决：接入 P4 之前，手填多语言关键词 + 手建实体（xai / spacexai / elon musk）是可接受的过渡。
+- **Drift 2（本人）：provenance 在消费期重新推导**，违反 `docs/source_tiering.md` §2「入口捕获、消费期只施加权重」——`source_tier` 遵守了，人物雷达豁免没有。融合门用 `is_tracked_account(item.url)` 对着主机白名单猜，而 **URL 主机回答的是另一个问题**，两个方向都错：话题源里一条**指向** x.com 的链接会命中并白嫖豁免（跳过收紧 CURATED 时专门引入的相关性与佐证检查）；同一账号经 rsshub 或任何不在名单上的镜像读取，则**丢掉**它本该有的豁免——而那正是设计最看重的外语快讯通道。**只有 resolver 知道一条路由为何存在**，故由它盖章（迁移 0011，`_resolve_account_routes` 在函数出口统一盖，新平台分支无法悄悄漏掉）。`is_tracked_account` 与主机名单一并删除而非留着不用——**留一个看起来权威的死启发式，正是下次再漂移的入口**。旧数据默认 0，走常规门控路径，是安全的出错方向。
+- **Drift 3（历史遗留，非本轮引入）**：`PortfolioPlan` 仅 6 个字段，撑不起愿景 3.1 的架构——Drift 1 其实是它的**症状**。归入 P4.0 一并解决。
+- **干净的部分**（记录以免重复审查）：`IntelReport` 已零写入（P2.1 收口彻底）；`SubscriptionUpdate` 仅在简报中被读，两条泳道没有交叉；`process_article` 只在门控之后被调用；tier 全程只当布尔用，未偷偷引入数值权重；筛选逻辑集中在 `source_normalizer`，无散落的私有副本。
+
 #### Security
 - macOS/Linux 密钥存储 base64 明文回退 → 真 Fernet 加密（`services/crypto_service.py`，0600 密钥文件，兼容旧文件迁移）。
+- 授权失败诊断只输出 cookie **名称与域名**，绝不输出值（`backend/api/auth.py`）——cookie 的值就是凭据本身。
 - 前端 feed 链接 `javascript:` XSS → `safeHref` 只放行 http(s)。
 - R7 发布合规门：摘要非全文、PII 清洗、授权（登录态）来源内容硬排除、溯源三件套、AI 诚实标注。
 
