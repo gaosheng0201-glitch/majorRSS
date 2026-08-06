@@ -148,7 +148,27 @@
 2. **reddit 24%** — 作用域错误：`source_health` 按**端点**退避（有意为之），但 429 是按**主机**下发的。一轮生成 ~23 条 reddit 路由连发，第一个 429 教不会另外 22 个。新增 `services/host_politeness.py`：同主机请求间隔化 + 429 冻结整个主机 + 轮转公平（否则限速会变成饿死后 20 条源）。
 3. **账号来源在消费期靠 URL 猜** — 见下方 Drift 2，已改为入口盖章。
 
-**未修，需作者决策**：打包不含浏览器（chromium 336M + headless_shell 189M）。当前依赖用户机器上已有的 `playwright install`——开发机有，新用户没有。选项：打进安装包（+~500M）、首次运行时按需下载、或让 agentic 保持可选能力。
+**浏览器分发（作者 2026-08-05 裁决：测试期不带，正式发布带）**
+
+理由是减少兼容性问题——成立，而且不只是"少一个安装步骤"：`playwright install` 拉的是**带版本号**的构建（当前 1217），版本必须与打包进去的 Playwright 驱动匹配。让用户自己装，就等于把版本对齐的责任推给了用户的机器状态；打进包里，这个变量就消失了。
+
+运行时**已经支持**打包形态：`ensure_browsers_path()` 先探 `sys._MEIPASS/playwright/driver/package/.local-browsers/`，非空则设 `PLAYWRIGHT_BROWSERS_PATH=0`（Playwright 的包内模式），否则才回落到 OS 缓存。所以正式发布只需让 `build_backend.py` 把浏览器复制进那个目录，**代码一行不用改**。
+
+实测体积，且两条路径的需求是**分开的**（`chromium_headless_shell-1217/` 下只有 `chrome-headless-shell`，跑不了有头模式）：
+
+| 用途 | 需要 | 体积 |
+|---|---|---|
+| agentic 抓取（`headless=True`） | headless_shell | 189M |
+| 交互登录（`headless=False`） | 完整 chromium | 336M |
+| （ffmpeg-1011 用不到） | — | 2.5M |
+
+于是有三种打包粒度，中间那条值得考虑：
+
+1. **全带**（+525M）：装完即用,授权登录也不用等。
+2. **只带 headless_shell**（+189M）：雷达抓取开箱即用；**只有**用户主动去"一键授权"时才按需下载完整 chromium——那恰是用户正坐在键盘前、本就预期有一次性设置的时刻。体积省 64%。
+3. **全按需下载**（+0M）：首次用到浏览器时下载，风险是首次抓取静默变慢/失败。
+
+另需注意：浏览器是**分平台**的，Windows 包要在 Windows 构建机上 `playwright install`，不能拿 macOS 的产物。这一条要写进 `docs/packaging_guide.md`。
 
 ## P4.0 — 意图探索：自然语言 → 探查任务（**架构中枢**，作者 2026-07-29 提出）
 
