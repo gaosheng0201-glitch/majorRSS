@@ -4,6 +4,17 @@ import { Minus, Square, Copy, X, ShieldAlert } from 'lucide-react';
 import { useMantineColorScheme } from '@mantine/core';
 import './TitleBar.css';
 
+// macOS draws its own window controls (see tauri.macos.conf.json:
+// decorations + titleBarStyle Overlay), so this component renders BUTTONS only
+// on Windows/Linux. Reimplementing the traffic lights was considered and
+// rejected: they are not three circles. Hover reveals the glyphs, they grey out
+// together when the window loses focus, ⌥-click zooms instead of full-screening,
+// right-clicking green offers Tile Left/Right, and VoiceOver names them. A CSS
+// copy gets none of that, and the difference is felt even when it can't be named.
+// navigator.userAgent rather than @tauri-apps/plugin-os: same answer, no extra
+// plugin and no capability to declare.
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|Macintosh/i.test(navigator.userAgent);
+
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
@@ -18,6 +29,13 @@ export default function TitleBar() {
     if (checkTauri) {
       document.documentElement.classList.add('is-tauri');
       document.body.classList.add('is-tauri');
+      if (IS_MAC) {
+        // Marks the platform whose window frame is the SYSTEM's, so the CSS can
+        // stand down: no self-drawn radius, no border, and room reserved at the
+        // top-left where the traffic lights actually sit.
+        document.documentElement.classList.add('is-macos');
+        document.body.classList.add('is-macos');
+      }
       const appWindow = getCurrentWindow();
       
       const updateMaximized = async () => {
@@ -71,7 +89,7 @@ export default function TitleBar() {
   };
 
   return (
-    <div className={`custom-titlebar ${isDark ? 'dark' : 'light'}`} data-tauri-drag-region>
+    <div className={`custom-titlebar ${isDark ? 'dark' : 'light'}${IS_MAC ? ' mac' : ''}`} data-tauri-drag-region>
       <div className="titlebar-left" data-tauri-drag-region>
         <ShieldAlert size={16} color="var(--mantine-color-indigo-6)" style={{ marginRight: '8px' }} />
         <span className="titlebar-title" data-tauri-drag-region>MajorRSS</span>
@@ -81,17 +99,23 @@ export default function TitleBar() {
         {/* Drag region */}
       </div>
 
-      <div className="titlebar-right">
-        <button className="titlebar-btn" onClick={handleMinimize} title="最小化">
-          <Minus size={14} />
-        </button>
-        <button className="titlebar-btn" onClick={handleMaximize} title={isMaximized ? '还原' : '最大化'}>
-          {isMaximized ? <Copy size={12} /> : <Square size={12} />}
-        </button>
-        <button className="titlebar-btn btn-close" onClick={handleClose} title="关闭">
-          <X size={14} />
-        </button>
-      </div>
+      {/* macOS supplies these itself. Note the middle button is deliberately
+          absent rather than remapped: the green light is ZOOM (fit to content),
+          not Windows' maximize, and ⌃⌘F is full-screen — wiring toggleMaximize
+          to it would import Windows semantics onto a control users already know. */}
+      {!IS_MAC && (
+        <div className="titlebar-right">
+          <button className="titlebar-btn" onClick={handleMinimize} title="最小化">
+            <Minus size={14} />
+          </button>
+          <button className="titlebar-btn" onClick={handleMaximize} title={isMaximized ? '还原' : '最大化'}>
+            {isMaximized ? <Copy size={12} /> : <Square size={12} />}
+          </button>
+          <button className="titlebar-btn btn-close" onClick={handleClose} title="关闭">
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

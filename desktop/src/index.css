@@ -9,8 +9,10 @@ html, body {
   overflow: hidden;
 }
 
-/* Make HTML and body transparent in Tauri to support rounded corners */
-html.is-tauri, body.is-tauri {
+/* Make HTML and body transparent in Tauri to support rounded corners.
+   Not on macOS: there the window is decorated and opaque, so a transparent
+   body would only punch a hole behind the system-drawn frame. */
+html.is-tauri:not(.is-macos), body.is-tauri:not(.is-macos) {
   background-color: transparent !important;
 }
 
@@ -40,6 +42,19 @@ body.is-tauri.window-maximized #root {
   border: none !important;
   transform: none !important;
   -webkit-mask-image: none !important;
+}
+
+/* macOS runs a DECORATED window (tauri.macos.conf.json), so the system already
+   draws the frame — rounded corners, border and shadow included, and it clips
+   the webview to that shape. Drawing our own radius inside it produced a second,
+   smaller curve with a visible notch where the two disagreed. The whole
+   transparent-window + CSS-radius stack is a Windows mechanism; here it stands
+   down. Keep this rule AFTER the ones it overrides. */
+body.is-tauri.is-macos #root {
+  border-radius: 0;
+  border: none;
+  -webkit-mask-image: none;
+  transform: none;
 }
 
 /* Micro-animations */

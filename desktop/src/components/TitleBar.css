@@ -32,6 +32,13 @@
   height: 100%;
 }
 
+/* The traffic lights are placed by the system at trafficLightPosition
+   (12, 9 — see tauri.macos.conf.json) and occupy roughly x=12..70. Without
+   this reserve the app icon and title would sit underneath them. */
+.custom-titlebar.mac .titlebar-left {
+  padding-left: 78px;
+}
+
 .custom-titlebar.dark .titlebar-left {
   color: #c1c2c5;
 }

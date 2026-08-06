@@ -10,7 +10,6 @@
     "beforeBuildCommand": "cd .. && python build_backend.py && cd desktop && npm run build"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "MajorRSS",
