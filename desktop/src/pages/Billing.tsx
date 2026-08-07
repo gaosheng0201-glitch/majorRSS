@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { Database, DollarSign, Activity } from 'lucide-react';
 import client from '../api/client';
+import UsageHeatmap, { type DailyUsage } from '../components/UsageHeatmap';
 import { useLanguage } from '../i18n/translations';
 
 interface TokenUsageRecord {
@@ -43,7 +44,7 @@ export default function Billing() {
   const [loading, setLoading] = useState(true);
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary>({});
   const [rawUsage, setRawUsage] = useState<TokenUsageRecord[]>([]);
-  const [trendData, setTrendData] = useState<{ date: string; tokens: number }[]>([]);
+  const [trendData, setTrendData] = useState<DailyUsage[]>([]);
   const [estCost, setEstCost] = useState(0);
   const [byCategory, setByCategory] = useState<CostBucket>({});
   const [byTarget, setByTarget] = useState<CostBucket>({});
@@ -55,7 +56,7 @@ export default function Billing() {
         by_category: CostBucket;
         by_target: CostBucket;
         raw_usage: TokenUsageRecord[];
-        daily_trend: { date: string; tokens: number }[];
+        daily_trend: DailyUsage[];
         estimated_cost_usd: number;
       }>('/settings/token-usage');
       setTokenSummary(res.data.summary);
@@ -88,7 +89,6 @@ export default function Billing() {
     }
   });
 
-  const maxTokens = Math.max(...trendData.map(d => d.tokens), 1);
 
   const catRows = Object.entries(byCategory).sort((a, b) => b[1].estimated_cost_usd - a[1].estimated_cost_usd);
   const targetRows = Object.entries(byTarget).sort((a, b) => b[1].estimated_cost_usd - a[1].estimated_cost_usd);
@@ -174,35 +174,14 @@ export default function Billing() {
         </Paper>
       </SimpleGrid>
 
-      {/* Daily Consumption Bar Chart */}
+      {/* Daily consumption as a calendar heatmap. Was a bar chart; see
+          components/UsageHeatmap.tsx for why the geometry changed. */}
       <Paper withBorder p="lg" radius="md" style={{ background: isDark ? 'rgba(255,255,255,0.015)' : '#ffffff' }}>
         <Text size="md" fw={700} className="title-text-color" mb="xl">{t('bill_daily_trend')}</Text>
         {trendData.length === 0 ? (
           <Text size="sm" c="dimmed" ta="center" py="xl">{t('bill_daily_empty')}</Text>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', height: 160, paddingBottom: 20 }}>
-            {trendData.map((d, index) => {
-              const barHeight = Math.max((d.tokens / maxTokens) * 100, 6); // Max height of 100px
-              return (
-                <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '8%' }}>
-                  <Text size="xs" className="title-text-color" fw={700} mb={4}>
-                    {d.tokens > 1000 ? `${(d.tokens / 1000).toFixed(1)}k` : d.tokens}
-                  </Text>
-                  <div style={{ 
-                    height: `${barHeight}px`, 
-                    width: 20, 
-                    background: 'linear-gradient(180deg, var(--mantine-color-indigo-6) 0%, var(--mantine-color-indigo-9) 100%)', 
-                    borderRadius: '4px 4px 0 0',
-                    boxShadow: '0 0 10px rgba(92, 124, 250, 0.3)',
-                    transition: 'height 0.3s ease'
-                  }} />
-                  <Text size="xs" c="dimmed" mt="xs" style={{ whiteSpace: 'nowrap' }}>
-                    {d.date}
-                  </Text>
-                </div>
-              );
-            })}
-          </div>
+          <UsageHeatmap data={trendData} isDark={isDark} />
         )}
       </Paper>
 

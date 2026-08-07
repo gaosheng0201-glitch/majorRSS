@@ -188,23 +188,35 @@ def get_token_usage(session: Session = Depends(get_api_session)):
             target = (u.action_type.split(":", 1)[1].strip() or "unknown")
             _acc(by_target, target, u, cost)
         if u.created_at:
-            date_str = u.created_at.strftime("%#m/%#d") if os.name == 'nt' else u.created_at.strftime("%-m/%-d")
-            daily_trend[date_str] = daily_trend.get(date_str, 0) + u.total_tokens
+            # Keyed by ISO date, not "8/7". The old label carried no year, so the
+            # sort compared (month, day) and would reorder the whole series at a
+            # year boundary; it also cannot be used to place a day on a calendar.
+            iso = u.created_at.strftime("%Y-%m-%d")
+            e = daily_trend.setdefault(iso, {"tokens": 0, "cost_usd": 0.0, "calls": 0})
+            e["tokens"] += u.total_tokens
+            e["cost_usd"] += cost
+            e["calls"] += 1
 
     # Round every bucket's accumulated cost.
     for bucket in (totals, by_action, by_category, by_target):
         for e in bucket.values():
             e["estimated_cost_usd"] = round(e["estimated_cost_usd"], 6)
 
-    def date_key(x):
-        try:
-            parts = [int(p) for p in x.split("/")]
-            return parts[0], parts[1]
-        except Exception:
-            return 0, 0
-
-    sorted_dates = sorted(daily_trend.keys(), key=date_key)
-    trend_list = [{"date": d, "tokens": daily_trend[d]} for d in sorted_dates[-10:]]
+    # Every day we have, not the last 10: a calendar view needs the whole window,
+    # and the days with NO usage are part of the answer — the old shape dropped
+    # them entirely, so a six-day gap where the app was not running rendered as
+    # continuous consumption. The client fills the range; this just has to be
+    # complete and sortable. `date` stays for the existing label.
+    trend_list = [
+        {
+            "iso": iso,
+            "date": f"{int(iso[5:7])}/{int(iso[8:10])}",
+            "tokens": v["tokens"],
+            "cost_usd": round(v["cost_usd"], 6),
+            "calls": v["calls"],
+        }
+        for iso, v in sorted(daily_trend.items())
+    ]
 
     return {
         "raw_usage": usages[:100],  # Limit raw usage list

@@ -32,11 +32,14 @@
   height: 100%;
 }
 
-/* The traffic lights are placed by the system at trafficLightPosition
-   (12, 9 — see tauri.macos.conf.json) and occupy roughly x=12..70. Without
-   this reserve the app icon and title would sit underneath them. */
+/* Reserve the space the system puts the traffic lights in, or the app icon and
+   title end up underneath them. The geometry is fixed, not guessed: buttons are
+   12pt across on 20pt centres, and trafficLightPosition (20, 10 — see
+   tauri.macos.conf.json) is the CLOSE button's top-left. So they span
+   x = 20 … 20+12+20+20 = 72, and 10 … 22 vertically, which is exactly centred in
+   the 32px bar. 84 leaves a 12pt gap after the last one. */
 .custom-titlebar.mac .titlebar-left {
-  padding-left: 78px;
+  padding-left: 84px;
 }
 
 .custom-titlebar.dark .titlebar-left {
