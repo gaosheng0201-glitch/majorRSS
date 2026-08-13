@@ -430,6 +430,8 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 - P2.1 遗留（§G）：#7 增量重融真增量化 · #8 未聚类文章监控/单例兜底 · #10 `export_rss` 删或改读线索 · #11 回滚文档 · #12 semantic/fusion 任务互斥
 - 优先级倒挂：`max_sources_per_run` 封顶时 keyword 源(priority=1)压过精选源(priority=5)
 - X 官方 API $5 试点（若要"知道这些人在想什么"；先设消费上限）
+- **Grok / xAI 作为 X 一手通路（作者 2026-08-13 提出，已查证文档后挂起）**。动机成立且是结构性的：xAI 拥有 X，而 nitter(52%)/rsshub(0%) 都是随时会碎的第三方绕路。**但做雷达入口这条路已排除** —— 查证 [x_search](https://docs.x.ai/developers/tools/x-search) + [citations](https://docs.x.ai/developers/tools/citations)：引用对象只有 `{type, url, start_index, end_index, title}`，其中 `title` 是**引用编号不是标题**；**没有发布时间、作者、正文**，且[无法取得原始结构化结果](https://docs.x.ai/developers/tools/advanced-usage)（纯 agentic，模型合成散文）。后果：B1 新鲜度断言按条目日期判活 → **这条源无法判活**；P0.5 去重与融合都缺正文。用 `from_date/to_date` 反推日期等于在一个以溯源为卖点的产品里伪造时间戳，比静默陈旧更糟。要条目化就得回去抓 x.com 页面 —— 那需要授权，**循环**。
+  **仍然合适的两个落点**：① **P4.0 规划器** —— 每目标只跑一次、本就允许烧 token，要回答的正是"这话题该盯哪些 X 账号"这类合成问题（`allowed_x_handles` 上限 20 在此不是限制），且符合"决策在规划期、运行时只执行"；② **情报溯源竞技场** —— 该 lane 本就接受"散文 + 引用"，与现有 Gemini-grounding 守卫同一模式。另：xAI API 是 OpenAI 兼容的，**作为生成 provider 现在就能用**（Settings 选「OpenAI 兼容」+ base_url），不破 BYOK。**接入前要问清 agentic 搜索工具的计费**（模型价格页只有 token 价：Grok 4.6 $2/$6 每百万，搜索工具计费未公布）。
 - P2.2 简报接地性收紧（禁报告外事实、解读标注）
 - investigator 交叉验证重设计（作者明确 defer）
 
