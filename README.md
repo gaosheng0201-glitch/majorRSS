@@ -22,9 +22,13 @@ Unified SourceItem ──► semantic layer (embed · relevance gate · dedup ·
 Radar (reading feed) · quiet alerts on real increments · daily briefing
 ```
 
-- **Radar** — a reading feed of events grouped by time (*today / this week*),
-  each with its sources traceable to origin. One click filters to just the
-  signal (confirmed / resonant / alerted).
+- **Radar** — the single reading surface, grouped by time (*today / this
+  week*) and filterable by target. In AI mode it has two faces: **Refined**
+  (events that earned a fused summary — the card *is* the summary, stamped
+  "first seen / updated" honestly) and **Leads** (clustered but unsummarised;
+  tips from accounts you named are shown and labelled *unverified*, aggregator
+  singletons collapse by default). In pure-RSS mode the surface is the raw,
+  unfiltered subscription stream itself.
 - **Story threads** — the same event across languages and outlets is merged into
   one thread; lifecycle tracks LEAD → CORROBORATED → CONFIRMED, and cross-source
   **resonance** ("everyone is talking about it") is the key importance signal.

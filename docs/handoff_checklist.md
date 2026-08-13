@@ -1,9 +1,11 @@
 # 工作交接与测试清单
 
-> 最后更新：2026-07-21 · 分支 `feat/local-intelligence-radar`（已与 main 对齐，工作树干净）
+> 最后更新：2026-08-13 · 分支 `main`（公开仓库，直接推 main）
 >
 > 这份文档用于：作者亲自体验几天测试后，再决定继续哪部分。开新会话时从这里接上即可。
-> 2026-07-21 收尾：完成 R7 Phase 1 发布导出器（本地线索→合规公开 digest→公开站）+ 测试债还清（24 项 pytest）。
+> 7-21 之后的全部改造（P0–P2 路线图执行、B1–B6 供给侧、P4 前置管线修复、呈现层三修、P6 雷达收口与时间诚实）见 CHANGELOG.md 与 `docs/radar_quality_roadmap.md`；工程现状见 `docs/engineering_baseline.md`。测试 58 项。
+>
+> **2026-08-13 状态增补**：agentic/浏览器管线已修复（打包版可用，dev 机需 `playwright install chromium` 一次）；交互式授权登录已验证到弹窗（B 节第一项半通），cookie 段等作者小号；雷达页已是唯一阅读面（AI 模式 提炼|线报 双 tab + 目标筛选，纯 RSS 模式 = 原始订阅流）。挂起等作者：浏览器打包粒度、P5 方案、授权实测。
 
 ## 怎么把它跑起来
 
@@ -24,7 +26,7 @@ python3 -m http.server 4173 -d site                        # 浏览器开 localh
 # 或让后端自动定时发布：设环境变量 PUBLISH_ENABLED=1（默认关，私人雷达不会误发布）
 
 # 测试
-pytest -q                                 # 24 项，~0.4s
+pytest -q                                 # 58 项，~0.5s
 ```
 
 配 API key / 选模型 / 切模式：应用内 **系统设置** 页（不需要 .env）。
@@ -41,6 +43,7 @@ pytest -q                                 # 24 项，~0.4s
 
 ### B. 授权账号（需要你的真实社媒登录）
 - [ ] 逐个平台一键授权，看抓取是否真的用上登录态（`AUTH_PLATFORMS` 的 11 个平台定义**未经真账号实测**，是待验证脚手架）
+  - 2026-08-05 进展：登录弹窗链路已通（浏览器修复后实测弹出）；作者决定等小号再走完 cookie 段（主号防封）。失败诊断已改为报告捕获到的 cookie 名/域（不含值）
 - [ ] 观察 **系统设置 → 授权账号保护** 面板：熔断/预算/利用率是否合理
 - [ ] 故意让某平台 cookie 过期，确认抓取撞登录墙后账号被标 Expired
 
@@ -82,4 +85,4 @@ R1–R6 后端全部（获取运行时/账号守卫/语义层/线索/告警/port
 - **真 OS Keychain**（当前 Fernet+0600 文件已是真加密）：需 keyring 依赖决策
 
 ## 恢复工作的入口
-下次继续时：读 `docs/vision_and_blueprint.md`（愿景+架构）+ 本文件 + `docs/engineering_baseline.md`（工程现状），git 在 `feat/local-intelligence-radar` 分支。
+下次继续时：读 `docs/vision_and_blueprint.md`（愿景+架构）→ `docs/radar_quality_roadmap.md`（执行队列与裁决，当前位置：P6 完成，下一步 P4.0 意图探索）→ `docs/engineering_baseline.md`（工程现状与差距地图）。git 在 `main`（公开仓库；backend-bundle/.env/.enckey/config.dat 已 gitignore，严禁入库）。数据库测试一律 `DATABASE_URL` 指向副本。

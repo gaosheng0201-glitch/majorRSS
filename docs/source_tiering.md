@@ -1,6 +1,8 @@
 # 来源分层设计（Source Tiering）
 
-> 状态：设计稿（未动代码）· 定位：**跨域公共基建**（radar / feed / publish 共用），P1.1 融合门控是其第一个消费者
+> **实现状态（2026-08-13）**：§2「入口捕获」已全面落地——`SourceRoute.tier → RawArticle.source_tier`（迁移 0007）与账号盖章 `from_account`（迁移 0011）；一手地板扩至前沿实验室自有频道（迁移 0014 重盖历史行，组合型厂商博客刻意排除，理由见 `services/provenance.py` 头注）。本文其余部分保持设计意图定位。
+
+> 定位：**跨域公共基建**（radar / feed / publish 共用），P1.1 融合门控是其第一个消费者
 > 关联：[radar_quality_roadmap.md](radar_quality_roadmap.md)（P1.1 门控在此基础上实现）·
 > [semantic_layer_audit.md](semantic_layer_audit.md)（一手来源 `_is_first_party` 已有）
 
