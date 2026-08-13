@@ -34,12 +34,32 @@ HIGH_WEIGHT = (Tier.PRIMARY, Tier.CURATED)
 # Heuristic baseline: official primary sources (gov, standards, code, papers,
 # vendor newsrooms). R4's portfolio planner can later supply each target's own
 # official domains for precise detection; this is the floor.
-_FIRST_PARTY_SUFFIXES = (".gov", ".gov.cn", ".mil", ".edu")
+#
+# What belongs on the floor and what deliberately does not (2026-08-13 audit —
+# 77 of 110 official_feed presets resolved to NOT-first-party, but most of them
+# are correct that way):
+#   • Frontier-lab own channels DO: "Introducing Gemini 3.7 Flash" sat on
+#     deepmind.google while blog.google was listed and deepmind.google was not —
+#     so the single most authoritative source for a Gemini tracker came in
+#     CURATED, started a singleton LEAD instead of CONFIRMED, failed the ≥3-
+#     publisher gate and was never summarised. The announcement IS the event.
+#   • Press does NOT (BBC/NYT/Bloomberg…): media is CURATED by design.
+#   • Portfolio vendor blogs do NOT (cloudflare/vercel/supabase…): measured, 5
+#     of 5 Cloudflare summaries were off-topic — domain-level PRIMARY would
+#     resurrect exactly the auto-pass that tightening CURATED removed. Whether
+#     cloudflare.com is first-party depends on WHOSE tracker it is, and that
+#     per-target judgement is the P4.0 planner's, not a global list's.
+_FIRST_PARTY_SUFFIXES = (".gov", ".gov.cn", ".gov.uk", ".mil", ".edu")
 _FIRST_PARTY_DOMAINS = (
     "arxiv.org", "github.com", "github.io", "openai.com", "anthropic.com",
     "blog.google", "ai.googleblog.com", "developer.apple.com", "apple.com",
     "microsoft.com", "nvidia.com", "sec.gov", "fda.gov", "who.int",
     "clinicaltrials.gov", "europa.eu",
+    # Frontier labs' own channels, same class as openai.com/anthropic.com above.
+    "deepmind.google", "mistral.ai", "x.ai", "claude.com",
+    "ai.meta.com", "engineering.fb.com", "research.facebook.com",
+    # Code-host guard still applies: only /blog and release paths upgrade.
+    "huggingface.co", "github.blog",
 )
 
 # Aggregator / meta-search domains: many real outlets hide behind one domain, so

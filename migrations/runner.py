@@ -26,7 +26,8 @@ def run_migrations():
             "0010_fusion_increment_snapshot",
             "0011_from_account",
             "0012_release_rate_limit_quarantine",
-            "0013_release_capability_failures"
+            "0013_release_capability_failures",
+            "0014_first_party_floor_restamp"
         ]
         
         for m in migrations:
@@ -359,6 +360,49 @@ def run_migrations():
                             "state = 'healthy', next_eligible_at = NULL "
                             "WHERE total_success = 0 AND last_error_type = 'UNKNOWN_ERROR'"))
                     session.commit()
+
+                elif m == "0014_first_party_floor_restamp":
+                    # The first-party floor gained the frontier labs' own
+                    # channels (deepmind.google et al. — see provenance.py for
+                    # what was added and what deliberately was not). Tier is
+                    # stamped at intake, so rows ingested under the old floor
+                    # carry CURATED for what is now recognisably first-party;
+                    # left alone, "Introducing Gemini 3.7 Flash" stays a muted
+                    # singleton lead forever. Re-stamp those rows through the
+                    # real tier_for_url (so the marketing-path and code-host
+                    # guards still apply), then mirror what ingest would have
+                    # done had it known: threads that now contain a PRIMARY
+                    # member are promoted to CONFIRMED, and their gate marker is
+                    # cleared so the next processing cycle re-evaluates them
+                    # (gate_checked_at IS NULL is the re-check trigger).
+                    from db.models import RawArticle, StoryThread
+                    from services.provenance import Tier, tier_for_url
+                    from sqlmodel import select as _select
+                    restamped, thread_ids = 0, set()
+                    rows = session.exec(_select(RawArticle).where(
+                        RawArticle.source_tier == Tier.CURATED)).all()
+                    for ra in rows:
+                        new_tier = tier_for_url(ra.url or "", Tier.CURATED)
+                        if new_tier == Tier.PRIMARY:
+                            ra.source_tier = Tier.PRIMARY
+                            session.add(ra)
+                            restamped += 1
+                            if ra.thread_id:
+                                thread_ids.add(ra.thread_id)
+                    promoted = 0
+                    for tid in thread_ids:
+                        th = session.get(StoryThread, tid)
+                        if th is None:
+                            continue
+                        if th.lifecycle != "CONFIRMED":
+                            th.lifecycle = "CONFIRMED"
+                            promoted += 1
+                        th.gate_checked_at = None
+                        session.add(th)
+                    session.commit()
+                    print(f"first_party_floor_restamp: {restamped} articles → primary, "
+                          f"{promoted} threads promoted CONFIRMED, "
+                          f"{len(thread_ids)} threads queued for gate re-check")
 
                 sv = SchemaVersion(version_id=m)
                 session.add(sv)
