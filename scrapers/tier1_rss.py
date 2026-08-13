@@ -1,12 +1,30 @@
+import calendar
 import feedparser
 from datetime import datetime, timezone
-import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from services.http_client import conditional_get
 from services.log_service import get_logger
 
 logger = get_logger("scraper.rss")
+
+
+def entry_published_at(entry) -> Optional[datetime]:
+    """Item timestamp as naive-free UTC, from feedparser's parsed struct.
+
+    feedparser normalises `published_parsed` to a UTC struct_time. The old code
+    ran it through `time.mktime()`, which interprets a struct as LOCAL STANDARD
+    time — so on this machine (America/New_York, EST=UTC-5) every RSS item's
+    published_at landed 5 hours in the future, DST notwithstanding (mktime
+    honours the struct's tm_isdst=0). Field-verified on three DeepMind posts:
+    feed said 17:04/14:01/15:06 UTC, we stored 22:04/19:01/20:06. For a product
+    whose pitch is provenance, "who reported first" was systematically shuffled
+    by source class. calendar.timegm is mktime's UTC twin.
+    """
+    parsed = getattr(entry, "published_parsed", None)
+    if not parsed:
+        return None
+    return datetime.fromtimestamp(calendar.timegm(parsed), tz=timezone.utc)
 
 class BasicRSSScraper:
     def __init__(self, url: str):
@@ -32,10 +50,8 @@ class BasicRSSScraper:
             
         results = []
         for entry in parsed_feed.entries:
-            published_time = None
-            if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                published_time = datetime.fromtimestamp(time.mktime(entry.published_parsed), tz=timezone.utc)
-            
+            published_time = entry_published_at(entry)
+
             results.append({
                 "title": entry.title if hasattr(entry, 'title') else "No Title",
                 "url": entry.link if hasattr(entry, 'link') else entry.id,
