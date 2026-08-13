@@ -170,6 +170,16 @@
 
 另需注意：浏览器是**分平台**的，Windows 包要在 Windows 构建机上 `playwright install`，不能拿 macOS 的产物。这一条要写进 `docs/packaging_guide.md`。
 
+## ✅ 呈现层三修（2026-08-13，作者两问"为什么没抓到"追出来的）
+
+作者报了两个具体的漏：布林接管 Gemini / 3.5 Pro 被砍（8/11 起的热点）、Gemini 3.7 Flash 发布。**查证结论：两个都不是抓取层的问题** —— 布林故事线在库里有 50 篇、主线索 21 家出版方且有摘要；3.7 Flash 的官方公告 17:04:18 进 feed、应用 17:01:48 刚查完（差 2.5 分钟）、下轮 17:31 即入库；泄漏预告更是 8/11 就抓到了（比官方早两天）。**坏的是呈现层：凡是早期的、单源的、权威的信号，一律被静音** —— 而那正是愿景最看重的信号。三个缺陷：
+
+1. **RSS 时间戳全体 +5 小时**（`scrapers/tier1_rss.py`）。feedparser 给的 `published_parsed` 是 UTC struct，旧代码用 `time.mktime()` 按本地**标准时**（EST，连夏令时都不管）解释 → 每条 RSS 的发布时间推向未来 5 小时。三个 DeepMind 样本实测全部 +5（feed 17:04/14:01/15:06 → 库里 22:04/19:01/20:06）。对以溯源为卖点的产品，"谁先报"被按源类别系统性搅乱。修：`calendar.timegm`（mktime 的 UTC 孪生），抽出 `entry_published_at()` 可测。
+2. **`deepmind.google` 不在一手地板名单**（`services/provenance.py` + 迁移 `0014`）。`blog.google` 在、`ai.googleblog.com` 在，DeepMind 自己的域名不在 —— 于是 gemini 目标最权威的公告以 CURATED 入库、起单篇 LEAD 线索、过不了 ≥3 家门、永远不出摘要（实机预测并应验：17:31 入库时 tier=curated）。清查同病灶：110 个 official_feed preset 有 77 个不被认作一手，**但大多数是对的** —— 媒体（BBC/NYT）就该是 CURATED；组合型厂商博客（cloudflare/vercel）更**不能**加，否则 Cloudflare 5/5 跑题摘要的免检通道复活。加进地板的只有前沿实验室自有频道一档（deepmind.google / mistral.ai / x.ai / claude.com / ai.meta.com / engineering.fb.com / research.facebook.com / huggingface.co(仍受 code-host 路径守卫) / github.blog）+ `.gov.uk` 后缀（`.gov` 匹配不到它）。**per-target 的精确一手判定归 P4.0 规划器** —— provenance.py 的注释本来就写着"这是地板，R4 补精确"。迁移 0014 用真实 `tier_for_url` 重盖旧行（营销路径/code-host 守卫仍生效）：实库 95 篇 → primary、76 条线索晋级 CONFIRMED 并清 gate 标记排队重评。
+3. **事件仲裁只看 top-1 候选**（`services/semantic.py` + `semantic_ingest.py`）。布林那篇的最近邻是另一条同产品的单篇线索（仲裁否得**对**——确实不是同一事件），但它真正所属的 21 家出版方线索排第二、**从未上桌** —— 一个错误但最近的邻居否决了它身后所有正确答案。实测代价：仲裁 80% 拆分率（666 调用 533 拆）、**88% 的线索是单篇**（5750/6515）、dsc≥3 的只有 1.8%。修：top-1 → top-K（K=3，`assign_thread_candidates`），仲裁沿列表问到"是"为止 —— **判断标准一字未动，只是把该判的对象补齐**；新增 `rescued` 计数器（合进被否 top-1 身后的候选 = 旧流程必然错拆的线索），日志可见。
+
+**刻意不做、留待观察**：仲裁提示词的"同一故事线"语义（"same event" 严格执行下，哈萨比斯卸任→布林接管→3.5 Pro 被砍本来就是不同事件，全说"不"没错）。先跑 top-K 重新量拆分率和 rescued 率，再决定要不要动语义 —— 动语义有重新引入过度合并的风险，那是当初加仲裁要修的病。相关：单篇 lead 的可见性问题归 **P6**（LEAD 按来源分层折叠）。
+
 ## P4.0 — 意图探索：自然语言 → 探查任务（**架构中枢**，作者 2026-07-29 提出）
 
 **问题**：现在建任务要用户自己填关键词、选源集合、配新鲜度——这些是**内部概念**。真实用户"不懂这些，只在输入框表达想知道什么"。而错误的关键词会一路污染下游（实测：`gemini` 招来星座与 CRT 电视、`grok` 招来 1.5 dCi 发动机代号）。

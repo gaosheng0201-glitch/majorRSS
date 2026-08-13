@@ -137,6 +137,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **测试 24 → 41**：新增 `tests/test_host_politeness.py`（作用域 bug 本身、冷却范围、5xx 阈值、增长与解除、轮转公平与覆盖、被让路不占名额、能力缺失 vs 真实源故障的分类）与 `tests/test_account_provenance.py`（旧启发式的两个失效方向、关键词消防栓永非人物雷达、门控读取盖章）。
 - **仍挂账（需作者裁决）**：打包不含浏览器（chromium 336M + headless_shell 189M）。当前依赖机器上已有的 `playwright install`——开发机有，新用户没有。选项：打进安装包 / 首次运行按需下载 / 让 agentic 保持可选能力。
 
+##### 呈现层三修（2026-08-13，作者两问"为什么没抓到"——布林接管 Gemini、Gemini 3.7 Flash 发布）
+
+查证结论：**两个都不是抓取层的问题**。布林故事线在库里有 50 篇（英文 8/5 起、中文 8/11 才跟进，滞后 6 天）、主线索 4217 有 21 家出版方且有摘要；3.7 Flash 官方公告 17:04:18 UTC 进 feed、应用 17:01:48 刚查完（**差 2.5 分钟**）、下轮 17:31 即入库；泄漏预告 8/11 就抓到了，比官方早两天。**坏的是呈现层：早期的、单源的、权威的信号被系统性静音** —— 恰是愿景最看重的那类（"社交源天然领先媒体数天"）。三个缺陷，全部当日修复并实机验证：
+
+- **①RSS 时间戳全体 +5 小时**（`scrapers/tier1_rss.py`，抽出 `entry_published_at()`）：feedparser 的 `published_parsed` 是 UTC struct，旧代码 `time.mktime()` 按本地**标准时**解释（EST=UTC-5，`tm_isdst=0` 连夏令时都不理）→ 每条 RSS 的发布时间被推向未来 5 小时。三个 DeepMind 样本零例外（17:04→22:04、14:01→19:01、15:06→20:06）。作者起初猜是纽约/太平洋时区显示差 —— 8 月的纽约是 EDT(-4)、太平洋是 -7，**恰好 +5 = EST** 才是 mktime 的指纹。修：`calendar.timegm`。对溯源产品，"谁先报"曾被按源类别系统性搅乱。
+- **②`deepmind.google` 不在一手地板**（`services/provenance.py` + 迁移 `0014`）：`blog.google` 在名单、DeepMind 自己的域名不在 → gemini 目标最权威的公告以 CURATED 入库 → 单篇 LEAD → 过不了 ≥3 家门 → 永不出摘要。**实机预测并应验**（公告 17:31 入库时 tier=curated）。清查：110 个 official_feed preset 中 77 个不被认作一手，但**大多数是对的** —— 媒体该是 CURATED；组合型厂商博客（cloudflare 等）**不能**加，否则实测过的 5/5 跑题免检复活。只加前沿实验室自有频道档（deepmind.google/mistral.ai/x.ai/claude.com/ai.meta.com/engineering.fb.com/research.facebook.com/huggingface.co[code-host 路径守卫仍生效]/github.blog）+ `.gov.uk` 后缀。per-target 精确判定归 P4.0（provenance.py 注释本就写着"这是地板"）。迁移 0014 经真实 `tier_for_url` 重盖旧行：实库 **95 篇 → primary、76 条线索晋级 CONFIRMED** 并清 gate 标记排队重评。
+- **③事件仲裁只看 top-1 候选**（`services/semantic.py::assign_thread_candidates` + `semantic_ingest.py`）：布林那篇的最近邻是另一条同产品单篇线索，仲裁否得**对**（确实非同一事件）——但它真正所属的 21 家出版方线索排第二、从未上桌。一个错误但最近的邻居，否决了它身后所有正确答案。实测代价：**仲裁 80% 拆分率（666 调用 533 拆）、88% 线索为单篇（5750/6515）、dsc≥3 仅 1.8%** —— 聚类层近乎失效。修：top-1 → top-K（K=3），仲裁沿列表问到"是"为止，**判断标准一字未动**；新增 `rescued` 计数（= 旧流程必然错拆的合并），预算语义保守化（列表中途预算耗尽 → 新线索，不回退到已被否决的候选）。
+- **刻意不动**：仲裁提示词的"同一故事线"语义（严格 "same event" 下，卸任→接管→砍版本本来就是不同事件）。先量 top-K 后的拆分率/rescued 率再定 —— 动语义有重新引入过度合并的风险。单篇 lead 可见性归 P6。
+- 测试 41 → 53：`tests/test_surfacing_fixes.py` 钉死三修（UTC struct 不再漂移、实验室域名 PRIMARY / 媒体与组合博客不升级 / code-host 守卫仍生效 / AGGREGATED 永不升级、候选列表有序有底且布林形态的第二候选可达）。
+
 ##### 架构漂移审查（2026-07-29，作者要求）
 
 作者原话：*"明明是架构层偏移了但是通过局部补丁去修复，最后架构层还是偏移的但是局部修复了感觉不到，容易在积累很多后爆发。"* 查到 3 处漂移（2 处系本人近期造成）、5 处干净：
