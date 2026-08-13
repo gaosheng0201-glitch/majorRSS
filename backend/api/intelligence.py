@@ -119,24 +119,46 @@ def get_all_alerts(session: Session = Depends(get_api_session)):
     return alert_responses
 
 @router.get("/threads")
-def get_story_threads(limit: int = 40, tracker_id: int = None, session: Session = Depends(get_api_session)):
+def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
+                      session: Session = Depends(get_api_session)):
     """Story threads for the Radar view — the aggregator→radar payoff. Each
     thread carries its lifecycle (LEAD/CORROBORATED/CONFIRMED), resonance,
     distinct-source count, member articles (citations), and any alert reasons
-    ('why am I being interrupted?'). Resonant + recently-updated first."""
+    ('why am I being interrupted?'). Resonant + recently-updated first.
+
+    `view` splits the single radar surface into its two P6 faces:
+      - "refined": threads that EARNED a summary — the daily reading feed, where
+        the card IS the fused summary (愿景: feed 卡片 = 线索上的一段摘要).
+      - "leads":   clustered but unsummarised threads. The client stratifies
+        these by the intake stamps below — a tip-off from an account the user
+        NAMED is the fast channel the design values, while an aggregator
+        singleton is presumed noise and collapses by default.
+    Omitted → all threads (previous behaviour).
+    """
     from db.models import StoryThread, RadarAlert
     q = select(StoryThread)
     if tracker_id is not None:
         q = q.where(StoryThread.tracker_id == tracker_id)
+    if view == "refined":
+        q = q.where(StoryThread.summary.is_not(None))
+    elif view == "leads":
+        q = q.where(StoryThread.summary.is_(None))
     threads = session.exec(
         q.order_by(StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc()).limit(limit)
     ).all()
     if not threads:
         return []
 
-    # Batch member + alert loads (avoid N+1 across the thread list).
+    # Batch member + alert loads (avoid N+1 across the thread list). The same
+    # pass computes the lead-stratification flags — over ALL members, not just
+    # the 8 kept for display, or a 9-member thread could misclassify.
     thread_ids = [th.id for th in threads]
     members_by_thread = {tid: [] for tid in thread_ids}
+    # from_account: any member arrived via a route the user created by NAMING an
+    # account (stamped at intake — provenance is never re-derived from URLs).
+    # aggregated_only: no member outside the keyword firehose; NULL tier counts
+    # as aggregated, matching the fusion gate's treatment of legacy rows.
+    flags_by_thread = {tid: {"from_account": False, "aggregated_only": True} for tid in thread_ids}
     for art in session.exec(
         select(RawArticle).where(RawArticle.thread_id.in_(thread_ids))
         .order_by(RawArticle.created_at.desc())
@@ -144,16 +166,29 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, session: Session 
         bucket = members_by_thread.get(art.thread_id)
         if bucket is not None and len(bucket) < 8:
             bucket.append({"title": art.title, "url": art.url})
+        f = flags_by_thread.get(art.thread_id)
+        if f is not None:
+            if getattr(art, "from_account", False):
+                f["from_account"] = True
+            if art.source_tier is not None and art.source_tier != "aggregated":
+                f["aggregated_only"] = False
     reasons_by_thread = {tid: set() for tid in thread_ids}
     for al in session.exec(select(RadarAlert).where(RadarAlert.thread_id.in_(thread_ids))).all():
         reasons_by_thread[al.thread_id].add(al.reason)
 
     out = []
     for th in threads:
+        # The stored summary is "[TITLE: …]\n\n<body>\n\n---\n**:material/… 摘要引用
+        # 来源:** …" — a machine annex the old Dashboard card parsed into tabs.
+        # The radar card lists sources from the members instead, so the annex
+        # would render as raw markup; serve the body, and prefer the fused title.
+        clean_sum, display_title = clean_summary_and_title(th.summary or "", th.title or "")
+        if clean_sum:
+            clean_sum = clean_sum.split("\n---\n", 1)[0].strip()
         out.append({
             "id": th.id,
             "tracker_id": th.tracker_id,
-            "title": th.title,
+            "title": display_title or th.title,
             "lifecycle": th.lifecycle,
             "distinct_source_count": th.distinct_source_count,
             "member_count": th.member_count,
@@ -163,6 +198,11 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, session: Session 
             "first_seen_at": th.first_seen_at.isoformat() if th.first_seen_at else None,
             "alert_reasons": sorted(reasons_by_thread[th.id]),
             "sources": members_by_thread[th.id],
+            "summary": clean_sum or None,
+            "importance_score": th.importance_score,
+            "validity_category": th.validity_category,
+            "from_account": flags_by_thread[th.id]["from_account"],
+            "aggregated_only": flags_by_thread[th.id]["aggregated_only"],
         })
     return out
 

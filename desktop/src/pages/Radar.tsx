@@ -1,11 +1,30 @@
 import { useEffect, useState } from 'react';
 import {
-  Text, Group, Stack, Loader, Anchor, UnstyledButton, Box,
+  Text, Group, Stack, Loader, Anchor, UnstyledButton, Box, Tabs,
   useMantineColorScheme,
 } from '@mantine/core';
-import { RefreshCw, ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Zap, Sparkles, Rss } from 'lucide-react';
 import client from '../api/client';
 import { useLanguage } from '../i18n/translations';
+import RawFeed from '../components/RawFeed';
+import { safeHref } from '../components/sourceDisplay';
+
+// P6 雷达视图收口 — the ONE main reading surface (愿景 41: "日用界面只有一个，
+// 雷达/线索视图就是'仪表盘'"). Before this, three surfaces showed similar
+// content (Dashboard's AI feed, Dashboard's raw feed, this page) and the author
+// couldn't tell how radar and feed related — because they were meant to be the
+// same thing. The page now has two faces per mode (author's 2026-07-29 ruling):
+//
+//   AI mode:   提炼 (threads that EARNED a summary — the card IS the summary)
+//            | 线报 (clustered, unsummarised; stratified by intake stamps:
+//              named-account tip-offs visible and labelled 未证实线报,
+//              aggregator singletons collapsed — "默认安静，打扰需要证明自己")
+//   Pure RSS:  the raw subscription stream itself — it IS the product in this
+//              mode (愿景 147: 永远的地板), not a downgraded debug view.
+//
+// The raw stream stays reachable in AI mode behind a quiet disclosure on the
+// leads tab: relevance-gated items exist ONLY there, and hiding them entirely
+// would turn the floor from a soft filter into an invisible one (trust loop).
 
 interface ThreadSource { title: string; url: string; }
 interface StoryThread {
@@ -21,6 +40,11 @@ interface StoryThread {
   first_seen_at: string | null;
   alert_reasons: string[];
   sources: ThreadSource[];
+  summary: string | null;
+  importance_score: number;
+  validity_category: string | null;
+  from_account: boolean;
+  aggregated_only: boolean;
 }
 
 interface CatchUp {
@@ -31,7 +55,6 @@ interface CatchUp {
 }
 
 const LAST_SEEN_KEY = 'radar_last_seen_at';
-const safeHref = (u?: string) => (u && /^https?:\/\//i.test(u)) ? u : undefined;
 
 // ---- time helpers: "什么时间" for a reading feed ----
 function relativeTime(iso: string | null, lang: string): string {
@@ -68,12 +91,16 @@ const BUCKET_LABEL: Record<string, { zh: string; en: string }> = {
   older: { zh: '更早', en: 'Earlier' },
 };
 
-// One event, laid out for reading — headline is the hero; time + signals are a
-// quiet meta line; sources expand on demand. No boxes, no filled badges.
-function EventRow({ th, isDark, lang }: { th: StoryThread; isDark: boolean; lang: string }) {
+// One event, laid out for reading — headline is the hero; the fused summary (if
+// earned) is the body (P2.1 endgame: the feed card IS the thread's summary);
+// time + signals are a quiet meta line; sources expand on demand.
+function EventRow({ th, isDark, lang, tipoff }: { th: StoryThread; isDark: boolean; lang: string; tipoff?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const confirmed = th.lifecycle === 'CONFIRMED';
   const corroborated = th.lifecycle === 'CORROBORATED';
+  const summary = (th.summary || '').trim();
+  const longSummary = summary.length > 220;
   return (
     <Box style={{ padding: '14px 0', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
       <Text
@@ -87,10 +114,30 @@ function EventRow({ th, isDark, lang }: { th: StoryThread; isDark: boolean; lang
         {th.title || (lang === 'zh' ? '未命名线索' : 'Untitled')}
       </Text>
 
+      {summary && (
+        <Text size="sm" c={isDark ? 'gray.4' : 'gray.7'} mt={6} style={{ lineHeight: 1.6 }}
+              lineClamp={expanded ? undefined : 3}>
+          {summary}
+        </Text>
+      )}
+      {summary && longSummary && (
+        <UnstyledButton onClick={() => setExpanded(e => !e)}>
+          <Text size="xs" c="indigo" fw={600} mt={2}>
+            {expanded ? (lang === 'zh' ? '收起' : 'Less') : (lang === 'zh' ? '展开全文' : 'More')}
+          </Text>
+        </UnstyledButton>
+      )}
+
       <Group gap={8} mt={5} style={{ fontSize: 12 }}>
         <Text size="xs" c="dimmed">{relativeTime(th.last_update_at, lang)}</Text>
         <Text size="xs" c="dimmed">·</Text>
         <Text size="xs" c="dimmed">{th.distinct_source_count} {lang === 'zh' ? '个来源' : 'sources'}</Text>
+        {tipoff && (
+          // The fast channel: single-source, from an account the user NAMED.
+          // Visible on purpose, and honestly labelled — speed without
+          // masquerading as verified news (愿景 95-102).
+          <Text size="xs" c="grape" fw={600}>· {lang === 'zh' ? '未证实线报' : 'unverified tip'}</Text>
+        )}
         {confirmed && <Text size="xs" c="teal" fw={600}>· {lang === 'zh' ? '已证实' : 'confirmed'}</Text>}
         {corroborated && !confirmed && <Text size="xs" c="blue" fw={600}>· {lang === 'zh' ? '多源佐证' : 'corroborated'}</Text>}
         {th.is_resonant && (
@@ -120,21 +167,121 @@ function EventRow({ th, isDark, lang }: { th: StoryThread; isDark: boolean; lang
   );
 }
 
-export default function Radar() {
+function TimeBucketedList({ threads, isDark, lang, tipoffIds }: {
+  threads: StoryThread[]; isDark: boolean; lang: string; tipoffIds?: Set<number>;
+}) {
+  const sorted = [...threads].sort((a, b) => {
+    const ta = a.last_update_at ? new Date(a.last_update_at).getTime() : 0;
+    const tb = b.last_update_at ? new Date(b.last_update_at).getTime() : 0;
+    return tb - ta;
+  });
+  const buckets = (['today', 'week', 'older'] as const)
+    .map(key => ({ key, items: sorted.filter(t => bucketOf(t.last_update_at) === key) }))
+    .filter(b => b.items.length > 0);
+  return (
+    <Stack gap="lg">
+      {buckets.map(b => (
+        <Box key={b.key}>
+          <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.6 }} mb={2}>
+            {lang === 'zh' ? BUCKET_LABEL[b.key].zh : BUCKET_LABEL[b.key].en}
+          </Text>
+          {b.items.map(th => (
+            <EventRow key={th.id} th={th} isDark={isDark} lang={lang} tipoff={tipoffIds?.has(th.id)} />
+          ))}
+        </Box>
+      ))}
+    </Stack>
+  );
+}
+
+// The leads face: clustered threads that have not earned a summary, stratified
+// by what the intake stamps say they are. Collapse criterion = aggregator-only
+// AND single-source AND not from a named account — measured 90% of the lead
+// backlog, and the stratum that buried the genuine tip-offs.
+function LeadsView({ leads, isDark, lang }: { leads: StoryThread[]; isDark: boolean; lang: string }) {
+  const [showCollapsed, setShowCollapsed] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+
+  const isCollapsible = (t: StoryThread) =>
+    !t.from_account && t.aggregated_only && (t.distinct_source_count || 0) <= 1;
+  const tipoffs = leads.filter(t => t.from_account);
+  const regular = leads.filter(t => !t.from_account && !isCollapsible(t));
+  const collapsed = leads.filter(isCollapsible);
+  const tipoffIds = new Set(tipoffs.map(t => t.id));
+  const visible = [...tipoffs, ...regular];
+
+  return (
+    <Stack gap="md">
+      {visible.length === 0 && collapsed.length === 0 ? (
+        <Text c="dimmed" size="sm" ta="center" py="xl">
+          {lang === 'zh' ? '暂无线报。' : 'No leads yet.'}
+        </Text>
+      ) : (
+        <>
+          {visible.length > 0 && (
+            <TimeBucketedList threads={visible} isDark={isDark} lang={lang} tipoffIds={tipoffIds} />
+          )}
+          {collapsed.length > 0 && (
+            <Box>
+              <UnstyledButton onClick={() => setShowCollapsed(s => !s)}>
+                <Group gap={4}>
+                  {showCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <Text size="sm" c="dimmed">
+                    {lang === 'zh'
+                      ? `聚合器单源线索 ${collapsed.length} 条（默认折叠）`
+                      : `${collapsed.length} aggregator singletons (collapsed)`}
+                  </Text>
+                </Group>
+              </UnstyledButton>
+              {showCollapsed && (
+                <Box mt="xs">
+                  <TimeBucketedList threads={collapsed} isDark={isDark} lang={lang} />
+                </Box>
+              )}
+            </Box>
+          )}
+        </>
+      )}
+
+      {/* Trust loop: relevance-gated items exist only in the raw stream, so AI
+          mode keeps a way in — quiet, but never invisible. */}
+      <Box pt="sm" style={{ borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+        <UnstyledButton onClick={() => setShowRaw(s => !s)}>
+          <Group gap={4}>
+            <Rss size={13} color="var(--mantine-color-gray-5)" />
+            <Text size="sm" c="dimmed">
+              {lang === 'zh' ? (showRaw ? '收起原始订阅数据流' : '查看原始订阅数据流（含已过滤条目）')
+                             : (showRaw ? 'Hide raw stream' : 'View raw stream (incl. filtered items)')}
+            </Text>
+          </Group>
+        </UnstyledButton>
+        {showRaw && <Box mt="md"><RawFeed /></Box>}
+      </Box>
+    </Stack>
+  );
+}
+
+export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }) {
   const { lang } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
   const isDark = colorScheme === 'dark';
-  const [threads, setThreads] = useState<StoryThread[]>([]);
+  const [refined, setRefined] = useState<StoryThread[]>([]);
+  const [leads, setLeads] = useState<StoryThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [catchup, setCatchup] = useState<CatchUp | null>(null);
   const [focusOnly, setFocusOnly] = useState(false);
+  const [tab, setTab] = useState<string | null>('refined');
   const [sinceAnchor] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_KEY));
 
   const fetchThreads = async () => {
     setLoading(true);
     try {
-      const res = await client.get<StoryThread[]>('/intelligence/threads?limit=100');
-      setThreads(res.data || []);
+      const [r, l] = await Promise.all([
+        client.get<StoryThread[]>('/intelligence/threads?view=refined&limit=100'),
+        client.get<StoryThread[]>('/intelligence/threads?view=leads&limit=200'),
+      ]);
+      setRefined(r.data || []);
+      setLeads(l.data || []);
     } catch (e) {
       console.error('Failed to load threads', e);
     } finally {
@@ -153,27 +300,41 @@ export default function Radar() {
   };
 
   useEffect(() => {
+    if (appMode === 'pure_rss') { setLoading(false); return; }
     fetchThreads();
     fetchCatchup();
     localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
     const t = setInterval(fetchThreads, 30000);
     return () => clearInterval(t);
-  }, []);
+  }, [appMode]);
 
-  // A reading feed: most-recent first, but surface confirmed/resonant within
-  // each time bucket. Grouped by time so it reads as "what happened, when".
+  // ---- Pure RSS mode: the raw stream IS the main face. ----
+  if (appMode === 'pure_rss') {
+    return (
+      <Box style={{ maxWidth: 760, margin: '0 auto' }}>
+        <Stack gap={2} mb="md">
+          <Text size="xl" fw={700} className="title-text-color">
+            {lang === 'zh' ? '订阅流' : 'Subscriptions'}
+          </Text>
+          <Text size="sm" c="dimmed">
+            {lang === 'zh' ? '你订阅的一切，未过滤、按抓取时间读下来' : 'Everything you subscribe to, unfiltered, by fetch time'}
+          </Text>
+        </Stack>
+        <RawFeed pollMs={30000} />
+      </Box>
+    );
+  }
+
+  // ---- AI mode: 提炼 | 线报 ----
   const isFocus = (t: StoryThread) => t.lifecycle === 'CONFIRMED' || t.is_resonant || t.alert_reasons.length > 0;
-  const focusCount = threads.filter(isFocus).length;
-  const sorted = [...threads]
-    .filter(t => !focusOnly || isFocus(t))
-    .sort((a, b) => {
-      const ta = a.last_update_at ? new Date(a.last_update_at).getTime() : 0;
-      const tb = b.last_update_at ? new Date(b.last_update_at).getTime() : 0;
-      return tb - ta;
-    });
-  const buckets = (['today', 'week', 'older'] as const)
-    .map(key => ({ key, items: sorted.filter(t => bucketOf(t.last_update_at) === key) }))
-    .filter(b => b.items.length > 0);
+  const focusCount = refined.filter(isFocus).length;
+  const shownRefined = refined.filter(t => !focusOnly || isFocus(t));
+  const tipoffCount = leads.filter(t => t.from_account).length;
+  // The people-radar bypass summarises named-account threads fast, so most
+  // tip-offs live in REFINED — and a summarised single-source account thread is
+  // still an unverified tip. Label it there too: visible first, never dressed
+  // up as news (愿景 95-102).
+  const refinedTipoffIds = new Set(refined.filter(t => t.from_account && t.lifecycle === 'LEAD').map(t => t.id));
 
   return (
     <Box style={{ maxWidth: 760, margin: '0 auto' }}>
@@ -192,7 +353,7 @@ export default function Radar() {
         </Stack>
         <Group gap="md">
           {/* Quiet focus filter — surface just the signal when noise is high. */}
-          {focusCount > 0 && (
+          {tab === 'refined' && focusCount > 0 && (
             <Group gap={4}>
               <UnstyledButton onClick={() => setFocusOnly(false)}>
                 <Text size="sm" c={focusOnly ? 'dimmed' : undefined} fw={focusOnly ? 400 : 700}>
@@ -213,23 +374,27 @@ export default function Radar() {
         </Group>
       </Group>
 
-      {loading && threads.length === 0 ? (
+      <Tabs value={tab} onChange={setTab} variant="default" mb="sm">
+        <Tabs.List>
+          <Tabs.Tab value="refined" leftSection={<Sparkles size={13} />}>
+            {lang === 'zh' ? '提炼' : 'Refined'}
+          </Tabs.Tab>
+          <Tabs.Tab value="leads" leftSection={<Zap size={13} />}>
+            {lang === 'zh' ? '线报' : 'Leads'}{tipoffCount > 0 ? ` (${tipoffCount})` : ''}
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
+
+      {loading && refined.length === 0 && leads.length === 0 ? (
         <Group justify="center" p="xl"><Loader size="sm" /></Group>
-      ) : threads.length === 0 ? (
+      ) : tab === 'leads' ? (
+        <LeadsView leads={leads} isDark={isDark} lang={lang} />
+      ) : shownRefined.length === 0 ? (
         <Text c="dimmed" size="sm" ta="center" py="xl">
-          {lang === 'zh' ? '暂时没有动态。雷达抓取并聚类后，事件会按时间出现在这里。' : 'Nothing yet. As the radar fetches and clusters, events appear here by time.'}
+          {lang === 'zh' ? '还没有提炼出的事件。雷达抓取、聚类并挣得摘要后，会按时间出现在这里。' : 'No refined events yet. As threads earn summaries, they appear here by time.'}
         </Text>
       ) : (
-        <Stack gap="lg">
-          {buckets.map(b => (
-            <Box key={b.key}>
-              <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.6 }} mb={2}>
-                {lang === 'zh' ? BUCKET_LABEL[b.key].zh : BUCKET_LABEL[b.key].en}
-              </Text>
-              {b.items.map(th => <EventRow key={th.id} th={th} isDark={isDark} lang={lang} />)}
-            </Box>
-          ))}
-        </Stack>
+        <TimeBucketedList threads={shownRefined} isDark={isDark} lang={lang} tipoffIds={refinedTipoffIds} />
       )}
     </Box>
   );

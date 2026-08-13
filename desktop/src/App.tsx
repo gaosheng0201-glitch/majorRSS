@@ -526,7 +526,7 @@ function MainAppShell() {
       case 'dashboard':
         return <Dashboard appMode={appMode} />;
       case 'radar':
-        return <Radar />;
+        return <Radar appMode={appMode} />;
       case 'briefing':
         return <Briefing />;
       case 'factcheck':
