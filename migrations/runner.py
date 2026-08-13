@@ -27,7 +27,8 @@ def run_migrations():
             "0011_from_account",
             "0012_release_rate_limit_quarantine",
             "0013_release_capability_failures",
-            "0014_first_party_floor_restamp"
+            "0014_first_party_floor_restamp",
+            "0015_replay_material_timestamps"
         ]
         
         for m in migrations:
@@ -403,6 +404,54 @@ def run_migrations():
                     print(f"first_party_floor_restamp: {restamped} articles → primary, "
                           f"{promoted} threads promoted CONFIRMED, "
                           f"{len(thread_ids)} threads queued for gate re-check")
+
+                elif m == "0015_replay_material_timestamps":
+                    # summarized_at now MEANS "when the story last materially
+                    # changed" (radar sorts by it), and re-summaries now require
+                    # ≥25% publisher growth or a promotion. But stamps written
+                    # under the old any-new-publisher rule stand: the measured
+                    # case is a 3-week-old, 39-publisher thread whose stamp says
+                    # "today" because two straggler outlets re-burned it hours
+                    # before this rule landed — so it outranks today's real news
+                    # PERMANENTLY (the stamp only moves on the next material
+                    # change, which for a settled story never comes). Same shape
+                    # as 0012/0013: correct the records the old rule wrote, or
+                    # the fix stays invisible.
+                    #
+                    # Replay each summarised thread's publisher-arrival sequence
+                    # under the new rule (baseline advances only when an arrival
+                    # is material, mirroring fusion's snapshot) and move the
+                    # stamp BACK to the last material arrival. Never forward,
+                    # and lifecycle promotions are unreplayable (no history) so
+                    # threads may keep a slightly-late stamp — the safe side.
+                    # Summary text is untouched; this corrects display honesty.
+                    from db.models import RawArticle, StoryThread
+                    from services.processor_service import is_material_increment
+                    from services.provenance import real_publisher
+                    from sqlmodel import select as _select
+                    moved = 0
+                    sthreads = session.exec(_select(StoryThread).where(
+                        StoryThread.summary.is_not(None))).all()
+                    for th in sthreads:
+                        members = session.exec(
+                            _select(RawArticle).where(RawArticle.thread_id == th.id)
+                            .order_by(RawArticle.created_at)).all()
+                        if not members or not th.summarized_at:
+                            continue
+                        pubs, prev = set(), 0
+                        last_material = members[0].created_at
+                        for mrow in members:
+                            pubs.add(real_publisher(mrow.url or "", mrow.title or ""))
+                            if is_material_increment(prev, "", len(pubs), ""):
+                                last_material = mrow.created_at
+                                prev = len(pubs)
+                        if last_material and last_material < th.summarized_at:
+                            th.summarized_at = last_material
+                            session.add(th)
+                            moved += 1
+                    session.commit()
+                    print(f"replay_material_timestamps: {moved}/{len(sthreads)} "
+                          f"summarised threads moved back to their last material change")
 
                 sv = SchemaVersion(version_id=m)
                 session.add(sv)

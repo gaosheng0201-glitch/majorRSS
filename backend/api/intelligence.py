@@ -139,13 +139,21 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     q = select(StoryThread)
     if tracker_id is not None:
         q = q.where(StoryThread.tracker_id == tracker_id)
+    # Ordering is time-honesty (author ruling 2026-08-13). last_update_at bumps
+    # on ANY member join, so a three-week-old thread outranked that day's real
+    # news because outlet #40 republished it. summarized_at only moves on a
+    # MATERIAL increment (see processor_service.is_material_increment), so for
+    # refined threads it means "when the story last actually changed". Leads
+    # order by first appearance — a tip's value is its novelty.
     if view == "refined":
         q = q.where(StoryThread.summary.is_not(None))
+        order = (StoryThread.summarized_at.desc(),)
     elif view == "leads":
         q = q.where(StoryThread.summary.is_(None))
-    threads = session.exec(
-        q.order_by(StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc()).limit(limit)
-    ).all()
+        order = (StoryThread.first_seen_at.desc(),)
+    else:
+        order = (StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc())
+    threads = session.exec(q.order_by(*order).limit(limit)).all()
     if not threads:
         return []
 
@@ -196,6 +204,7 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "resonance_score": round(th.resonance_score, 2),
             "last_update_at": th.last_update_at.isoformat() if th.last_update_at else None,
             "first_seen_at": th.first_seen_at.isoformat() if th.first_seen_at else None,
+            "summarized_at": th.summarized_at.isoformat() if th.summarized_at else None,
             "alert_reasons": sorted(reasons_by_thread[th.id]),
             "sources": members_by_thread[th.id],
             "summary": clean_sum or None,

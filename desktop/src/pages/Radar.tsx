@@ -40,12 +40,15 @@ interface StoryThread {
   first_seen_at: string | null;
   alert_reasons: string[];
   sources: ThreadSource[];
+  summarized_at: string | null;
   summary: string | null;
   importance_score: number;
   validity_category: string | null;
   from_account: boolean;
   aggregated_only: boolean;
 }
+
+interface TrackerLite { id: number; name: string; }
 
 interface CatchUp {
   since: string;
@@ -94,7 +97,7 @@ const BUCKET_LABEL: Record<string, { zh: string; en: string }> = {
 // One event, laid out for reading — headline is the hero; the fused summary (if
 // earned) is the body (P2.1 endgame: the feed card IS the thread's summary);
 // time + signals are a quiet meta line; sources expand on demand.
-function EventRow({ th, isDark, lang, tipoff }: { th: StoryThread; isDark: boolean; lang: string; tipoff?: boolean }) {
+function EventRow({ th, isDark, lang, tipoff, trackerName }: { th: StoryThread; isDark: boolean; lang: string; tipoff?: boolean; trackerName?: string }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const confirmed = th.lifecycle === 'CONFIRMED';
@@ -129,7 +132,26 @@ function EventRow({ th, isDark, lang, tipoff }: { th: StoryThread; isDark: boole
       )}
 
       <Group gap={8} mt={5} style={{ fontSize: 12 }}>
-        <Text size="xs" c="dimmed">{relativeTime(th.last_update_at, lang)}</Text>
+        {/* Time honesty (author ruling): the row leads with when the story FIRST
+            appeared; a much-later material change earns a second stamp instead
+            of silently replacing the first. "首见 3 周前 · 进展 刚刚" is the
+            whole lifecycle in four words — a straggler republication produces
+            neither, so it can no longer dress an old story as new. */}
+        <Text size="xs" c="dimmed">
+          {lang === 'zh' ? '首见 ' : 'first '}{relativeTime(th.first_seen_at, lang)}
+        </Text>
+        {(() => {
+          const upd = th.summarized_at || null;
+          if (!upd || !th.first_seen_at) return null;
+          const gap = new Date(upd).getTime() - new Date(th.first_seen_at).getTime();
+          if (gap < 24 * 3600 * 1000) return null;
+          return (
+            <Text size="xs" c="indigo" fw={600}>
+              · {lang === 'zh' ? '进展 ' : 'update '}{relativeTime(upd, lang)}
+            </Text>
+          );
+        })()}
+        {trackerName && <Text size="xs" c="dimmed">· {trackerName}</Text>}
         <Text size="xs" c="dimmed">·</Text>
         <Text size="xs" c="dimmed">{th.distinct_source_count} {lang === 'zh' ? '个来源' : 'sources'}</Text>
         {tipoff && (
@@ -167,16 +189,18 @@ function EventRow({ th, isDark, lang, tipoff }: { th: StoryThread; isDark: boole
   );
 }
 
-function TimeBucketedList({ threads, isDark, lang, tipoffIds }: {
+function TimeBucketedList({ threads, isDark, lang, tipoffIds, timeOf, trackerNames }: {
   threads: StoryThread[]; isDark: boolean; lang: string; tipoffIds?: Set<number>;
+  timeOf: (t: StoryThread) => string | null;
+  trackerNames?: Map<number, string>;
 }) {
   const sorted = [...threads].sort((a, b) => {
-    const ta = a.last_update_at ? new Date(a.last_update_at).getTime() : 0;
-    const tb = b.last_update_at ? new Date(b.last_update_at).getTime() : 0;
+    const ta = timeOf(a) ? new Date(timeOf(a)!).getTime() : 0;
+    const tb = timeOf(b) ? new Date(timeOf(b)!).getTime() : 0;
     return tb - ta;
   });
   const buckets = (['today', 'week', 'older'] as const)
-    .map(key => ({ key, items: sorted.filter(t => bucketOf(t.last_update_at) === key) }))
+    .map(key => ({ key, items: sorted.filter(t => bucketOf(timeOf(t)) === key) }))
     .filter(b => b.items.length > 0);
   return (
     <Stack gap="lg">
@@ -186,7 +210,8 @@ function TimeBucketedList({ threads, isDark, lang, tipoffIds }: {
             {lang === 'zh' ? BUCKET_LABEL[b.key].zh : BUCKET_LABEL[b.key].en}
           </Text>
           {b.items.map(th => (
-            <EventRow key={th.id} th={th} isDark={isDark} lang={lang} tipoff={tipoffIds?.has(th.id)} />
+            <EventRow key={th.id} th={th} isDark={isDark} lang={lang} tipoff={tipoffIds?.has(th.id)}
+                      trackerName={trackerNames && th.tracker_id != null ? trackerNames.get(th.tracker_id) : undefined} />
           ))}
         </Box>
       ))}
@@ -198,7 +223,9 @@ function TimeBucketedList({ threads, isDark, lang, tipoffIds }: {
 // by what the intake stamps say they are. Collapse criterion = aggregator-only
 // AND single-source AND not from a named account — measured 90% of the lead
 // backlog, and the stratum that buried the genuine tip-offs.
-function LeadsView({ leads, isDark, lang }: { leads: StoryThread[]; isDark: boolean; lang: string }) {
+function LeadsView({ leads, isDark, lang, trackerNames }: { leads: StoryThread[]; isDark: boolean; lang: string; trackerNames?: Map<number, string> }) {
+  // A tip's value is its novelty: the leads face orders by first appearance.
+  const timeOf = (t: StoryThread) => t.first_seen_at;
   const [showCollapsed, setShowCollapsed] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
 
@@ -219,7 +246,8 @@ function LeadsView({ leads, isDark, lang }: { leads: StoryThread[]; isDark: bool
       ) : (
         <>
           {visible.length > 0 && (
-            <TimeBucketedList threads={visible} isDark={isDark} lang={lang} tipoffIds={tipoffIds} />
+            <TimeBucketedList threads={visible} isDark={isDark} lang={lang} tipoffIds={tipoffIds}
+                              timeOf={timeOf} trackerNames={trackerNames} />
           )}
           {collapsed.length > 0 && (
             <Box>
@@ -235,7 +263,8 @@ function LeadsView({ leads, isDark, lang }: { leads: StoryThread[]; isDark: bool
               </UnstyledButton>
               {showCollapsed && (
                 <Box mt="xs">
-                  <TimeBucketedList threads={collapsed} isDark={isDark} lang={lang} />
+                  <TimeBucketedList threads={collapsed} isDark={isDark} lang={lang}
+                                    timeOf={timeOf} trackerNames={trackerNames} />
                 </Box>
               )}
             </Box>
@@ -271,6 +300,8 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
   const [catchup, setCatchup] = useState<CatchUp | null>(null);
   const [focusOnly, setFocusOnly] = useState(false);
   const [tab, setTab] = useState<string | null>('refined');
+  const [trackers, setTrackers] = useState<TrackerLite[]>([]);
+  const [trackerFilter, setTrackerFilter] = useState<number | null>(null);
   const [sinceAnchor] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_KEY));
 
   const fetchThreads = async () => {
@@ -303,6 +334,7 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
     if (appMode === 'pure_rss') { setLoading(false); return; }
     fetchThreads();
     fetchCatchup();
+    client.get<TrackerLite[]>('/trackers/').then(r => setTrackers(r.data || [])).catch(() => {});
     localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
     const t = setInterval(fetchThreads, 30000);
     return () => clearInterval(t);
@@ -327,9 +359,15 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
 
   // ---- AI mode: 提炼 | 线报 ----
   const isFocus = (t: StoryThread) => t.lifecycle === 'CONFIRMED' || t.is_resonant || t.alert_reasons.length > 0;
-  const focusCount = refined.filter(isFocus).length;
-  const shownRefined = refined.filter(t => !focusOnly || isFocus(t));
-  const tipoffCount = leads.filter(t => t.from_account).length;
+  const byTracker = (t: StoryThread) => trackerFilter === null || t.tracker_id === trackerFilter;
+  const shownLeads = leads.filter(byTracker);
+  const focusCount = refined.filter(byTracker).filter(isFocus).length;
+  const shownRefined = refined.filter(byTracker).filter(t => !focusOnly || isFocus(t));
+  const tipoffCount = shownLeads.filter(t => t.from_account).length;
+  const trackerNames = new Map(trackers.map(tr => [tr.id, tr.name]));
+  // Refined face: a story sits at its last MATERIAL change (summarized_at only
+  // moves on real increments), never at the arrival of a straggler copy.
+  const refinedTimeOf = (t: StoryThread) => t.summarized_at || t.first_seen_at;
   // The people-radar bypass summarises named-account threads fast, so most
   // tip-offs live in REFINED — and a summarised single-source account thread is
   // still an unverified tip. Label it there too: visible first, never dressed
@@ -374,7 +412,7 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
         </Group>
       </Group>
 
-      <Tabs value={tab} onChange={setTab} variant="default" mb="sm">
+      <Tabs value={tab} onChange={setTab} variant="default" mb="xs">
         <Tabs.List>
           <Tabs.Tab value="refined" leftSection={<Sparkles size={13} />}>
             {lang === 'zh' ? '提炼' : 'Refined'}
@@ -385,16 +423,40 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
         </Tabs.List>
       </Tabs>
 
+      {/* 板块筛选 — restores the old Dashboard's per-section reading without
+          re-fragmenting the surface: one page, filterable. Client-side; the
+          threads are already loaded. */}
+      {trackers.length > 1 && (
+        <Group gap={6} mb="sm" style={{ flexWrap: 'wrap' }}>
+          <UnstyledButton onClick={() => setTrackerFilter(null)}>
+            <Text size="xs" fw={trackerFilter === null ? 700 : 400}
+                  c={trackerFilter === null ? undefined : 'dimmed'}>
+              {lang === 'zh' ? '全部' : 'All'}
+            </Text>
+          </UnstyledButton>
+          {trackers.map(tr => (
+            <UnstyledButton key={tr.id} onClick={() => setTrackerFilter(f => f === tr.id ? null : tr.id)}>
+              <Text size="xs" fw={trackerFilter === tr.id ? 700 : 400}
+                    c={trackerFilter === tr.id ? undefined : 'dimmed'}>
+                {tr.name}
+              </Text>
+            </UnstyledButton>
+          ))}
+        </Group>
+      )}
+
       {loading && refined.length === 0 && leads.length === 0 ? (
         <Group justify="center" p="xl"><Loader size="sm" /></Group>
       ) : tab === 'leads' ? (
-        <LeadsView leads={leads} isDark={isDark} lang={lang} />
+        <LeadsView leads={shownLeads} isDark={isDark} lang={lang}
+                   trackerNames={trackerFilter === null ? trackerNames : undefined} />
       ) : shownRefined.length === 0 ? (
         <Text c="dimmed" size="sm" ta="center" py="xl">
           {lang === 'zh' ? '还没有提炼出的事件。雷达抓取、聚类并挣得摘要后，会按时间出现在这里。' : 'No refined events yet. As threads earn summaries, they appear here by time.'}
         </Text>
       ) : (
-        <TimeBucketedList threads={shownRefined} isDark={isDark} lang={lang} tipoffIds={refinedTipoffIds} />
+        <TimeBucketedList threads={shownRefined} isDark={isDark} lang={lang} tipoffIds={refinedTipoffIds}
+                          timeOf={refinedTimeOf} trackerNames={trackerFilter === null ? trackerNames : undefined} />
       )}
     </Box>
   );

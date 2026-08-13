@@ -135,3 +135,35 @@ def test_the_brin_shape_second_candidate_reachable():
     assert [tid for tid, _ in got] == [10, 20]
     # A one-candidate flow stops here; the list carries the rescue target.
     assert got[1][0] == 20
+
+
+# --- D. material-increment rule (2026-08-13 time-honesty ruling) -------------
+
+def test_small_thread_growth_is_material():
+    from services.processor_service import is_material_increment
+    # 3→4 publishers genuinely changes a story's credibility (+33%).
+    assert is_material_increment(3, "CORROBORATED", 4, "CORROBORATED")
+
+
+def test_mega_thread_stragglers_are_not_material():
+    from services.processor_service import is_material_increment
+    # The measured case: a 3-week-old thread at 37 publishers gained two
+    # straggler outlets (+5%), re-burned fusion twice and outranked that day's
+    # real news. Outlet #40 is news about outlet #40.
+    assert not is_material_increment(37, "CORROBORATED", 39, "CORROBORATED")
+
+
+def test_promotion_is_material_at_any_size():
+    from services.processor_service import is_material_increment
+    assert is_material_increment(39, "CORROBORATED", 39, "CONFIRMED")
+
+
+def test_no_growth_is_never_material():
+    from services.processor_service import is_material_increment
+    assert not is_material_increment(5, "CONFIRMED", 5, "CONFIRMED")
+    assert not is_material_increment(5, "CONFIRMED", 4, "CONFIRMED")
+
+
+def test_first_growth_from_nothing_is_material():
+    from services.processor_service import is_material_increment
+    assert is_material_increment(0, "", 1, "LEAD")

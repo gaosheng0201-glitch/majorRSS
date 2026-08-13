@@ -26,6 +26,45 @@ FUSION_MAX_MEMBERS = int(os.environ.get("FUSION_MAX_MEMBERS", "12"))
 # sources bypass the gate entirely (opt-in is itself a signal).
 FUSION_MIN_SOURCES = int(os.environ.get("FUSION_MIN_SOURCES", "3"))
 
+# Relative publisher growth required to count as a material increment for an
+# already-summarised thread (see is_material_increment).
+FUSION_INCREMENT_GROWTH = float(os.environ.get("FUSION_INCREMENT_GROWTH", "0.25"))
+
+_LIFECYCLE_RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
+
+
+def is_material_increment(prev_count: int, prev_lifecycle: str,
+                          new_count: int, new_lifecycle: str) -> bool:
+    """Does an already-summarised thread deserve a re-summary — and, downstream,
+    a bump back to the top of the feed?
+
+    The first version of this rule (2026-07-28) was "any new distinct publisher
+    or a lifecycle promotion". Correct at small counts — 3→4 publishers really
+    changes a story's credibility — but it ignored diminishing returns, and the
+    author caught the consequence on screen: a three-week-old thread with 39
+    publishers gained two straggler outlets, re-burned fusion twice in one day,
+    and ranked above that day's genuinely-new announcement, stamped "刚刚".
+    Outlet #40 is not news about the story; it is news about outlet #40.
+
+    So growth is now RELATIVE: ≥25% more publishers than the last fusion saw
+    (3→4 passes at +33%; 37→39 fails at +5%). Lifecycle promotion always
+    passes — CONFIRMED arriving is material at any size. A newly-resonant burst
+    almost always rides on publisher growth, so it needs no separate term; the
+    corner case (a mega-thread reigniting in under an hour on <25% growth)
+    corrects itself within a cycle as the burst keeps adding publishers.
+
+    Because summarized_at only moves when this returns True, it now MEANS
+    "when the story last materially changed" — which is what the radar sorts
+    and buckets by. Ranking honesty and re-burn cost are the same rule.
+    """
+    if _LIFECYCLE_RANK.get(new_lifecycle or "", 0) > _LIFECYCLE_RANK.get(prev_lifecycle or "", 0):
+        return True
+    if new_count <= prev_count:
+        return False
+    if prev_count <= 0:
+        return True
+    return (new_count - prev_count) / prev_count >= FUSION_INCREMENT_GROWTH
+
 
 # Feed boilerplate that precedes the real text. Measured on live data: arXiv
 # items begin "arXiv:2607.20452v1 Announce Type: new", which is metadata, not the
@@ -342,9 +381,9 @@ def _fuse_thread(tracker, thread_id: int):
         if thread.summary:
             prev_dsc = thread.fused_source_count or 0
             prev_life = thread.fused_lifecycle or ""
-            _RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
-            promoted = _RANK.get(thread.lifecycle or "", 0) > _RANK.get(prev_life, 0)
-            if (thread.distinct_source_count or 0) <= prev_dsc and not promoted:
+            if not is_material_increment(prev_dsc, prev_life,
+                                         thread.distinct_source_count or 0,
+                                         thread.lifecycle or ""):
                 thread.gate_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 session.add(thread)
                 for u in members:
