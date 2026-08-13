@@ -176,6 +176,30 @@ def assign_thread(vec: List[float], thread_centroids: List[Tuple[int, List[float
     return None, best_sim
 
 
+def assign_thread_candidates(vec: List[float],
+                             thread_centroids: List[Tuple[int, List[float]]],
+                             floor: float, k: int = 3) -> List[Tuple[int, float]]:
+    """Top-k nearest threads above `floor`, best first, in the same centered
+    space as assign_thread.
+
+    Exists because the arbiter used to see only the single nearest thread, and
+    nearest-by-cosine is often a sibling, not the story: the Brin/Gemini item's
+    top match was another singleton about the same product (rejected, correctly
+    — different event), while the 21-publisher thread it belonged to was never
+    consulted at all. One wrong-but-closest neighbour thus vetoed every right
+    answer behind it. The arbiter now works down this list; the judgement
+    standard is unchanged, only the set of things judged.
+    """
+    cv = _center(vec)
+    scored = []
+    for tid, c in thread_centroids:
+        s = cosine(cv, _center(c))
+        if s >= floor:
+            scored.append((tid, s))
+    scored.sort(key=lambda t: t[1], reverse=True)
+    return scored[:k]
+
+
 def update_centroid(centroid: Optional[List[float]], count: int, new_vec: List[float]) -> List[float]:
     """Incremental mean of member vectors (running centroid) so a thread's
     center tracks its contents without recomputing over all members."""

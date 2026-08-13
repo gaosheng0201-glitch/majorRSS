@@ -38,6 +38,11 @@ _EVENT_ARBITER_SYS = (
     "event/announcement. Reply with exactly one word: yes or no."
 )
 _ARBITER_CALLS_PER_CYCLE = 300  # cost/latency cap; excess falls back to embedding
+# How many nearest threads the arbiter may consult per article (top-1 was a
+# measured failure: the closest neighbour vetoed the right answer behind it).
+# Worst case multiplies calls by this factor; typical batches (~90 gray-zone
+# merges) stay under the cycle cap.
+_ARBITER_CANDIDATES = 3
 
 
 def _llm_same_event(provider, title_a, title_b):
@@ -219,9 +224,12 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     # volume must be visible per cycle to judge whether raising
     # THREAD_HIGH_CONFIDENCE was worth it. Spend itself is billed under the
     # EventArbiter action in tokenusage → Billing 的「成本构成」卡.
-    arb_calls = 0              # gray-zone merges actually sent to the LLM
+    arb_calls = 0              # gray-zone candidates actually sent to the LLM
     arb_splits = 0             # …of which the LLM rejected as a different event
     arb_failed = 0             # …calls that errored (embedding decision kept)
+    arb_rescued = 0            # merged into a candidate BEHIND a rejected top-1 —
+                               # each of these is a thread the old flow would
+                               # have wrongly started from scratch
     arb_skipped_confident = 0  # merges accepted on embedding confidence alone
     arb_skipped_budget = 0     # gray-zone merges that ran out of budget
     with get_session() as session:
@@ -270,36 +278,62 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                     except Exception:
                         pass
 
-            # Candidate = nearest thread above the low floor (positive-ish in the
-            # centered space); the arbiter judges it. The floor (not the old 0.18)
-            # keeps cross-language same-event pairs as candidates.
-            tid, sim = sm.assign_thread(vec, centroids, threshold=sm.THREAD_CANDIDATE_FLOOR)
-            # Embedding proposes merging into `tid`. If it's not a high-confidence
-            # (near-identical) match, ask the LLM whether it's really the same
-            # event — embedding alone can't separate same-entity events. A "no"
-            # forces a new thread. Only merges, only the gray zone, only while
-            # budget remains; otherwise keep the embedding decision.
-            if (tid is not None and arbiter is not None and arb_budget > 0
-                    and sim < sm.THREAD_HIGH_CONFIDENCE):
-                arb_budget -= 1
-                arb_calls += 1
-                rep_title = (thread_by_id[tid].title or "")
-                same = _llm_same_event(arbiter, rep_title, article.title or "")
-                if same is False:
-                    arb_splits += 1
-                    logger.info(f"Arbiter split (sim={sim:.2f}): '{(article.title or '')[:40]}' "
-                                f"≠ event of thread {tid}")
-                    tid = None
-                elif same is None:
-                    arb_failed += 1
-            elif tid is not None and arbiter is not None and arb_budget <= 0 \
-                    and sim < sm.THREAD_HIGH_CONFIDENCE:
-                arb_skipped_budget += 1
-            elif tid is not None and sim >= sm.THREAD_HIGH_CONFIDENCE:
-                # Merged on embedding confidence alone. Counted so the share of
-                # unexamined merges stays visible — if this dominates and
-                # over-merges persist, THREAD_HIGH_CONFIDENCE is still too low.
-                arb_skipped_confident += 1
+            # Candidates = the k nearest threads above the low floor (positive-ish
+            # in the centered space), best first. Top-1-only was a measured
+            # failure mode: the nearest neighbour is often a sibling singleton
+            # about the same entity, the arbiter (correctly) rejects it, and the
+            # thread the article actually belongs to — sitting in second place —
+            # is never consulted. 80% of arbiter calls ended in splits and 88% of
+            # all threads were singletons. The arbiter now walks the list until a
+            # "yes"; the judgement standard itself is unchanged.
+            cands = sm.assign_thread_candidates(vec, centroids,
+                                                floor=sm.THREAD_CANDIDATE_FLOOR,
+                                                k=_ARBITER_CANDIDATES)
+            tid = None
+            if cands:
+                best_tid, best_sim = cands[0]
+                if best_sim >= sm.THREAD_HIGH_CONFIDENCE:
+                    # Near-identical: merged on embedding confidence alone.
+                    # Counted so the share of unexamined merges stays visible.
+                    tid = best_tid
+                    arb_skipped_confident += 1
+                elif arbiter is None:
+                    # No arbiter configured: keep the embedding decision.
+                    tid = best_tid
+                elif arb_budget <= 0:
+                    tid = best_tid
+                    arb_skipped_budget += 1
+                else:
+                    for ctid, csim in cands:
+                        if arb_budget <= 0:
+                            # Ran dry mid-list. Do NOT fall back to a candidate
+                            # the arbiter already rejected; a new thread is the
+                            # conservative outcome here.
+                            arb_skipped_budget += 1
+                            break
+                        arb_budget -= 1
+                        arb_calls += 1
+                        same = _llm_same_event(arbiter, (thread_by_id[ctid].title or ""),
+                                               article.title or "")
+                        if same is True:
+                            tid = ctid
+                            if ctid != cands[0][0]:
+                                # The fix earning its keep: merged into a thread
+                                # the old top-1 flow could never have reached.
+                                arb_rescued += 1
+                                logger.info(f"Arbiter rescue (sim={csim:.2f}): "
+                                            f"'{(article.title or '')[:40]}' → thread {ctid} "
+                                            f"(top-1 {cands[0][0]} was rejected)")
+                            break
+                        if same is None:
+                            # Call errored: keep the embedding decision for THIS
+                            # candidate (the pre-arbiter behaviour) and stop.
+                            arb_failed += 1
+                            tid = ctid
+                            break
+                        arb_splits += 1
+                        logger.info(f"Arbiter split (sim={csim:.2f}): '{(article.title or '')[:40]}' "
+                                    f"≠ event of thread {ctid}")
             if tid is None:
                 # A brand-new thread from a first-party source is CONFIRMED
                 # outright (an official announcement); otherwise it starts LEAD.
@@ -380,8 +414,9 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
 
     logger.info(f"Semantic ingest: embedded {len(embedded)}, threads +{created} ~{updated}, "
                 f"gated {gated}, embed_skipped {embed_skipped} | "
-                f"arbiter: {arb_calls} calls, {arb_splits} splits, {arb_failed} failed, "
-                f"{arb_skipped_confident} skipped(confident), {arb_skipped_budget} skipped(budget)")
+                f"arbiter: {arb_calls} calls, {arb_splits} splits, {arb_rescued} rescued, "
+                f"{arb_failed} failed, {arb_skipped_confident} skipped(confident), "
+                f"{arb_skipped_budget} skipped(budget)")
     return {"embedded": len(embedded), "threads_created": created,
             "threads_updated": updated, "relevance_gated": gated,
             "embed_skipped": embed_skipped,
