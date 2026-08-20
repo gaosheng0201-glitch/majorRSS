@@ -70,7 +70,7 @@ class IntentPlan(BaseModel):
 
 ## 7. 分期（可独立合入的三刀）
 
-1. **P4.0a schema+分道**：IntentPlan/lane 判断+UI 预览确认（不动 resolver,`entities` 仍降维成关键词用）——独立可用
+1. ✅ **P4.0a schema+分道**（2026-08-20 落地,真实 LLM 边界例三过,66 测试）：IntentPlan/lane 判断+UI 预览确认（不动 resolver,`entities` 仍降维成关键词用）——独立可用
 2. **P4.0b 路由派生**：resolver 消费 AliasSpec/官方域名/账号建议,运行时字形启发式退居兜底
 3. **P4.0c 建议源**（=P4.1 雏形）：suggested_sources + 存在性校验
 

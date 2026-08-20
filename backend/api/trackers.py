@@ -26,6 +26,22 @@ def plan_watch_target(req: PlanRequest):
     from services.portfolio_planner import plan_portfolio
     return plan_portfolio(req.name, req.intent_text or "", use_llm=req.use_llm)
 
+
+class IntentPlanRequest(BaseModel):
+    intent_text: str
+    name: Optional[str] = ""
+    use_llm: bool = True
+
+
+@router.post("/plan-intent")
+def plan_intent_endpoint(req: IntentPlanRequest):
+    """P4.0: one natural-language sentence → structured IntentPlan (lane,
+    language-aware entity profile, per-target official domains, collections,
+    keywords, cadence). A PROPOSAL: the client shows it for editing and only a
+    confirmed plan is stored — 可解释 > 自动化 (docs/p4_intent_design.md)."""
+    from services.portfolio_planner import plan_intent
+    return plan_intent(req.intent_text, req.name or "", use_llm=req.use_llm)
+
 def _ensure_source_scope(name: str, target: str, fetch_policy_json: Optional[str]) -> Optional[str]:
     """Guarantee a target watches curated first-party sources, not just a keyword
     meta-search. If the client didn't attach a source_scope (chosen preset

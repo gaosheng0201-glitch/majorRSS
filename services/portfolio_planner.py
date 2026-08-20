@@ -214,6 +214,166 @@ def plan_portfolio(name: str, intent_text: str = "", use_llm: bool = True) -> di
     }
 
 
+# ---------------------------------------------------------------------------
+# P4.0 意图探索 — IntentPlan, PortfolioPlan's successor (docs/p4_intent_design.md)
+#
+# One natural-language sentence → one LLM call at creation time → a complete,
+# structured task definition the runtime executes deterministically afterwards.
+# PortfolioPlan stays: it is the down-converted subset older code reads, and the
+# deterministic fallback still produces it. IntentPlan adds what Drift 3 said
+# was missing: per-alias language/region intent, per-target official domains,
+# and the radar-vs-monitor lane call.
+# ---------------------------------------------------------------------------
+
+_DOMAIN_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})+$")
+
+
+class AliasSpec(BaseModel):
+    text: str = Field(description="The alias itself, e.g. '渐冻症' / 'ALS' / '筋萎縮性側索硬化症'")
+    lang: str = Field(default="en", description="BCP-47 language of this alias, e.g. 'zh', 'en', 'ja'")
+    regions: List[str] = Field(default=[], description="Region editions worth searching for this alias, e.g. ['CN'] or ['US','GB']")
+    role: str = Field(default="name", description="name | person | org | product | ticker")
+
+
+class SourceSuggestion(BaseModel):
+    kind: str = Field(description="rss | account | subreddit | registry | page_monitor")
+    value: str = Field(description="URL / @handle / subreddit name / registry query")
+    platform: str = Field(default="", description="twitter / reddit / ... when kind is account or subreddit")
+    reason: str = Field(default="", description="Why this source fits (explainability > automation)")
+    verified: bool = Field(default=False, description="Existence-checked. Models invent sources; unverified stays a suggestion.")
+
+
+class IntentPlan(BaseModel):
+    lane: str = Field(default="radar", description="'radar' (follow a TOPIC: multi-source, must earn attention) or 'monitor' (watch a SPECIFIC artifact: any change IS the event)")
+    lane_reason: str = Field(default="", description="One sentence on why this lane")
+    monitor_url: str = Field(default="", description="When lane=monitor: the exact page URL to diff-watch")
+    entities: List[AliasSpec] = Field(default=[], description="Language-independent entity profile: the target plus aliases in every language it is reported in")
+    official_domains: List[str] = Field(default=[], description="THIS target's own official domains (per-target first-party), e.g. ['deepmind.google'] for a Gemini target")
+    selected_collections: List[str] = Field(default=[], description="Preset collection ids from the catalog")
+    suggested_sources: List[SourceSuggestion] = Field(default=[], description="Sources beyond the presets (slice c; keep empty unless certain)")
+    keep_keywords: List[str] = Field(default=[])
+    ignore_keywords: List[str] = Field(default=[], description="Disambiguation excludes, e.g. 'horoscope' for a Gemini-the-model target")
+    warmup_days: int = Field(default=7, description="Backfill window at creation: fast topics 7, slow topics up to 90")
+    fetch_interval_minutes: int = Field(default=30)
+    narration_lang: str = Field(default="zh", description="Language the USER wrote in — decides narration only, never search scope")
+    rationale: str = Field(default="")
+
+
+_INTENT_SYSTEM = (
+    "You are the intent planner for a personal intelligence radar. The user writes ONE "
+    "natural-language sentence about what they want to know; you produce the complete, "
+    "structured watch definition. Rules:\n"
+    "1. LANE: 'radar' when the intent is following a TOPIC (noisy, multi-source); 'monitor' "
+    "when it is watching one SPECIFIC artifact (a page, an API doc, a signup form) where any "
+    "change is the event — then put the exact URL in monitor_url.\n"
+    "2. ENTITIES: expand into a language-independent profile. The topic's source geography is "
+    "a property of the TOPIC, not of the user's language: include aliases in every language "
+    "the topic is actually reported in, each with its own lang and region editions. The user's "
+    "input language only sets narration_lang.\n"
+    "3. official_domains: the target's OWN channels only (vendor newsroom, project blog). "
+    "Never press, never multi-topic portfolio blogs.\n"
+    "4. ignore_keywords: disambiguate collisions (a 'gemini' AI target must exclude horoscope "
+    "senses; 'grok' must exclude the Renault engine).\n"
+    "5. selected_collections: only ids present in the catalog; prefer few and high-signal.\n"
+    "6. suggested_sources: leave empty unless you are certain a source exists.\n"
+    "7. warmup_days: fast-moving topics 7; slow domains (research, disease) up to 90."
+)
+
+
+def _detect_narration_lang(text: str) -> str:
+    for ch in text or "":
+        if "぀" <= ch <= "ヿ":
+            return "ja"
+        if "가" <= ch <= "힯":
+            return "ko"
+        if "一" <= ch <= "鿿":
+            return "zh"
+    return "en"
+
+
+def plan_intent(intent_text: str, name: str = "", use_llm: bool = True) -> dict:
+    """One sentence of intent → IntentPlan (+ compatibility down-conversion).
+
+    Returns {"planner_used", "intent_plan": <IntentPlan dict>, "fetch_policy":
+    <ready-to-store policy carrying intent_plan AND the legacy keys the current
+    runtime reads>} — strangler-fig: nothing existing changes behaviour until
+    slice b teaches the resolver to read intent_plan itself.
+    """
+    collections = _load_collections()
+    plan: Optional[IntentPlan] = None
+    planner_used = "fallback"
+
+    if use_llm:
+        try:
+            from services.llm_provider import get_provider
+            provider = get_provider()
+            if provider.supports_generation:
+                catalog = "\n".join(
+                    f"- {c['id']}: {c['title']} — {c['description'][:100]}" for c in collections)
+                prompt = (
+                    f"USER INTENT (one sentence): {intent_text}\n"
+                    f"TARGET NAME (optional): {name or '(derive from intent)'}\n\n"
+                    f"AVAILABLE COLLECTIONS:\n{catalog}"
+                )
+                text, usage = provider.generate(prompt, system=_INTENT_SYSTEM,
+                                                schema=IntentPlan, temperature=0.3)
+                plan = IntentPlan(**json.loads(text))
+                planner_used = provider.name
+                try:
+                    from llm.processor import _record_usage
+                    _record_usage(provider.name, "IntentPlan", usage)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"LLM intent planning failed ({e}); using fallback.")
+
+    if plan is None:
+        # Pure-RSS floor: the deterministic portfolio planner, lifted into the
+        # new shape. lane defaults to radar; the UI says a model unlocks
+        # lane-detection and alias expansion.
+        base = _fallback_plan(name or intent_text, intent_text, collections)
+        nl = _detect_narration_lang(intent_text)
+        plan = IntentPlan(
+            lane="radar",
+            lane_reason="No generation model configured; radar is the safe default.",
+            entities=[AliasSpec(text=e, lang=nl) for e in base.entities],
+            selected_collections=base.selected_collections,
+            keep_keywords=base.keep_keywords,
+            ignore_keywords=base.ignore_keywords,
+            narration_lang=nl,
+            rationale=base.rationale,
+        )
+
+    # --- Guards (the model invents things; the plan must not) ---
+    valid_ids = {c["id"] for c in collections}
+    plan.selected_collections = [c for c in plan.selected_collections if c in valid_ids]
+    plan.lane = plan.lane if plan.lane in ("radar", "monitor") else "radar"
+    plan.official_domains = [d.strip().lower() for d in plan.official_domains
+                             if _DOMAIN_RE.match(d.strip().lower())][:8]
+    plan.warmup_days = max(1, min(int(plan.warmup_days or 7), 90))
+    plan.fetch_interval_minutes = max(5, min(int(plan.fetch_interval_minutes or 30), 24 * 60))
+    if plan.lane == "monitor" and not plan.monitor_url.startswith(("http://", "https://")):
+        # A monitor without a concrete URL is not a monitor.
+        plan.lane, plan.monitor_url = "radar", ""
+        plan.lane_reason += " (downgraded: no concrete URL to watch)"
+
+    # --- Down-conversion: the keys today's runtime actually reads ---
+    fetch_policy = dict(DEFAULT_BUDGET)
+    fetch_policy.update({
+        "source_scope": plan.selected_collections,
+        "keep_keywords": plan.keep_keywords,
+        "ignore_keywords": plan.ignore_keywords,
+        "entities": [a.text for a in plan.entities],
+        "max_days": plan.warmup_days,
+        "intent_plan": plan.model_dump(),
+    })
+    return {
+        "planner_used": planner_used,
+        "intent_plan": plan.model_dump(),
+        "fetch_policy": fetch_policy,
+    }
+
+
 def backfill_tracker_entities(limit: int = 20) -> dict:
     """Give existing trackers the MULTILINGUAL aliases they never got (self-heal).
 

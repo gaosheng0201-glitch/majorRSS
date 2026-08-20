@@ -102,6 +102,56 @@ export default function Discovery() {
   const [plan, setPlan] = useState<any>(null);
   const [planning, setPlanning] = useState(false);
 
+  // P4.0a 意图探索：一句话 → IntentPlan（分道 + 语言别名 + 官方域名 + 集合）。
+  // 只是提案：应用进表单、用户确认保存才落库（可解释 > 自动化）。
+  const [intentText, setIntentText] = useState('');
+  const [intentPlan, setIntentPlan] = useState<any>(null);
+  const [intentPlanning, setIntentPlanning] = useState(false);
+
+  const handlePlanIntent = async () => {
+    setIntentPlanning(true);
+    setIntentPlan(null);
+    try {
+      const res = await client.post('/trackers/plan-intent',
+        { intent_text: intentText, name, use_llm: true }, { timeout: 60000 });
+      setIntentPlan(res.data);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || err.message);
+    } finally {
+      setIntentPlanning(false);
+    }
+  };
+
+  const applyIntentPlan = () => {
+    const ip = intentPlan?.intent_plan;
+    if (!ip) return;
+    const aliasTexts: string[] = (ip.entities || []).map((a: any) => a.text).filter(Boolean);
+    if (!name.trim() && aliasTexts[0]) setName(aliasTexts[0]);
+    // 别名即搜索词：进 keywords（运行时按别名生成各语言版本路由——b 刀接管后更精确）。
+    if (aliasTexts.length) setKeywords(aliasTexts.join('\n'));
+    setKeepKeywords((ip.keep_keywords || []).join('\n'));
+    setIgnoreKeywords((ip.ignore_keywords || []).join('\n'));
+    if (ip.warmup_days) setFreshnessDays(ip.warmup_days);
+    if (ip.fetch_interval_minutes) setIntervalVal(ip.fetch_interval_minutes);
+    setActiveStep(1);
+  };
+
+  const createAsMonitor = async () => {
+    const ip = intentPlan?.intent_plan;
+    if (!ip?.monitor_url) return;
+    try {
+      await client.post('/monitors/', {
+        name: name.trim() || intentText.slice(0, 40),
+        target_url: ip.monitor_url,
+        fetch_interval_minutes: ip.fetch_interval_minutes || 60,
+      });
+      alert('已建为页面监控，见「订阅管理」。');
+      close();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || err.message);
+    }
+  };
+
   const handlePreviewPlan = async () => {
     if (!name.trim()) return;
     setPlanning(true);
@@ -287,6 +337,8 @@ export default function Discovery() {
     setKeepKeywords('');
     setIgnoreKeywords('');
     setTestResult(null);
+    setIntentText('');
+    setIntentPlan(null);
     setActiveStep(0);
   };
 
@@ -324,6 +376,16 @@ export default function Discovery() {
       policy.use_default_osint = false;
     } else if (intensity === 'broad') {
       policy.use_default_osint = true;
+    }
+
+    // P4.0 绞杀者存储：完整 IntentPlan 随 fetch_policy 落库（b 刀让 resolver
+    // 直接消费它），同时写旧键让现运行时立即受益。
+    if (intentPlan?.intent_plan) {
+      const ip = intentPlan.intent_plan;
+      policy.intent_plan = ip;
+      const aliasTexts = (ip.entities || []).map((a: any) => a.text).filter(Boolean);
+      if (aliasTexts.length) policy.entities = aliasTexts;
+      if ((ip.selected_collections || []).length) policy.source_scope = ip.selected_collections;
     }
 
     return JSON.stringify(policy);
@@ -639,6 +701,77 @@ export default function Discovery() {
           {/* Step 1: Target settings */}
           <Stepper.Step label="表达意图" description="定义探测主题">
             <Stack gap="md" mt="md">
+              {/* P4.0：意图先行。一句话 → 完整任务提案；下面的手动字段全部保留
+                  （纯 RSS/无 key 用户的既有路径，愿景: 永远的地板）。 */}
+              <Textarea
+                label="用一句话说你想知道什么"
+                description="例：帮我盯 Gemini 模型的动向 / 某罕见病有没有新疗法 / 这个页面变了告诉我 https://…"
+                placeholder="自然语言即可——系统会规划别名、语言覆盖、源组合，并判断走雷达还是页面监控"
+                autosize minRows={2}
+                value={intentText}
+                onChange={(e) => setIntentText(e.target.value)}
+                styles={modalInputStyles}
+              />
+              <div>
+                <Button variant="light" size="xs" color="indigo" loading={intentPlanning}
+                        disabled={!intentText.trim()} onClick={handlePlanIntent}>
+                  智能规划
+                </Button>
+                {intentPlan?.intent_plan && (() => {
+                  const ip = intentPlan.intent_plan;
+                  const isMonitor = ip.lane === 'monitor';
+                  return (
+                    <Paper withBorder p="sm" radius="md" mt="xs"
+                           style={{ background: isMonitor ? 'rgba(250,176,5,0.06)' : 'rgba(99,102,241,0.04)' }}>
+                      <Group gap={6} mb={6}>
+                        <Badge size="sm" color={isMonitor ? 'yellow' : 'indigo'} variant="light">
+                          {isMonitor ? '页面监控道' : '雷达道'}
+                        </Badge>
+                        <Text size="10px" c="dimmed">{ip.lane_reason}</Text>
+                        <Text size="10px" c="dimmed">
+                          {intentPlan.planner_used === 'fallback' ? '（无模型：确定性规划，接入模型可自动分道/扩别名）' : `（${intentPlan.planner_used}）`}
+                        </Text>
+                      </Group>
+                      {isMonitor ? (
+                        <Stack gap={6}>
+                          <Text size="xs">监控对象：<Text span ff="monospace" size="xs">{ip.monitor_url}</Text></Text>
+                          <Text size="xs" c="dimmed">变化即事件，直接通知——不进雷达聚类。</Text>
+                          <Button size="xs" color="yellow" variant="light" onClick={createAsMonitor}>
+                            确认建为页面监控
+                          </Button>
+                        </Stack>
+                      ) : (
+                        <Stack gap={6}>
+                          {(ip.entities || []).length > 0 && (
+                            <Group gap={4}>
+                              {(ip.entities || []).slice(0, 10).map((a: any, i: number) => (
+                                <Badge key={i} size="xs" variant="outline" color="gray">
+                                  {a.text}<Text span size="9px" c="dimmed"> {a.lang}{a.regions?.length ? '·' + a.regions.join(',') : ''}</Text>
+                                </Badge>
+                              ))}
+                            </Group>
+                          )}
+                          {(ip.official_domains || []).length > 0 && (
+                            <Text size="xs">官方域名（此目标的一手源）：{ip.official_domains.join('、')}</Text>
+                          )}
+                          <Text size="xs">
+                            源集合：{(ip.selected_collections || []).join('、') || '（无匹配，用通用基座）'}
+                            {' '}· 回填 {ip.warmup_days} 天 · 每 {ip.fetch_interval_minutes} 分钟
+                          </Text>
+                          {(ip.ignore_keywords || []).length > 0 && (
+                            <Text size="xs" c="dimmed">排除歧义：{ip.ignore_keywords.join('、')}</Text>
+                          )}
+                          {ip.rationale && <Text size="10px" c="dimmed">{ip.rationale}</Text>}
+                          <Button size="xs" color="indigo" variant="light" onClick={applyIntentPlan}>
+                            应用到表单（下一步可继续编辑）
+                          </Button>
+                        </Stack>
+                      )}
+                    </Paper>
+                  );
+                })()}
+              </div>
+
               <TextInput
                 label="探测项目主题 (Topic Title)"
                 placeholder="例如：苹果最新设备"

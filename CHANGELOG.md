@@ -169,6 +169,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 测试 53 → 58：增量规则五例钉死（小线索增长过、大线索迟到转载不过、晋级任意规模过、零增长永不过、从零起步过）。
 - 顺带记录：3.7 Flash 当天存在两条独立线索——跨线索合并缺口，归「结构性后续·线索全局化」。
 
+##### P4.0a 意图探索第一刀（2026-08-20 —— 架构中枢开工,合同 docs/p4_intent_design.md）
+
+- **一句话 → 结构化任务提案**：`plan_intent()` 产出 IntentPlan——雷达/监控**分道判断**（P4.0 核心新增）、语言无关实体画像（每别名带 lang/regions,执行语言三原则①②）、**per-target 官方域名**（provenance 地板注释欠的那笔,b 刀接入消费）、排除歧义词、回填窗与节奏。`POST /trackers/plan-intent`。
+- **幻觉守卫**：集合 id 过滤、域名格式校验、无确切 URL 的 monitor 自动降级回 radar、warmup/interval 钳制。提案永不自动落库——Discovery 第 0 步渲染提案卡,「应用到表单」后仍可逐项编辑,确认保存才生效（可解释 > 自动化）;监控道给「确认建为页面监控」直达订阅管理（作者裁决默认:直接建但明示）。
+- **绞杀者存储**：完整 plan 存 `fetch_policy.intent_plan`,同时下转旧键（entities/keep/ignore/source_scope/max_days）——现运行时立即受益,行为零变化;b 刀让 resolver 直接消费 AliasSpec 后,运行时字形猜测正式退居兜底。
+- **纯 RSS 地板不动**：无 key 走确定性规划,lane 默认 radar,叙述语言按输入字形判定;手动表单原样保留。
+- **真实 LLM 三个裁决边界例实测**：大谷翔平 → 「大谷翔平」按 zh(CN,TW,HK) 与 ja(JP) 分成两个 AliasSpec + Shohei Ohtani(en/US);gemini → 排除词一次覆盖 horoscope/astrology/双子座/运势/**Winklevoss/exchange**（比当初"招来星座"的投诉考虑得还全）,官方域名 deepmind.google/blog.google/ai.google.dev/ai.googleblog.com 全对;「这个页面价格表变了告诉我 <URL>」 → monitor 道带确切 URL。浏览器全流程验证:提案卡渲染、应用回填、进入第二步可编辑。
+- 测试 58 → 66（`tests/test_intent_plan.py`:schema 往返与下转、伪造域名/集合过滤、monitor 降级、钳制、兜底与叙述语言判定）。
+
 ##### 架构漂移审查（2026-07-29，作者要求）
 
 作者原话：*"明明是架构层偏移了但是通过局部补丁去修复，最后架构层还是偏移的但是局部修复了感觉不到，容易在积累很多后爆发。"* 查到 3 处漂移（2 处系本人近期造成）、5 处干净：
