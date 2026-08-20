@@ -343,7 +343,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                     centroid=json.dumps(vec),
                     member_count=1,
                     distinct_source_count=1,
-                    lifecycle="CONFIRMED" if _is_first_party(article.url) else "LEAD",
+                    lifecycle="CONFIRMED" if (article.source_tier == "primary"
+                                              or _is_first_party(article.url)) else "LEAD",
                     first_seen_at=_now(),
                     last_update_at=_now(),
                 )
@@ -365,9 +366,10 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 # gnews thread and nothing ever left LEAD (P0.4). real_publisher()
                 # recovers the outlet from the title's " - Publisher" suffix.
                 member_rows = session.exec(
-                    select(RawArticle.url, RawArticle.title).where(RawArticle.thread_id == th.id)
+                    select(RawArticle.url, RawArticle.title, RawArticle.source_tier)
+                    .where(RawArticle.thread_id == th.id)
                 ).all()
-                pairs = list(member_rows) + [(article.url, article.title)]
+                pairs = [(u, t) for (u, t, _tier) in member_rows] + [(article.url, article.title)]
                 pubs = {real_publisher(u, t) for (u, t) in pairs}
                 # De-syndication: corroboration means INDEPENDENT reporting, not
                 # reach. One press release syndicated to 10 outlets is 10
@@ -384,8 +386,14 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 # Lifecycle: LEAD → CORROBORATED (≥2 independent sources) →
                 # CONFIRMED (a first-party/authoritative source present). A
                 # first-party source confirms directly, even with fewer sources.
-                member_urls_list = [u for (u, _t) in member_rows] + [article.url]
-                has_first_party = any(_is_first_party(u) for u in member_urls_list)
+                # First-party from the INTAKE STAMP (source_tiering §2: capture
+                # at intake, never re-derive at consumption) — the stamp carries
+                # per-target official domains the URL check can't know. The URL
+                # fallback only covers legacy NULL-tier rows.
+                has_first_party = any((tier == "primary") or (tier is None and _is_first_party(u))
+                                      for (u, _t, tier) in member_rows)
+                has_first_party = has_first_party or article.source_tier == "primary" \
+                    or (article.source_tier is None and _is_first_party(article.url))
                 if has_first_party and th.lifecycle != "CONFIRMED":
                     th.lifecycle = "CONFIRMED"
                     logger.info(f"Thread {th.id} promoted → CONFIRMED (first-party source present)")

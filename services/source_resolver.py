@@ -54,6 +54,38 @@ def gnews_locale_params(query: str) -> str:
     return ""
 
 
+
+# P4.0b: explicit Google News edition params from a PLANNED (lang, region) pair.
+# This is the planner deciding source geography (语言三原则② executed as data);
+# the script-guessing gnews_locale_params above remains ONLY as the fallback for
+# targets without an IntentPlan — the demotion the 2026-07-29 correction ruled.
+_ZH_EDITIONS = {"CN": ("zh-CN", "CN", "CN:zh-Hans"),
+                "TW": ("zh-TW", "TW", "TW:zh-Hant"),
+                "HK": ("zh-HK", "HK", "HK:zh-Hant")}
+
+
+def gnews_edition_params(lang: str, region: str = "") -> str:
+    """hl/gl/ceid query fragment for an alias's (lang, region). '' = the default
+    en-US edition (omit params, matching plain keyword routes)."""
+    lg = (lang or "").lower().split("-")[0]
+    rg = (region or "").upper()
+    if lg == "en" and rg in ("", "US"):
+        return ""
+    if lg == "zh":
+        hl, gl, ceid = _ZH_EDITIONS.get(rg, _ZH_EDITIONS["CN"])
+        return f"&hl={hl}&gl={gl}&ceid={gl}:{ceid.split(':')[1]}"
+    if lg == "ja":
+        return "&hl=ja&gl=JP&ceid=JP:ja"
+    if lg == "ko":
+        return "&hl=ko&gl=KR&ceid=KR:ko"
+    if not rg:
+        # A language with no region: use its most common home edition guess via
+        # uppercase of the language code (fr→FR, de→DE, it→IT…) — Google falls
+        # back gracefully for combos it doesn't serve.
+        rg = lg.upper()
+    return f"&hl={lg}&gl={rg}&ceid={rg}:{lg}"
+
+
 def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
                             base_priority: int = 1) -> List[SourceRoute]:
     """Fallback chain for one X/Twitter account, shared by keyword-derived and
@@ -459,14 +491,31 @@ class SourceResolver:
         # One route per edition (aliases of the same edition are OR-ed), so this
         # adds at most a couple of routes however many aliases there are.
         aliases = [a for a in (self.policy.get("entities") or []) if a and a.strip()]
-        if aliases and strategy in ["default", "news_only", "tech_sources", "trusted_news_only"]:
+        planned = [a for a in ((self.policy.get("intent_plan") or {}).get("entities") or [])
+                   if isinstance(a, dict) and (a.get("text") or "").strip()]
+        if (planned or aliases) and strategy in ["default", "news_only", "tech_sources", "trusted_news_only"]:
             covered = {gnews_locale_params(k) for k in keywords}
             by_edition = {}
-            for a in aliases:
-                loc = gnews_locale_params(a)
-                if loc in covered:
-                    continue          # that edition is already queried
-                by_edition.setdefault(loc, []).append(a.strip())
+            if planned:
+                # P4.0b: the plan SAYS each alias's editions — no guessing. One
+                # (alias, region) pair per edition bucket; aliases sharing an
+                # edition are OR-ed into one route as before.
+                for a in planned:
+                    regions = a.get("regions") or [""]
+                    for rg in regions[:3]:
+                        loc = gnews_edition_params(a.get("lang", ""), rg)
+                        if loc in covered:
+                            continue
+                        bucket = by_edition.setdefault(loc, [])
+                        if a["text"].strip() not in bucket:
+                            bucket.append(a["text"].strip())
+            else:
+                for a in aliases:
+                    loc = gnews_locale_params(a)
+                    if loc in covered:
+                        continue          # that edition is already queried
+                    by_edition.setdefault(loc, []).append(a.strip())
+            by_edition = dict(list(by_edition.items())[:8])   # bound route count
             for i, (loc, terms) in enumerate(by_edition.items()):
                 q = " OR ".join(f'"{t}"' for t in terms[:6])
                 if max_days > 0:

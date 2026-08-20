@@ -120,3 +120,64 @@ def test_fallback_detects_narration_lang_only():
     # the fallback must not pretend to know source geography it can't derive.
     out = plan_intent("Watch ALS therapy news", use_llm=False)
     assert out["intent_plan"]["narration_lang"] == "en"
+
+
+# --- P4.0b: the runtime consumes the plan --------------------------------------
+
+def test_edition_params_from_planned_pairs():
+    from services.source_resolver import gnews_edition_params as ep
+    assert ep("en", "US") == "" and ep("en") == ""
+    assert ep("ja", "JP") == "&hl=ja&gl=JP&ceid=JP:ja"
+    assert ep("zh", "CN") == "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    assert ep("zh", "TW") == "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    assert ep("fr", "") == "&hl=fr&gl=FR&ceid=FR:fr"
+    assert ep("en", "GB") == "&hl=en&gl=GB&ceid=GB:en"
+
+
+def test_resolver_derives_routes_from_planned_aliases_not_script_guessing():
+    # The demotion the 7-29 correction ruled: with a plan, editions come from the
+    # planner's (lang, regions), and "Shohei Ohtani" can reach the JP edition —
+    # something script-guessing could never do for a Latin-script alias.
+    from services.source_resolver import SourceResolver
+    policy = json.dumps({
+        "keyword_strategy": "default", "max_days": 7,
+        "intent_plan": {"entities": [
+            {"text": "大谷翔平", "lang": "ja", "regions": ["JP"]},
+            {"text": "Shohei Ohtani", "lang": "en", "regions": ["JP"]},
+            {"text": "大谷翔平", "lang": "zh", "regions": ["CN", "TW"]},
+        ]},
+    })
+    r = SourceResolver(fetch_policy=policy)
+    routes = r._resolve_keyword_routes(json.dumps(["Ohtani"]))
+    xlang = [rt.url_or_command for rt in routes if rt.route_id.startswith("gnews_xlang")]
+    assert any("ceid=JP:ja" in u and "%E5%A4%A7%E8%B0%B7" in u for u in xlang), xlang
+    assert any("ceid=CN:zh-Hans" in u for u in xlang)
+    assert any("ceid=TW:zh-Hant" in u for u in xlang)
+    # Latin alias explicitly aimed at the JP edition rides the ja route bucket
+    # or its own — either way JP:en/JP:ja coverage exists beyond guessing.
+    assert all(rt.tier == "aggregated" for rt in routes if rt.route_id.startswith("gnews")), \
+        "planned editions are still firehose routes — AGGREGATED never upgrades"
+
+
+def test_resolver_without_plan_keeps_script_guess_fallback():
+    from services.source_resolver import SourceResolver
+    policy = json.dumps({"keyword_strategy": "default", "max_days": 7,
+                         "entities": ["大谷翔平", "Shohei Ohtani"]})
+    r = SourceResolver(fetch_policy=policy)
+    routes = r._resolve_keyword_routes(json.dumps(["Ohtani"]))
+    xlang = [rt.url_or_command for rt in routes if rt.route_id.startswith("gnews_xlang")]
+    assert any("ceid=CN:zh-Hans" in u for u in xlang), "han-script guess still works plan-less"
+
+
+def test_per_target_official_domain_upgrades_only_with_the_grant():
+    from services.provenance import Tier, tier_for_url
+    url = "https://blog.cloudflare.com/some-release/"
+    # Globally: still CURATED (the Cloudflare lesson).
+    assert tier_for_url(url, Tier.CURATED) == Tier.CURATED
+    # For the tracker whose plan names it: PRIMARY.
+    assert tier_for_url(url, Tier.CURATED, ("blog.cloudflare.com",)) == Tier.PRIMARY
+    # Marketing-path guard still applies even to granted domains.
+    assert tier_for_url("https://blog.cloudflare.com/careers/x", Tier.CURATED,
+                        ("blog.cloudflare.com",)) == Tier.CURATED
+    # And AGGREGATED never upgrades, grant or no grant.
+    assert tier_for_url(url, Tier.AGGREGATED, ("blog.cloudflare.com",)) == Tier.AGGREGATED

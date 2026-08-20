@@ -123,23 +123,33 @@ def is_untrusted_code_host_path(url: str) -> bool:
     return not any(p in path for p in _CODE_HOST_OFFICIAL_PATHS)
 
 
-def is_first_party(url: str) -> bool:
+def is_first_party(url: str, extra_domains: tuple = ()) -> bool:
+    """Global floor + optional PER-TARGET official domains (P4.0b).
+
+    The floor stays deliberately small (the Cloudflare lesson: a portfolio
+    blog's PRIMARY is only true for the target that owns it). The planner's
+    IntentPlan carries each target's own official_domains, and they arrive here
+    as extra_domains — first-party FOR THAT TARGET only, never globally.
+    """
     d = domain(url)
     if any(d.endswith(sfx) for sfx in _FIRST_PARTY_SUFFIXES):
         return True
-    return any(d == fp or d.endswith("." + fp) for fp in _FIRST_PARTY_DOMAINS)
+    if any(d == fp or d.endswith("." + fp) for fp in _FIRST_PARTY_DOMAINS):
+        return True
+    return any(d == fp or d.endswith("." + fp) for fp in extra_domains)
 
 
-def tier_for_url(url: str, base: str) -> str:
+def tier_for_url(url: str, base: str, extra_first_party: tuple = ()) -> str:
     """Final tier for an item: refine a route's base tier by the item's own URL.
     An opt-in source (CURATED base) whose article sits on a first-party domain is
     PRIMARY. AGGREGATED never upgrades — a keyword-search hit that happens to
     point at a vendor domain is still a firehose catch, not a curated source.
     Marketing paths on a first-party domain stay CURATED (B6): domain-level trust
-    should not be spendable by the vendor's marketing team."""
+    should not be spendable by the vendor's marketing team — that guard applies
+    to per-target extra_first_party domains just the same."""
     if base == Tier.AGGREGATED:
         return Tier.AGGREGATED
-    if is_first_party(url) and not is_marketing_path(url) \
+    if is_first_party(url, extra_first_party) and not is_marketing_path(url) \
             and not is_untrusted_code_host_path(url):
         return Tier.PRIMARY
     return Tier.CURATED

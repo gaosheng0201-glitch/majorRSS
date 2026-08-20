@@ -37,7 +37,8 @@ class SourceNormalizer:
         tracker_id: int, 
         max_days: int = 7,
         keep_keywords: Optional[List[str]] = None,
-        ignore_keywords: Optional[List[str]] = None
+        ignore_keywords: Optional[List[str]] = None,
+        extra_first_party: tuple = (),
     ) -> Tuple[int, int, int]:
         """
         Normalizes and persists raw articles.
@@ -77,7 +78,7 @@ class SourceNormalizer:
             # single asymmetry is a large part of why 94% of the corpus came from
             # aggregators. Curated/first-party sources are trusted wholesale; the
             # junk floor and the fusion gate remain their quality control.
-            _item_tier = tier_for_url(item.url, item.tier or Tier.CURATED)
+            _item_tier = tier_for_url(item.url, item.tier or Tier.CURATED, extra_first_party)
             if keep_keywords and _item_tier not in HIGH_WEIGHT and \
                     not self.check_keywords_match(item.title, item.content, keep_keywords):
                 filtered += 1
@@ -158,7 +159,7 @@ class SourceNormalizer:
             # tier on the item; refine it by the actual article URL so an opt-in
             # source whose article sits on a first-party domain becomes PRIMARY.
             # AGGREGATED (keyword firehose) never upgrades.
-            source_tier = tier_for_url(canonical_url, item.tier or Tier.CURATED)
+            source_tier = tier_for_url(canonical_url, item.tier or Tier.CURATED, extra_first_party)
 
             # Create RawArticle
             article = RawArticle(

@@ -178,6 +178,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **真实 LLM 三个裁决边界例实测**：大谷翔平 → 「大谷翔平」按 zh(CN,TW,HK) 与 ja(JP) 分成两个 AliasSpec + Shohei Ohtani(en/US);gemini → 排除词一次覆盖 horoscope/astrology/双子座/运势/**Winklevoss/exchange**（比当初"招来星座"的投诉考虑得还全）,官方域名 deepmind.google/blog.google/ai.google.dev/ai.googleblog.com 全对;「这个页面价格表变了告诉我 <URL>」 → monitor 道带确切 URL。浏览器全流程验证:提案卡渲染、应用回填、进入第二步可编辑。
 - 测试 58 → 66（`tests/test_intent_plan.py`:schema 往返与下转、伪造域名/集合过滤、monitor 降级、钳制、兜底与叙述语言判定）。
 
+##### P4.0b 路由派生 + 语言语义修正（2026-08-20 同日第二刀）
+
+- **语义修正（作者指出的合同缺口）**：验证例句里带了"中日文都要",等于没验"用户不说"的情形——而语言三原则①恰恰是关于不说的情形。提示词强化为"话题地理由你判断,每个目标都判,与请求无关",不提语言重验:「帮我盯大谷翔平的动向」→ ja(JP)+zh(CN,TW,HK)+en 自动全出;英文输入 track BYD → 比亚迪/仰望/腾势/方程豹 zh 别名 + 比亜迪 ja,叙述语言仍 en。
+- **AliasSpec → 显式版本路由**（`gnews_edition_params(lang, region)`）：规划期决定的 (语言,地区) 直接生成 hl/gl/ceid,"Shohei Ohtani" 能进 CA:en 版——字形猜测对拉丁别名永远做不到;猜测降为无 plan 的兜底,**7-29"启发式降级为 fallback"的裁决就此彻底落地**。端到端:一句话 → 6 条路由横跨 JP:ja/US/CA:en/CN:zh-Hans/TW:zh-Hant/HK:zh-Hant,零运行时猜测。
+- **per-target 一手判定**（`tier_for_url` 加 `extra_first_party`,scraper 从 `intent_plan.official_domains` 传入）：Cloudflare 教训的正解——组合博客的 PRIMARY 只对拥有它的目标成立,现在就是这么实现的;营销路径守卫对授予域名同样生效,全局地板不动,AGGREGATED 永不升级。
+- **CONFIRMED 改读入库盖章**（semantic_ingest）:又消灭一处消费期 URL 重推导(source_tiering §2),per-target 一手因此自然参与生命周期。
+- 测试 66 → 70。
+
 ##### 架构漂移审查（2026-07-29，作者要求）
 
 作者原话：*"明明是架构层偏移了但是通过局部补丁去修复，最后架构层还是偏移的但是局部修复了感觉不到，容易在积累很多后爆发。"* 查到 3 处漂移（2 处系本人近期造成）、5 处干净：

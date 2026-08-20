@@ -384,7 +384,12 @@ def scrape_single_tracker(tracker_id: int):
                     tracker_id=tracker.id,
                     max_days=max_days,
                     keep_keywords=keep_keywords,
-                    ignore_keywords=ignore_keywords
+                    ignore_keywords=ignore_keywords,
+                    # P4.0b: the planner names THIS target's own official
+                    # domains; the stamp is per-target first-party (global
+                    # floor untouched — the Cloudflare lesson).
+                    extra_first_party=tuple((resolver.policy.get("intent_plan") or {})
+                                            .get("official_domains") or ()),
                 )
                 saved_total += saved
                 dup_total += dup
