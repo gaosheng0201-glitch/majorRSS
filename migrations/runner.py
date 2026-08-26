@@ -28,7 +28,8 @@ def run_migrations():
             "0012_release_rate_limit_quarantine",
             "0013_release_capability_failures",
             "0014_first_party_floor_restamp",
-            "0015_replay_material_timestamps"
+            "0015_replay_material_timestamps",
+            "0016_cross_target_visibility"
         ]
         
         for m in migrations:
@@ -452,6 +453,43 @@ def run_migrations():
                     session.commit()
                     print(f"replay_material_timestamps: {moved}/{len(sthreads)} "
                           f"summarised threads moved back to their last material change")
+
+                elif m == "0016_cross_target_visibility":
+                    # Author ruling: a piece concerning several targets shows
+                    # under all of them. New rows are stamped at intake; rows
+                    # already on disk would stay invisible under the other
+                    # target's filter forever (the SDLC case), so recompute the
+                    # last 30 days against current profiles — deterministic
+                    # string matching, no LLM, safe to re-run.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    ra = "rawarticle"
+                    if ra in inspector.get_table_names():
+                        cols = [c["name"] for c in inspector.get_columns(ra)]
+                        if "also_tracker_ids" not in cols:
+                            conn.execute(text(f"ALTER TABLE {ra} ADD COLUMN also_tracker_ids VARCHAR"))
+                    session.commit()
+                    import json as _json
+                    from datetime import datetime as _dt, timedelta as _td
+                    from db.models import RawArticle
+                    from services import attribution
+                    from sqlmodel import select as _select
+                    profiles = attribution.load_profiles(session)
+                    cutoff = (_dt.utcnow() - _td(days=30)).strftime("%Y-%m-%d")
+                    stamped = 0
+                    rows = session.exec(_select(RawArticle).where(
+                        RawArticle.created_at >= cutoff)).all()
+                    for r in rows:
+                        ids = attribution.relevant_tracker_ids(
+                            r.title or "", (r.content or "")[:20000], r.url or "",
+                            profiles, owner_id=r.tracker_id)
+                        if ids:
+                            r.also_tracker_ids = _json.dumps(ids)
+                            session.add(r)
+                            stamped += 1
+                    session.commit()
+                    print(f"cross_target_visibility: {stamped}/{len(rows)} recent articles stamped")
 
                 sv = SchemaVersion(version_id=m)
                 session.add(sv)

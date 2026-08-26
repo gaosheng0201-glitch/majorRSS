@@ -438,3 +438,52 @@ def backfill_tracker_entities(limit: int = 20) -> dict:
             logger.info(f"Entity backfill: {t.name} → {ents[:6]}")
         session.commit()
     return {"planned": planned, "skipped": skipped}
+
+
+def backfill_official_domains(limit: int = 10) -> dict:
+    """Give existing trackers the per-target official_domains they never got.
+
+    Cross-target visibility (attribution.py) leans on official_domains for the
+    cases nothing else can catch — the flagship being an official blog item
+    whose feed carries no body and whose title never names the vendor
+    ("The AI-Native SDLC playbook" on claude.com). Trackers created before the
+    intent flow have no intent_plan at all, so the rule was silently toothless
+    for exactly the author's targets. One planning call per tracker, capped and
+    idempotent; only official_domains is merged in — an existing plan or the
+    legacy keys are never overwritten.
+    """
+    from db.database import get_session
+    from db.models import Tracker
+    from sqlmodel import select
+
+    planned, skipped = 0, 0
+    with get_session() as session:
+        for t in session.exec(select(Tracker).where(Tracker.is_active == True)).all():  # noqa: E712
+            if planned >= limit:
+                break
+            try:
+                policy = json.loads(t.fetch_policy) if t.fetch_policy else {}
+            except Exception:
+                skipped += 1
+                continue
+            ip = policy.get("intent_plan") or {}
+            if ip.get("official_domains"):
+                continue
+            try:
+                out = plan_intent(t.name or "", t.name or "", use_llm=True)
+            except Exception as e:
+                logger.warning(f"official_domains backfill failed for {t.name}: {e}")
+                skipped += 1
+                continue
+            domains = (out.get("intent_plan") or {}).get("official_domains") or []
+            if not domains or out.get("planner_used") == "fallback":
+                skipped += 1
+                continue
+            ip["official_domains"] = domains
+            policy["intent_plan"] = ip
+            t.fetch_policy = json.dumps(policy)
+            session.add(t)
+            planned += 1
+            logger.info(f"official_domains backfill: {t.name} → {domains}")
+        session.commit()
+    return {"planned": planned, "skipped": skipped}

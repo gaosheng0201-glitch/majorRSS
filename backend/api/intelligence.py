@@ -162,6 +162,11 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     # the 8 kept for display, or a 9-member thread could misclassify.
     thread_ids = [th.id for th in threads]
     members_by_thread = {tid: [] for tid in thread_ids}
+    # Cross-target visibility (author ruling 2026-08-26): a thread is relevant
+    # to its OWNER plus every target its members matched at intake. The filter
+    # chips test membership of this set, so a Claude official post owned by the
+    # grok tracker still shows under the claude chip — the same thread, once.
+    also_by_thread = {tid: set() for tid in thread_ids}
     # from_account: any member arrived via a route the user created by NAMING an
     # account (stamped at intake — provenance is never re-derived from URLs).
     # aggregated_only: no member outside the keyword firehose; NULL tier counts
@@ -174,6 +179,13 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
         bucket = members_by_thread.get(art.thread_id)
         if bucket is not None and len(bucket) < 8:
             bucket.append({"title": art.title, "url": art.url})
+        aset = also_by_thread.get(art.thread_id)
+        if aset is not None and getattr(art, "also_tracker_ids", None):
+            try:
+                import json as _json
+                aset.update(_json.loads(art.also_tracker_ids))
+            except Exception:
+                pass
         f = flags_by_thread.get(art.thread_id)
         if f is not None:
             if getattr(art, "from_account", False):
@@ -210,6 +222,8 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "summary": clean_sum or None,
             "importance_score": th.importance_score,
             "validity_category": th.validity_category,
+            "relevant_tracker_ids": sorted(
+                {tid for tid in ({th.tracker_id} | also_by_thread[th.id]) if tid is not None}),
             "from_account": flags_by_thread[th.id]["from_account"],
             "aggregated_only": flags_by_thread[th.id]["aggregated_only"],
         })

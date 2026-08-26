@@ -181,3 +181,53 @@ def test_per_target_official_domain_upgrades_only_with_the_grant():
                         ("blog.cloudflare.com",)) == Tier.CURATED
     # And AGGREGATED never upgrades, grant or no grant.
     assert tier_for_url(url, Tier.AGGREGATED, ("blog.cloudflare.com",)) == Tier.AGGREGATED
+
+
+# --- Cross-target visibility (author ruling 2026-08-26) -------------------------
+
+def _profiles():
+    from services.attribution import TrackerProfile
+    return [
+        TrackerProfile(1, ["Gemini", "DeepMind"], ["deepmind.google"]),
+        TrackerProfile(4, ["Claude", "Anthropic"], ["claude.com", "anthropic.com"]),
+    ]
+
+
+def test_official_domain_grants_visibility_regardless_of_title():
+    # The SDLC case: title never says "Claude"; the domain says everything.
+    from services.attribution import relevant_tracker_ids
+    ids = relevant_tracker_ids("The AI-Native SDLC playbook", "some body",
+                               "https://claude.com/blog/the-ai-native-sdlc-playbook",
+                               _profiles(), owner_id=2)
+    assert ids == [4]
+
+
+def test_title_entity_match_is_enough():
+    from services.attribution import relevant_tracker_ids
+    ids = relevant_tracker_ids("Claude vs Gemini: which codes better?", "",
+                               "https://example.com/x", _profiles(), owner_id=1)
+    assert ids == [4]          # owner (gemini) excluded; claude matched via title
+
+
+def test_single_passing_mention_in_body_is_not_aboutness():
+    # Precision guard: one body mention must not flood the other filter.
+    from services.attribution import relevant_tracker_ids
+    body = "This tool is great. Unlike Claude, it runs offline."
+    assert relevant_tracker_ids("A new local LLM tool", body,
+                                "https://example.com/y", _profiles(), owner_id=1) == []
+
+
+def test_two_distinct_entities_in_body_are():
+    from services.attribution import relevant_tracker_ids
+    body = "Claude improved a lot this quarter. Anthropic also shipped memory."
+    assert relevant_tracker_ids("Model roundup", body,
+                                "https://example.com/z", _profiles(), owner_id=1) == [4]
+
+
+def test_word_boundary_blocks_substring_hits():
+    from services.attribution import TrackerProfile, relevant_tracker_ids
+    profs = [TrackerProfile(7, ["Grok"], [])]
+    assert relevant_tracker_ids("Grokking deep learning textbooks", "", 
+                                "https://example.com/a", profs) == []
+    assert relevant_tracker_ids("Grok 4.6 released", "",
+                                "https://example.com/b", profs) == [7]

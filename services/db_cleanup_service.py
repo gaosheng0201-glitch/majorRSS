@@ -264,6 +264,18 @@ def run_maintenance():
     try:
         from services.portfolio_planner import backfill_tracker_entities
         res = backfill_tracker_entities()
+        # Per-target official domains for pre-intent-flow trackers, then refresh
+        # cross-target visibility so the new knowledge reaches recent rows.
+        try:
+            from services.portfolio_planner import backfill_official_domains
+            from services.attribution import restamp_recent
+            dom = backfill_official_domains()
+            if dom.get("planned"):
+                stamp = restamp_recent()
+                logger.info(f"Cross-target visibility: domains backfilled for "
+                            f"{dom['planned']} tracker(s); restamped {stamp['restamped']} articles.")
+        except Exception as e:
+            logger.warning(f"Visibility backfill skipped: {e}")
         if res.get("planned"):
             logger.info(f"Multilingual alias backfill: {res}")
     except Exception as e:

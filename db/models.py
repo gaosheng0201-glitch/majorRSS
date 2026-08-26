@@ -58,6 +58,12 @@ class RawArticle(SQLModel, table=True):
     # dev-mode display. Nullable: legacy rows are unknown → treated as aggregated
     # (must earn a summary) by the gate.
     source_tier: Optional[str] = Field(default=None, index=True)
+    # Cross-target visibility (author ruling 2026-08-26: a piece concerning
+    # several targets shows under ALL of them — the same piece, not copies).
+    # JSON list of OTHER tracker ids whose planned profile this item matches,
+    # computed deterministically at intake (services/attribution.py). Ownership
+    # (tracker_id) stays with the fetcher; this only widens the filter.
+    also_tracker_ids: Optional[str] = Field(default=None)
     # True when this item arrived through a route the user created by NAMING an
     # account (the people radar) — stamped at intake, like source_tier, per
     # docs/source_tiering.md §2 "capture now, weight-application later".

@@ -41,6 +41,7 @@ interface StoryThread {
   alert_reasons: string[];
   sources: ThreadSource[];
   summarized_at: string | null;
+  relevant_tracker_ids?: number[];
   summary: string | null;
   importance_score: number;
   validity_category: string | null;
@@ -359,7 +360,11 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
 
   // ---- AI mode: 提炼 | 线报 ----
   const isFocus = (t: StoryThread) => t.lifecycle === 'CONFIRMED' || t.is_resonant || t.alert_reasons.length > 0;
-  const byTracker = (t: StoryThread) => trackerFilter === null || t.tracker_id === trackerFilter;
+  // 集合过滤（作者裁决 2026-08-26）：一条线索属于它的 owner + 入库时匹配到的
+  // 全部目标——同一篇,两边都显示。老数据无集合字段时退回 owner 判断。
+  const byTracker = (t: StoryThread) => trackerFilter === null
+    || (t.relevant_tracker_ids ? t.relevant_tracker_ids.includes(trackerFilter)
+                               : t.tracker_id === trackerFilter);
   const shownLeads = leads.filter(byTracker);
   const focusCount = refined.filter(byTracker).filter(isFocus).length;
   const shownRefined = refined.filter(byTracker).filter(t => !focusOnly || isFocus(t));

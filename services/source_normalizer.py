@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from typing import List, Optional, Tuple
@@ -7,6 +8,10 @@ from repositories.repository import DBRepository
 from scrapers.url_normalizer import auto_route
 from services.adapters import SourceItem
 from services.provenance import Tier, tier_for_url, HIGH_WEIGHT, is_untrusted_code_host_path
+
+def _also_ids_json(ids):
+    return json.dumps(ids) if ids else None
+
 
 class SourceNormalizer:
     def __init__(self):
@@ -50,6 +55,14 @@ class SourceNormalizer:
         filtered = 0
 
         now = datetime.now(timezone.utc)
+
+        # Cross-target visibility profiles (all active trackers), loaded once
+        # per batch. Deterministic matching on planned data — no runtime LLM.
+        from services import attribution
+        try:
+            _profiles = attribution.load_profiles()
+        except Exception:
+            _profiles = []
 
         # P0.5 near-duplicate pre-filter: recent titles for this tracker + titles
         # accepted earlier in this batch, so near-verbatim re-syndication is
@@ -170,6 +183,10 @@ class SourceNormalizer:
                 published_at=item.published_at.replace(tzinfo=None) if item.published_at else None,
                 processed=False,
                 source_tier=source_tier,
+                also_tracker_ids=_also_ids_json(
+                    attribution.relevant_tracker_ids(item.title, cleaned_content,
+                                                     canonical_url, _profiles,
+                                                     owner_id=tracker_id)),
                 # Carried straight from the route: whether the user NAMED this
                 # account. Unlike the tier, it is not refined by the URL — the
                 # URL cannot answer this question (see RawArticle.from_account).
