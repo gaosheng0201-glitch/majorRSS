@@ -308,7 +308,7 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
     setLoading(true);
     try {
       const [r, l] = await Promise.all([
-        client.get<StoryThread[]>('/intelligence/threads?view=refined&limit=100'),
+        client.get<StoryThread[]>('/intelligence/threads?view=refined&limit=400'),
         client.get<StoryThread[]>('/intelligence/threads?view=leads&limit=200'),
       ]);
       setRefined(r.data || []);
