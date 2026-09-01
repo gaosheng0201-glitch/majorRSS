@@ -150,6 +150,7 @@ class SourceResolver:
             target_data = json.loads(target)
             if isinstance(target_data, dict) and "topic" in target_data and "signals" in target_data:
                 routes = self._resolve_hybrid_routes(target)
+                routes = self._append_suggested_routes(routes)
                 routes = self._append_portfolio_routes(routes)
                 routes = self._apply_budget(routes)
                 self._enrich_routes_with_auth(routes)
@@ -172,10 +173,53 @@ class SourceResolver:
 
         # Watch Target portfolio: expand selected preset collections into routes
         # (the planner's source_scope), then cap by the per-target budget.
+        routes = self._append_suggested_routes(routes)
         routes = self._append_portfolio_routes(routes)
         routes = self._apply_budget(routes)
         self._enrich_routes_with_auth(routes)
         return routes
+
+    def _append_suggested_routes(self, routes: List[SourceRoute]) -> List[SourceRoute]:
+        """P4.0c: the planner's per-target suggested sources, once the user kept
+        them (`selected`), become routes of their own — the target's own feed,
+        the accounts that break its news, its community. They sit between the
+        target's explicit routes (1-3) and the shared preset collections (5), so
+        the budget cap prefers them over tangential presets. page_monitor /
+        registry suggestions are not routes: they were materialised as
+        Subscriptions (the monitor lane) when the target was created."""
+        ip = self.policy.get("intent_plan") or {}
+        picked = [s for s in (ip.get("suggested_sources") or [])
+                  if isinstance(s, dict) and s.get("selected")]
+        if not picked:
+            return routes
+        existing = {r.url_or_command for r in routes}
+        added: List[SourceRoute] = []
+        for i, s in enumerate(picked):
+            kind, value = (s.get("kind") or "").lower(), (s.get("value") or "").strip()
+            if not value:
+                continue
+            if kind == "rss":
+                if value in existing:
+                    continue
+                added.append(SourceRoute(route_id=f"sugg_rss_{i}", adapter="RssAdapter",
+                                         url_or_command=value, purpose="discovery",
+                                         requires_auth=False, platform="rss", priority=4))
+                existing.add(value)
+            elif kind == "subreddit":
+                url = f"https://www.reddit.com/r/{value}/new.rss"
+                if url in existing:
+                    continue
+                added.append(SourceRoute(route_id=f"sugg_subreddit_{i}", adapter="RssAdapter",
+                                         url_or_command=url, purpose="discovery",
+                                         requires_auth=False, platform="reddit", priority=4))
+                existing.add(url)
+            elif kind == "account" and (s.get("platform") or "twitter").lower() in ("twitter", "x"):
+                for r in _twitter_account_routes(value, f"sugg_{i}", self.auth_profile_id,
+                                                 base_priority=4):
+                    if r.url_or_command not in existing:
+                        added.append(r)
+                        existing.add(r.url_or_command)
+        return routes + added
 
     def _append_portfolio_routes(self, routes: List[SourceRoute]) -> List[SourceRoute]:
         """Turn the fetch_policy's source_scope (preset collection ids) into

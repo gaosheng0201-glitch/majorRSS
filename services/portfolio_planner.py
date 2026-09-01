@@ -241,6 +241,9 @@ class SourceSuggestion(BaseModel):
     platform: str = Field(default="", description="twitter / reddit / ... when kind is account or subreddit")
     reason: str = Field(default="", description="Why this source fits (explainability > automation)")
     verified: bool = Field(default=False, description="Existence-checked. Models invent sources; unverified stays a suggestion.")
+    # Whether the runtime consumes it. Verification sets it (verified → on,
+    # unverified → off by default); the user flips it in the proposal card.
+    selected: bool = Field(default=False)
 
 
 class IntentPlan(BaseModel):
@@ -278,7 +281,15 @@ _INTENT_SYSTEM = (
     "4. ignore_keywords: disambiguate collisions (a 'gemini' AI target must exclude horoscope "
     "senses; 'grok' must exclude the Renault engine).\n"
     "5. selected_collections: only ids present in the catalog; prefer few and high-signal.\n"
-    "6. suggested_sources: leave empty unless you are certain a source exists.\n"
+    "6. suggested_sources (max 8, each with a one-line reason): sources BEYOND the preset "
+    "collections that a serious follower of this target would watch. Kinds: 'rss' (the "
+    "target's own feed URL), 'account' (the 1-3 X handles that break its news — value is "
+    "the bare handle, platform 'twitter'), 'subreddit' (its community, bare name), "
+    "'page_monitor' (a page whose CHANGE is the signal: the official newsroom LISTING page "
+    "or a 'what's new'/release-notes page — an announcement published off the usual feed "
+    "path is caught only this way), 'registry' (a registry/database query URL). Every "
+    "suggestion is existence-checked afterwards, so only name sources you are confident "
+    "exist; never invent URLs.\n"
     "7. warmup_days: fast-moving topics 7; slow domains (research, disease) up to 90."
 )
 
@@ -294,7 +305,58 @@ def _detect_narration_lang(text: str) -> str:
     return "en"
 
 
-def plan_intent(intent_text: str, name: str = "", use_llm: bool = True) -> dict:
+_SUGGESTION_KINDS = ("rss", "account", "subreddit", "registry", "page_monitor")
+_HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
+_SUBREDDIT_RE = re.compile(r"^[A-Za-z0-9_]{2,21}$")
+
+
+def _guard_suggestions(items: List[SourceSuggestion]) -> List[SourceSuggestion]:
+    """Shape and de-duplicate planner suggestions before any network check:
+    handles lose '@' and profile-URL wrapping, subreddits lose 'r/', URL kinds
+    must be absolute http(s). Anything that cannot be shaped is dropped — the
+    verifier only ever sees well-formed candidates."""
+    out, seen = [], set()
+    for s in items or []:
+        kind = (s.kind or "").strip().lower()
+        value = (s.value or "").strip()
+        if kind not in _SUGGESTION_KINDS or not value:
+            continue
+        if kind == "account":
+            v = value
+            for pre in ("https://x.com/", "https://twitter.com/", "http://x.com/",
+                        "http://twitter.com/", "x.com/", "twitter.com/"):
+                if v.lower().startswith(pre):
+                    v = v[len(pre):]
+            v = v.strip("/").lstrip("@").split("/")[0]
+            if not _HANDLE_RE.match(v):
+                continue
+            value = v
+            s.platform = (s.platform or "twitter").lower() or "twitter"
+        elif kind == "subreddit":
+            v = value
+            for pre in ("https://www.reddit.com/r/", "https://reddit.com/r/", "reddit.com/r/", "r/"):
+                if v.lower().startswith(pre):
+                    v = v[len(pre):]
+            v = v.strip("/").split("/")[0]
+            if not _SUBREDDIT_RE.match(v):
+                continue
+            value = v
+            s.platform = "reddit"
+        else:
+            if not value.lower().startswith(("http://", "https://")) or " " in value:
+                continue
+        key = (kind, value.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        s.kind, s.value = kind, value
+        out.append(s)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def plan_intent(intent_text: str, name: str = "", use_llm: bool = True, verify: bool = True) -> dict:
     """One sentence of intent → IntentPlan (+ compatibility down-conversion).
 
     Returns {"planner_used", "intent_plan": <IntentPlan dict>, "fetch_policy":
@@ -359,6 +421,11 @@ def plan_intent(intent_text: str, name: str = "", use_llm: bool = True) -> dict:
         # A monitor without a concrete URL is not a monitor.
         plan.lane, plan.monitor_url = "radar", ""
         plan.lane_reason += " (downgraded: no concrete URL to watch)"
+    plan.suggested_sources = _guard_suggestions(plan.suggested_sources)
+    if verify and plan.suggested_sources:
+        from services.source_verifier import verify_suggestions
+        plan.suggested_sources = [SourceSuggestion(**d) for d in
+                                  verify_suggestions([s.model_dump() for s in plan.suggested_sources])]
 
     # --- Down-conversion: the keys today's runtime actually reads ---
     fetch_policy = dict(DEFAULT_BUDGET)

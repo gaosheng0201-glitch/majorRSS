@@ -7,7 +7,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { 
   Plus, Play, Trash2, Power, MoreVertical, Edit, Eye, Rss,
-  Activity, Clock, FileText, Download, RefreshCw, AlertCircle
+  Activity, Clock, FileText, Download, RefreshCw, AlertCircle, Sparkles
 } from 'lucide-react';
 import client from '../api/client';
 import { useLanguage } from '../i18n/translations';
@@ -243,6 +243,22 @@ export default function Subscriptions() {
       alert("Scraping task started in background");
     } catch (err) {
       alert("Failed to execute scraping task");
+    }
+  };
+
+  // P4.0c 决策点①：重新规划是手动动作，不自动周期（成本可见、行为可预期）。
+  // 只补目标缺的：建议源（重新校验后整体替换）、官方域名/实体（缺才补）。
+  const handleReplanTracker = async (id: number) => {
+    try {
+      const res = await client.post(`/trackers/${id}/replan`, {}, { timeout: 120000 });
+      const d = res.data || {};
+      const n = (d.suggested_sources || []).length;
+      alert(`重新规划完成：建议源 ${n} 个（${d.verified || 0} 个通过存在性校验，已自动启用）` +
+            (d.monitors_created ? `，新建页面监控 ${d.monitors_created} 个` : '') +
+            (d.official_domains?.length ? `\n官方域名：${d.official_domains.join('、')}` : ''));
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || '重新规划失败');
     }
   };
 
@@ -707,6 +723,13 @@ export default function Subscriptions() {
                                 style={{ color: 'white' }}
                               >
                                 编辑订阅
+                              </Menu.Item>
+                              <Menu.Item
+                                leftSection={<Sparkles size={14} />}
+                                onClick={() => handleReplanTracker(tr.id)}
+                                style={{ color: 'white' }}
+                              >
+                                重新规划（补充源）
                               </Menu.Item>
                               {devMode && (
                                 <Menu.Item

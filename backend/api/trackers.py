@@ -91,6 +91,47 @@ def _ensure_source_scope(name: str, target: str, fetch_policy_json: Optional[str
     return fetch_policy_json
 
 
+def materialize_page_monitors(tracker: Tracker, session: Session) -> int:
+    """P4.0c: a selected `page_monitor` / `registry` suggestion is not a radar
+    route — its CHANGE is the event — so it becomes a Subscription on the
+    monitor lane. Idempotent on target_url. The motivating miss: Anthropic's
+    Fable 5.1 announcement was published off the /news/ path, so the
+    third-party newsroom feed never carried it; only a diff on the newsroom
+    listing page itself catches that class of post."""
+    import json
+    from db.models import Subscription
+    from services.intent_normalizer import generate_subscription_normalized_intent
+    try:
+        policy = json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
+    except Exception:
+        return 0
+    ip = policy.get("intent_plan") or {}
+    created = 0
+    for s in ip.get("suggested_sources") or []:
+        if not isinstance(s, dict) or not s.get("selected"):
+            continue
+        if (s.get("kind") or "").lower() not in ("page_monitor", "registry"):
+            continue
+        url = (s.get("value") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        if session.exec(select(Subscription).where(Subscription.target_url == url)).first():
+            continue
+        interval = max(60, int(tracker.fetch_interval_minutes or 60))
+        sub = Subscription(
+            name=f"{tracker.name} · {'登记库' if s.get('kind') == 'registry' else '页面监控'}",
+            target_url=url,
+            fetch_interval_minutes=interval,
+            normalized_intent=generate_subscription_normalized_intent(
+                target_url=url, fetch_interval_minutes=interval, diff_policy=None),
+        )
+        session.add(sub)
+        created += 1
+    if created:
+        session.commit()
+    return created
+
+
 @router.post("/", response_model=TrackerResponse)
 def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
     from services.intent_normalizer import generate_tracker_normalized_intent
@@ -108,7 +149,61 @@ def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_api
     session.add(db_tracker)
     session.commit()
     session.refresh(db_tracker)
+    try:
+        materialize_page_monitors(db_tracker, session)
+    except Exception:
+        pass
     return db_tracker
+
+
+@router.post("/{tracker_id}/replan")
+def replan_tracker(tracker_id: int, session: Session = Depends(get_api_session)):
+    """P4.0c, decision point ① (manual, never periodic): re-run the intent
+    planner for an EXISTING target and merge only what it lacked — suggested
+    sources (replaced wholesale, freshly verified), official domains and
+    entities when absent. Every other setting the user made stays. Returns the
+    plan so the client can show what changed."""
+    import json
+    from services.portfolio_planner import plan_intent
+    tracker = session.get(Tracker, tracker_id)
+    if not tracker:
+        raise HTTPException(status_code=404, detail="Tracker not found")
+    intent = tracker.name or ""
+    try:
+        tgt = json.loads(tracker.target) if tracker.target else {}
+        kws = [s.get("value", "") for s in (tgt.get("signals") or []) if s.get("type") == "keyword"]
+        if kws:
+            intent = f"{tracker.name} {' '.join(kws)}".strip()
+    except Exception:
+        pass
+    out = plan_intent(intent, tracker.name or "", use_llm=True)
+    try:
+        policy = json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
+    except Exception:
+        policy = {}
+    ip = policy.get("intent_plan") or {}
+    new_plan = out.get("intent_plan") or {}
+    ip["suggested_sources"] = new_plan.get("suggested_sources") or []
+    if not ip.get("official_domains") and new_plan.get("official_domains"):
+        ip["official_domains"] = new_plan["official_domains"]
+    if not ip.get("entities") and new_plan.get("entities"):
+        ip["entities"] = new_plan["entities"]
+    if not policy.get("entities") and new_plan.get("entities"):
+        policy["entities"] = [a.get("text") for a in new_plan["entities"] if a.get("text")]
+    policy["intent_plan"] = ip
+    tracker.fetch_policy = json.dumps(policy)
+    session.add(tracker)
+    session.commit()
+    session.refresh(tracker)
+    monitors = materialize_page_monitors(tracker, session)
+    sugg = ip["suggested_sources"]
+    return {
+        "planner_used": out.get("planner_used"),
+        "suggested_sources": sugg,
+        "verified": sum(1 for s in sugg if s.get("verified")),
+        "monitors_created": monitors,
+        "official_domains": ip.get("official_domains") or [],
+    }
 
 @router.delete("/{tracker_id}")
 def delete_tracker(tracker_id: int, session: Session = Depends(get_api_session)):

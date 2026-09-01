@@ -60,6 +60,18 @@ interface CatchUp {
 
 const LAST_SEEN_KEY = 'radar_last_seen_at';
 
+// 全局线索：行标签显示线索涉及的全部目标（透镜），而不是碰巧先抓到它的那个。
+// "grok" 挂在 Claude 官博上就是这个标签在说谎（作者 2026-08-26 亲历）。
+function lensLabel(th: StoryThread, names?: Map<number, string>): string | undefined {
+  if (!names) return undefined;
+  const ids = (th.relevant_tracker_ids && th.relevant_tracker_ids.length)
+    ? th.relevant_tracker_ids
+    : (th.tracker_id != null ? [th.tracker_id] : []);
+  const labels = ids.map(id => names.get(id)).filter(Boolean) as string[];
+  if (!labels.length) return undefined;
+  return labels.length <= 3 ? labels.join(' · ') : `${labels.slice(0, 3).join(' · ')} +${labels.length - 3}`;
+}
+
 // ---- time helpers: "什么时间" for a reading feed ----
 function relativeTime(iso: string | null, lang: string): string {
   if (!iso) return '';
@@ -212,7 +224,7 @@ function TimeBucketedList({ threads, isDark, lang, tipoffIds, timeOf, trackerNam
           </Text>
           {b.items.map(th => (
             <EventRow key={th.id} th={th} isDark={isDark} lang={lang} tipoff={tipoffIds?.has(th.id)}
-                      trackerName={trackerNames && th.tracker_id != null ? trackerNames.get(th.tracker_id) : undefined} />
+                      trackerName={lensLabel(th, trackerNames)} />
           ))}
         </Box>
       ))}

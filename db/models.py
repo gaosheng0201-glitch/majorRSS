@@ -291,6 +291,12 @@ class StoryThread(SQLModel, table=True):
     Carries the state the radar reasons over (愿景 增量优先 + 线索生命周期)."""
     id: Optional[int] = Field(default=None, primary_key=True)
     tracker_id: Optional[int] = Field(default=None, foreign_key="tracker.id", nullable=True, index=True)
+    # 全局线索 (author ruling 2026-09-01): a thread is ONE event across every
+    # target; `tracker_id` is only the target that started it (kept for
+    # narration/section/alerts). This JSON list is the LENS — every target the
+    # thread concerns, unioned from members' owner + cross-target visibility
+    # stamps as they join. The radar's filter chips test membership here.
+    tracker_ids: Optional[str] = Field(default=None)
     title: Optional[str] = None
     centroid: Optional[str] = Field(default=None, sa_column=Column(Text), description="JSON list[float] running centroid")
     member_count: int = Field(default=0)

@@ -204,6 +204,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Removed
 - 三代旧 UI 墓地（Streamlit `ui/`、Flet `flet_main.py`/`ui/flet_views/`、`worker.py` shim、`*.bat`）+ streamlit/flet 依赖。
 
+##### 跨目标可见性 · P4.0c 建议源 · 线索全局化（2026-08-26 ~ 09-01 —— 作者三连报"信息滞后 / 官博没进线索 / Claude 内容进了 gemini"的根治）
+
+- **诊断先行（08-26）**：三真一误——nitter.net 被 X Corp 8-24 C&D 永久 410（人物雷达自 8/20 全黑,滞后体感主因）;Claude 官博实际在流（22/22 已提炼,经 Olshansk 第三方 feed 滞后≤1 天）;串目标=共享集合 + URL 先抓归先（缓存副作用,非设计规则）;融合零积压。社区/GitHub 调研:无账号读 X 时间线的路线已不存在（Squawker/Scweet/RSS-Bridge 全是账号池或付费 API;syndication 200+0B;FxTwitter 无时间线端点）,唯一结构性无账号路径=Grok relay（雪花 ID 解时间戳,待 xAI key）。
+- **跨目标可见性（08-26,作者裁决"同一篇,两边都显示"）**：`services/attribution.py` 入库对全部活跃目标画像做确定性匹配（官方域名命中 / 标题实体词界匹配 / 正文≥2 实体;keep_keywords 刻意不用）→ `RawArticle.also_tracker_ids`;雷达筛选按集合过滤——同一线索同一摘要,相关目标都可见。迁移 0016 回填近 30 天;维护任务新增存量目标 `official_domains` 回填 + 重盖章（`backfill_official_domains` / `restamp_recent`）。旗舰病例《The AI-Native SDLC playbook》（owner=grok）在 claude 筛选下可见。提炼面加载窗 100→400（实测 ~100 条/天）。
+- **P4.0c 建议源 + 存在性校验（09-01）**：规划器提示词第 6 条改为要求 `suggested_sources`（rss/account/subreddit/page_monitor/registry ≤8,带理由）;`_guard_suggestions` 整形去重;`services/source_verifier.py` 并行 6s 校验（RSS 可解析、页面 200、X handle 经 FxTwitter 档案端点验活、subreddit new.rss;只认正面证据）→ 通过默认勾选、未通过可见不勾;Discovery 提案卡逐条勾选;`SourceResolver._append_suggested_routes` 消费 `selected`（优先级 4）;page_monitor/registry 建目标时 `materialize_page_monitors` 物化为 Subscription;`POST /trackers/{id}/replan` + 订阅管理菜单「重新规划（补充源）」（决策点①手动,只补缺）。实测 claude 4/4 通过、渐冻症编造 RSS 被拦。
+- **线索全局化（09-01）**：语义层候选池改全局近 30 天（`_load_thread_pool`,每轮一次内存维护）;`StoryThread.tracker_ids` 透镜随成员扩张;垃圾地板按透镜内最匹配目标画像算;`/threads?tracker_id=` 按透镜过滤;雷达行标签显示透镜全部目标;归属匹配加 `ignore_keywords` 否决。迁移 0017 回填 13,500 条线索透镜（2,368 条含 ≥2 目标）,不做追溯合并。
+- **Fable 5.1 缺失案（09-01）**：当天发布;官方公告 URL `anthropic.com/claude-fable-and-mythos-5-1` 不在 `/news/` 下,第三方 feed 按路径过滤未收录;gnews 一天滞后;X 通道黑——线索为零。page_monitor 类建议（newsroom listing / what's-new 页）是此类漏网的唯一解,已由 c 刀提供。
+- 测试 70 → 81。
+
 ### Added
 - **Source Preset Seed Library**:
   - Added an audited seed library in `docs/source_presets.seed.json` with broad baseline sources, regional perspectives, AI, developer tools, healthcare, academic research, policy, cybersecurity, finance, and crypto/Web3 collections.

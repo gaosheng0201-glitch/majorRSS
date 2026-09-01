@@ -118,6 +118,16 @@ def get_all_alerts(session: Session = Depends(get_api_session)):
     alert_responses = [make_alert_response(a, session) for a in alerts]
     return alert_responses
 
+def _stored_lens(th) -> set:
+    """The thread's own lens (全局线索: every target it concerns), as stamped by
+    the semantic layer; members' visibility stamps are unioned in by the caller
+    so pre-migration rows still resolve."""
+    try:
+        return {int(i) for i in json.loads(th.tracker_ids or "[]") if i is not None}
+    except Exception:
+        return set()
+
+
 @router.get("/threads")
 def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
                       session: Session = Depends(get_api_session)):
@@ -138,7 +148,13 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     from db.models import StoryThread, RadarAlert
     q = select(StoryThread)
     if tracker_id is not None:
-        q = q.where(StoryThread.tracker_id == tracker_id)
+        # 全局线索: a target is a lens, so "this target's threads" means every
+        # thread whose lens contains it, not only the ones it started. The LIKE
+        # is a coarse SQL pre-filter (matches 14 for 4); the exact membership
+        # test happens below on the parsed set.
+        from sqlmodel import or_
+        q = q.where(or_(StoryThread.tracker_id == tracker_id,
+                        StoryThread.tracker_ids.like(f"%{tracker_id}%")))
     # Ordering is time-honesty (author ruling 2026-08-13). last_update_at bumps
     # on ANY member join, so a three-week-old thread outranked that day's real
     # news because outlet #40 republished it. summarized_at only moves on a
@@ -154,6 +170,15 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     else:
         order = (StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc())
     threads = session.exec(q.order_by(*order).limit(limit)).all()
+    if tracker_id is not None:
+        def _lens(th):
+            ids = {th.tracker_id}
+            try:
+                ids.update(int(i) for i in json.loads(th.tracker_ids or "[]"))
+            except Exception:
+                pass
+            return ids
+        threads = [th for th in threads if tracker_id in _lens(th)]
     if not threads:
         return []
 
@@ -223,7 +248,8 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "importance_score": th.importance_score,
             "validity_category": th.validity_category,
             "relevant_tracker_ids": sorted(
-                {tid for tid in ({th.tracker_id} | also_by_thread[th.id]) if tid is not None}),
+                {tid for tid in ({th.tracker_id} | also_by_thread[th.id] | _stored_lens(th))
+                 if tid is not None}),
             "from_account": flags_by_thread[th.id]["from_account"],
             "aggregated_only": flags_by_thread[th.id]["aggregated_only"],
         })

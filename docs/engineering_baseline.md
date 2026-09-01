@@ -1,6 +1,6 @@
 # MajorRSS 工程基准（Engineering Baseline）
 
-> 最后更新：2026-08-13
+> 最后更新：2026-09-01
 >
 > **本文档是现行唯一的工程状态基准。**
 >
@@ -23,27 +23,32 @@
 - **决策在规划期，运行时只执行**（2026-07-29 架构校正后明文化）：实体画像/语言地理/平台路由是规划器（P4.0）的产出；运行时的启发式只是无规划输出时的确定性兜底。
 - **入口捕获，消费期只施加权重**（source_tiering §2）：provenance（层级、账号来源）在入库时盖章，绝不在消费期从 URL 重新推导。
 
-## 2. 当前架构（as-is，2026-08-13）
+## 2. 当前架构（as-is，2026-09-01）
 
 ```text
 桌面端  desktop/          Tauri 2 (Rust) + React 19 + Mantine → 127.0.0.1:8765
                           macOS 原生窗饰/交通灯（tauri.macos.conf.json）；Win/Linux 自绘
 后端    backend/main.py   FastAPI + uvicorn；lifespan 启动调度器守护线程；启动预载 .env/config
 调度    scheduler.py      APScheduler 8 任务（poller/抓取/语义/融合/订阅diff/趋势/维护/心跳）
-抓取    scraper_service → SourceResolver(路由分组+账号盖章) → adapters → SourceNormalizer
+规划    portfolio_planner.plan_intent  一句话 → IntentPlan（分道/多语言别名/官方域名/集合/建议源）
+        建议源经 source_verifier 存在性校验（FxTwitter 验 handle、RSS/页面/subreddit 探活）后才可选
+抓取    scraper_service → SourceResolver(路由分组+账号盖章+建议源路由) → adapters → SourceNormalizer
+        入库盖章:source_tier / from_account / also_tracker_ids(跨目标可见性,attribution.py 确定性匹配)
         护栏：source_health(端点退避/隔离/新鲜度断言) + host_politeness(主机限速/冷却/轮转)
         + account_guard(每账号预算/AIMD/熔断) + humanized(静默窗/抖动) + browser_pool(线程本地复用)
         错误归责：NOT_ENDPOINT_FAULT（429→主机层、能力缺失→自身诊断）不进端点健康
-语义    semantic_ingest   embed(去均值) → 垃圾地板(0.05) → top-K 候选 + LLM 事件仲裁 → StoryThread
+语义    semantic_ingest   embed(去均值) → 垃圾地板(按透镜内最匹配目标画像) → 全局近 30 天候选池
+        top-K + LLM 事件仲裁 → StoryThread（全局唯一事件,tracker_ids=透镜,tracker_id 仅为首个 owner）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
 融合    processor_service 按线索出摘要（P1.1 门控挣得制）；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
-        聚合器单源默认折叠）；纯 RSS 模式 = 原始订阅流本身。Dashboard = 纯 KPI 大屏
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0015 幂等
+        聚合器单源默认折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
+监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0017 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 58 项 pytest（语义/守卫/健康/politeness/provenance/呈现层修复/发布合规）
+测试    tests/ 81 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -58,6 +63,9 @@
 | 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问；`rescued` 计数 = 旧 top-1 流程必错的合并 |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
+| 跨目标可见性 | `services/attribution.py` | 入库确定性匹配:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
+| 线索透镜 | `StoryThread.tracker_ids` | 全局线索的"哪些目标关心";owner 只管叙述/板块/告警 |
+| 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
 
 ## 3. 差距地图（当前仍存在的）
 
@@ -67,7 +75,7 @@
 - **授权态端到端**：链路已验证到登录弹窗（2026-08-05），cookie 抓取一段等作者小号。AUTH_PLATFORMS 11 平台的指示器仍是未经真实账号验证的假设。
 
 ### 3.2 结构性（记录不排期，见路线图同名节）
-- **线索全局化 / 跨线索合并**：同事件可跨 tracker、也可同 tracker 分裂成多条（实测 3.7 Flash 两条并存）；现有近重守卫是有界兜底。
+- **同 tracker 内线索分裂**（全局化后仍可能）：严格 same-event 仲裁下同事件仍可能分成多条;存量跨目标重复线索不做追溯合并,随新成员到来收敛。
 - **仲裁"同一故事线"语义**：严格 same-event 下高拆分率部分是诚实的；等 top-K 后的 splits/rescued 数据再定，动语义有过度合并回归风险。
 - **容量余量薄**：稳态进入≈消化≈16 条/分钟，无余量；再加探测目标 pending 将单调增长。是容量上限不是泄漏。
 - **优先级倒挂**：`max_sources_per_run` 封顶时 keyword 源(priority=1)压过精选源(priority=5)。
@@ -93,8 +101,9 @@ R1–R7 Phase 1 全部完成（2026-07 上旬）；之后执行队列以 [radar_
 ✅ 呈现层三修（RSS 时间戳 +5h、一手地板、仲裁 top-K）
 ✅ P6 雷达收口 + 当日补丁（时间诚实、板块筛选）
 ✅ P4.0a/b（意图探索 schema+分道+路由派生,2026-08-20）
-▶ 下一步：P4.0c 建议源(见 p4_intent_design.md §7,含归属混乱新动机) → P4.1/P4.2 → P5(等方案) → P7a/b → P3.1(最后)
-⚠ 快讯通道离线:nitter.net 已 410,授权 agentic(等作者小号)是唯一恢复路径
+✅ 跨目标可见性（2026-08-26）· P4.0c 建议源+存在性校验 · 线索全局化（2026-09-01）
+▶ 下一步：P4.1/P4.2 → P5(等方案) → P7a/b → P3.1(最后)
+⚠ 快讯通道离线:nitter.net 已 410;无账号唯一结构路径=Grok relay(等作者 xAI key),一手路径=授权 agentic(等小号)
    随时可插：P2.2 简报接地性
 ```
 
@@ -112,7 +121,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（58 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（81 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

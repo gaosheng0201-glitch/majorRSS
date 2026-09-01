@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { 
   Text, Table, Group, Stack, Button, Badge, ActionIcon,
   Modal, TextInput, Select, NumberInput, Textarea, Paper, Menu,
-  Stepper, Card, ScrollArea, Accordion, Alert, SimpleGrid, Loader
+  Stepper, Card, ScrollArea, Accordion, Alert, SimpleGrid, Loader, Checkbox
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -134,6 +134,24 @@ export default function Discovery() {
     if (ip.warmup_days) setFreshnessDays(ip.warmup_days);
     if (ip.fetch_interval_minutes) setIntervalVal(ip.fetch_interval_minutes);
     setActiveStep(1);
+  };
+
+  // P4.0c：建议源是提案。校验通过的默认勾选，未通过的默认不勾（模型会编造）；
+  // 用户可以推翻。勾选状态随 intent_plan 一起落库，运行时只消费 selected。
+  const toggleSuggestion = (idx: number, on: boolean) => {
+    setIntentPlan((prev: any) => {
+      if (!prev?.intent_plan) return prev;
+      const list = [...(prev.intent_plan.suggested_sources || [])];
+      list[idx] = { ...list[idx], selected: on };
+      return { ...prev, intent_plan: { ...prev.intent_plan, suggested_sources: list } };
+    });
+  };
+  const SUGG_KIND: Record<string, { label: string; color: string }> = {
+    rss: { label: 'RSS', color: 'indigo' },
+    account: { label: '账号', color: 'grape' },
+    subreddit: { label: '版块', color: 'orange' },
+    page_monitor: { label: '页面监控', color: 'yellow' },
+    registry: { label: '登记库', color: 'teal' },
   };
 
   const createAsMonitor = async () => {
@@ -753,6 +771,28 @@ export default function Discovery() {
                           )}
                           {(ip.official_domains || []).length > 0 && (
                             <Text size="xs">官方域名（此目标的一手源）：{ip.official_domains.join('、')}</Text>
+                          )}
+                          {(ip.suggested_sources || []).length > 0 && (
+                            <Stack gap={4}>
+                              <Text size="xs">建议补充源（已做存在性校验；未通过的默认不勾，页面监控类会建为订阅）：</Text>
+                              {ip.suggested_sources.map((s: any, i: number) => {
+                                const k = SUGG_KIND[s.kind] || { label: s.kind, color: 'gray' };
+                                return (
+                                  <Checkbox key={i} size="xs" checked={!!s.selected}
+                                            onChange={(e) => toggleSuggestion(i, e.currentTarget.checked)}
+                                            label={
+                                              <Group gap={6} wrap="nowrap">
+                                                <Badge size="xs" variant="light" color={k.color}>{k.label}</Badge>
+                                                <Text size="xs" ff="monospace" style={{ wordBreak: 'break-all' }}>{s.value}</Text>
+                                                <Badge size="xs" variant="outline" color={s.verified ? 'teal' : 'gray'}>
+                                                  {s.verified ? '已验证' : '未验证'}
+                                                </Badge>
+                                                {s.reason && <Text size="10px" c="dimmed">{s.reason}</Text>}
+                                              </Group>
+                                            } />
+                                );
+                              })}
+                            </Stack>
                           )}
                           <Text size="xs">
                             源集合：{(ip.selected_collections || []).join('、') || '（无匹配，用通用基座）'}

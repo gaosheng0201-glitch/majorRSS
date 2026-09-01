@@ -29,7 +29,8 @@ def run_migrations():
             "0013_release_capability_failures",
             "0014_first_party_floor_restamp",
             "0015_replay_material_timestamps",
-            "0016_cross_target_visibility"
+            "0016_cross_target_visibility",
+            "0017_global_threads_lens"
         ]
         
         for m in migrations:
@@ -490,6 +491,46 @@ def run_migrations():
                             stamped += 1
                     session.commit()
                     print(f"cross_target_visibility: {stamped}/{len(rows)} recent articles stamped")
+
+                elif m == "0017_global_threads_lens":
+                    # 全局线索: threads gain a lens (every target they concern).
+                    # Existing threads get theirs from their members — owner +
+                    # visibility stamps — so the filter chips work on day one.
+                    # No retroactive merging of same-event threads: the pool is
+                    # global from here on, so duplicates converge as new
+                    # members arrive rather than being rewritten by a script.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    if "storythread" in inspector.get_table_names():
+                        cols = [c["name"] for c in inspector.get_columns("storythread")]
+                        if "tracker_ids" not in cols:
+                            conn.execute(text("ALTER TABLE storythread ADD COLUMN tracker_ids VARCHAR"))
+                    session.commit()
+                    import json as _json
+                    from db.models import RawArticle, StoryThread
+                    from sqlmodel import select as _select
+                    lens = {}
+                    for tid, owner, also in session.exec(_select(
+                            RawArticle.thread_id, RawArticle.tracker_id, RawArticle.also_tracker_ids)
+                            .where(RawArticle.thread_id.is_not(None))).all():
+                        s = lens.setdefault(tid, set())
+                        if owner is not None:
+                            s.add(int(owner))
+                        try:
+                            s.update(int(i) for i in _json.loads(also or "[]") if i is not None)
+                        except Exception:
+                            pass
+                    n = 0
+                    for th in session.exec(_select(StoryThread)).all():
+                        ids = set(lens.get(th.id, set()))
+                        if th.tracker_id is not None:
+                            ids.add(th.tracker_id)
+                        th.tracker_ids = _json.dumps(sorted(ids))
+                        session.add(th)
+                        n += 1
+                    session.commit()
+                    print(f"global_threads_lens: {n} threads stamped with their lens")
 
                 sv = SchemaVersion(version_id=m)
                 session.add(sv)

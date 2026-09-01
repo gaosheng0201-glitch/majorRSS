@@ -167,3 +167,54 @@ def test_no_growth_is_never_material():
 def test_first_growth_from_nothing_is_material():
     from services.processor_service import is_material_increment
     assert is_material_increment(0, "", 1, "LEAD")
+
+
+# --- 全局线索 (author ruling 2026-09-01) -------------------------------------------
+
+def test_same_event_from_two_targets_becomes_one_thread_with_both_in_lens():
+    """Two targets' routes find the same story. Per-target pools made two
+    threads (measured: 3.7 Flash twice); the global pool makes one, and its
+    lens names both targets so either filter chip shows it."""
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding
+    from services.semantic_ingest import run_semantic_ingest
+    from sqlmodel import select, delete
+
+    with get_session() as s:
+        s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle)); s.exec(delete(StoryThread))
+        s.commit()
+        a = Tracker(name="claude-g", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Claude"]}))
+        b = Tracker(name="gemini-g", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Gemini"]}))
+        s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
+        title = "Anthropic releases Claude Fable 5.1 with cheaper cache reads"
+        s.add(RawArticle(tracker_id=a.id, title=title, url="https://one.example/fable",
+                         content=title, source_tier="aggregated"))
+        s.add(RawArticle(tracker_id=b.id, title=title + " - Outlet Two",
+                         url="https://two.example/fable", content=title, source_tier="aggregated",
+                         also_tracker_ids=json.dumps([a.id])))
+        s.commit()
+
+    out = run_semantic_ingest(limit=10)
+    assert out["embedded"] == 2
+
+    with get_session() as s:
+        threads = s.exec(select(StoryThread)).all()
+        assert len(threads) == 1, [t.title for t in threads]
+        lens = set(json.loads(threads[0].tracker_ids))
+        assert lens == {a.id, b.id}
+        assert threads[0].member_count == 2
+
+
+def test_ignore_keywords_veto_cross_target_visibility():
+    from services.attribution import TrackerProfile, relevant_tracker_ids
+    gemini = TrackerProfile(1, ["Gemini"], ["deepmind.google"], ignore_keywords=["exchange", "horoscope"])
+    assert relevant_tracker_ids("Gemini exchange hacked for $30M", "", "https://coin.example/x",
+                                [gemini], owner_id=9) == []
+    assert relevant_tracker_ids("Gemini 3.8 Flash released", "", "https://press.example/y",
+                                [gemini], owner_id=9) == [1]
+    # An official-domain hit is never vetoed: the target's own channel is its own.
+    assert relevant_tracker_ids("Exchange rate demo", "", "https://deepmind.google/blog/z",
+                                [gemini], owner_id=9) == [1]

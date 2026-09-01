@@ -33,9 +33,15 @@ _MIN_TERM = 3
 
 
 class TrackerProfile:
-    def __init__(self, tracker_id: int, entities: List[str], official_domains: List[str]):
+    def __init__(self, tracker_id: int, entities: List[str], official_domains: List[str],
+                 ignore_keywords: List[str] = ()):
         self.tracker_id = tracker_id
         self.official_domains = tuple(d.lower() for d in official_domains if d)
+        # The target's own disambiguation excludes veto visibility: "Gemini
+        # exchange hacked" names the entity but is exactly what the gemini
+        # target planned to exclude. Checked on the title only — an exclude
+        # word deep in a body is not evidence of the wrong sense.
+        self.ignore_terms = tuple(k.strip().lower() for k in (ignore_keywords or ()) if k and k.strip())
         self.latin_terms = []
         self.cjk_terms = []
         for e in entities or []:
@@ -67,7 +73,8 @@ def load_profiles(session=None) -> List[TrackerProfile]:
             if t.name and t.name not in entities:
                 entities = [t.name] + list(entities)
             out.append(TrackerProfile(
-                t.id, entities, ip.get("official_domains") or []))
+                t.id, entities, ip.get("official_domains") or [],
+                policy.get("ignore_keywords") or []))
         return out
 
     if session is not None:
@@ -81,6 +88,8 @@ def _matches(profile: TrackerProfile, title: str, content: str, url_domain: str)
             url_domain == d or url_domain.endswith("." + d) for d in profile.official_domains):
         return True
     title = title or ""
+    if profile.ignore_terms and any(term in title.lower() for term in profile.ignore_terms):
+        return False
     for rx in profile.latin_terms:
         if rx.search(title):
             return True

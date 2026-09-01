@@ -72,10 +72,10 @@ class IntentPlan(BaseModel):
 
 1. ✅ **P4.0a schema+分道**（2026-08-20 落地,真实 LLM 边界例三过,66 测试）：IntentPlan/lane 判断+UI 预览确认（不动 resolver,`entities` 仍降维成关键词用）——独立可用
 2. ✅ **P4.0b 路由派生**（2026-08-20 落地）：resolver 消费 AliasSpec（`gnews_edition_params(lang, region)` 显式版本路由,取代字形猜测——猜测保留为无 plan 的兜底,7-29 降级裁决就此彻底落地）+ `official_domains` per-target 一手判定（`tier_for_url(extra_first_party=…)`,营销路径守卫仍生效,全局地板不动）+ ingest 的 CONFIRMED 改读入库盖章（消灭又一处消费期重推导）。实测:「帮我盯大谷翔平的动向」不提语言 → 6 条路由横跨 JP:ja/US/CA:en/CN:zh-Hans/TW:zh-Hant/HK:zh-Hant。账号建议消费归 c 刀
-3. **P4.0c 建议源**（=P4.1 雏形）：suggested_sources + 存在性校验
+3. ✅ **P4.0c 建议源**（2026-09-01 落地）：suggested_sources 五种 + 护栏整形 + 存在性校验（`services/source_verifier.py`,FxTwitter 验 handle、RSS 可解析、页面 200、subreddit new.rss;只认正面证据）+ 提案卡逐条勾选（通过默认勾、未通过默认不勾）+ resolver 消费 `selected`（`_append_suggested_routes`,优先级 4）+ page_monitor/registry 建目标时物化为 Subscription（`materialize_page_monitors`）+ `POST /trackers/{id}/replan` 手动重规划。实测 claude 4/4 通过、渐冻症编造的 RSS 被拦。详见 roadmap P4.0 节
 
 ## 8. 留给作者的三个决策点
 
-1. **重规划时机**：只在建目标时跑一次,还是提供"重新规划"按钮（改意图后重跑）？建议:手动按钮,不自动周期（成本可见、行为可预期）。
-2. **分道判断的落点**：monitor 道判定后直接建 Subscription,还是提示用户"这更像监控,去订阅管理建"？建议:直接建,但确认页明示"这将建为页面监控"。
+1. ✅ **重规划时机**（已按建议落地,2026-09-01）：手动按钮「重新规划（补充源）」在订阅管理的目标菜单,不自动周期;只补目标缺的（建议源整体替换并重验、官方域名/实体缺才补）。
+2. ✅ **分道判断的落点**（已落地）：monitor 道在提案卡直接「确认建为页面监控」;radar 道内的 page_monitor/registry 建议在建目标时自动物化为 Subscription（幂等 by URL）。
 3. **Grok x_search 是否进 P4.0c**：计费已查证（$5/1000 次调用 + token 费,一次规划 1–2 美分,不是障碍）;**真约束是无独立 endpoint**——只能在 Grok 补全内由模型触发,接入即引入 xAI provider 分支。建议:c 刀基线用现有 provider 建议 + 存在性校验,Grok 作可选增强建议器(有 xAI key 才启用),首版不做。

@@ -110,6 +110,44 @@ def _profile_terms(tracker) -> list:
     return out[:20]
 
 
+_POOL_WINDOW_DAYS = 30   # a story older than this no longer accepts members
+
+
+def _also_ids(article) -> list:
+    try:
+        ids = json.loads(getattr(article, "also_tracker_ids", None) or "[]")
+        return [int(i) for i in ids if i is not None]
+    except Exception:
+        return []
+
+
+def _thread_lens(th) -> set:
+    ids = set()
+    if th.tracker_id is not None:
+        ids.add(th.tracker_id)
+    try:
+        ids.update(int(i) for i in json.loads(th.tracker_ids or "[]") if i is not None)
+    except Exception:
+        pass
+    return ids
+
+
+def _load_thread_pool(session, StoryThread) -> dict:
+    """Global candidate pool: every thread touched in the last window, with its
+    centroid parsed once. Bounded by time, not by target."""
+    from datetime import timedelta
+    cutoff = _now() - timedelta(days=_POOL_WINDOW_DAYS)
+    pool = {}
+    for th in session.exec(select(StoryThread).where(StoryThread.last_update_at >= cutoff)).all():
+        if not th.centroid:
+            continue
+        try:
+            pool[th.id] = (th, json.loads(th.centroid))
+        except Exception:
+            pass
+    return pool
+
+
 def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
     """Embed and thread-cluster up to `limit` not-yet-embedded articles.
     Returns a small summary dict.
@@ -232,6 +270,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                                # have wrongly started from scratch
     arb_skipped_confident = 0  # merges accepted on embedding confidence alone
     arb_skipped_budget = 0     # gray-zone merges that ran out of budget
+    thread_pool = None         # global recent threads: id → (thread, centroid)
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
         for article, vec in embedded:
@@ -241,8 +280,21 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
             # scored 0.41+ against 0.35 and 0/1590 were ever gated. Stored
             # `relevance` values are therefore centered-space going forward
             # (historical rows are raw-space; scales differ).
-            profile = _profile_vecs(article.tracker_id)
-            relevance = sm.relevance_score(vec, profile) if profile else None
+            # 全局线索: an article concerns its fetcher AND every target its
+            # intake stamp matched (also_tracker_ids). The junk floor used to
+            # judge it by the fetcher's profile alone, so a Claude post that
+            # gemini's route happened to fetch was scored against gemini's
+            # profile — the best-matching target's profile is the honest one.
+            lens_ids = [article.tracker_id] + _also_ids(article)
+            relevance = None
+            for lid in lens_ids:
+                p = _profile_vecs(lid)
+                if not p:
+                    continue
+                r = sm.relevance_score(vec, p)
+                if relevance is None or r > relevance:
+                    relevance = r
+            profile = relevance is not None
             rel_threshold = sm.active_relevance_threshold()
             # Tier protection (same principle as the P1.1 fusion gate): sources
             # the user opted into (curated presets / tracked accounts / first
@@ -266,17 +318,16 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 logger.info(f"Article {article.id} relevance-gated ({relevance:.2f} < {rel_threshold}); kept in Raw Feed, skipped by fusion.")
                 continue
 
-            # Load this tracker's thread centroids.
-            threads = session.exec(select(StoryThread).where(StoryThread.tracker_id == article.tracker_id)).all()
-            centroids = []
-            thread_by_id = {}
-            for th in threads:
-                if th.centroid:
-                    try:
-                        centroids.append((th.id, json.loads(th.centroid)))
-                        thread_by_id[th.id] = th
-                    except Exception:
-                        pass
+            # 全局线索: candidates come from the GLOBAL recent pool, not the
+            # fetcher's own threads. Per-target pools were why one event lived
+            # as two threads when two targets' routes both found it (measured:
+            # 3.7 Flash twice; the author's Claude-under-grok cases). The pool
+            # is loaded once per run and kept current in memory as threads are
+            # created and joined below.
+            if thread_pool is None:
+                thread_pool = _load_thread_pool(session, StoryThread)
+            centroids = [(tid, c) for tid, (_th, c) in thread_pool.items()]
+            thread_by_id = {tid: th for tid, (th, _c) in thread_pool.items()}
 
             # Candidates = the k nearest threads above the low floor (positive-ish
             # in the centered space), best first. Top-1-only was a measured
@@ -339,6 +390,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 # outright (an official announcement); otherwise it starts LEAD.
                 th = StoryThread(
                     tracker_id=article.tracker_id,
+                    tracker_ids=json.dumps(sorted(set(lens_ids))),
                     title=(article.title or "")[:120],
                     centroid=json.dumps(vec),
                     member_count=1,
@@ -352,14 +404,18 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 session.commit()
                 session.refresh(th)
                 article.thread_id = th.id
+                thread_pool[th.id] = (th, list(vec))
                 created += 1
             else:
                 th = thread_by_id[tid]
                 new_centroid = sm.update_centroid(json.loads(th.centroid), th.member_count, vec)
                 th.centroid = json.dumps(new_centroid)
+                thread_pool[th.id] = (th, new_centroid)
                 th.member_count += 1
                 th.last_update_at = _now()
                 article.thread_id = th.id
+                # The lens widens as members from other targets join.
+                th.tracker_ids = json.dumps(sorted(_thread_lens(th) | set(lens_ids)))
                 # Distinct-source count drives corroboration. Count unique real
                 # PUBLISHERS, not URL domains: Google News links all share
                 # news.google.com, so domain-counting made this ≡ 1 for every

@@ -231,3 +231,86 @@ def test_word_boundary_blocks_substring_hits():
                                 "https://example.com/a", profs) == []
     assert relevant_tracker_ids("Grok 4.6 released", "",
                                 "https://example.com/b", profs) == [7]
+
+
+# --- P4.0c: suggested sources — guards, verification, consumption ----------------
+
+def _plan_with_suggestions(sugg, verify=False):
+    _seed_collection()
+    payload = {"lane": "radar", "suggested_sources": sugg}
+    with patch("services.llm_provider.get_provider", return_value=_StubPlanner(payload)):
+        return plan_intent("盯着 claude 模型的动向", "claude", use_llm=True, verify=verify)
+
+
+def test_suggestion_guards_shape_and_drop():
+    out = _plan_with_suggestions([
+        {"kind": "account", "value": "https://x.com/AnthropicAI", "reason": "breaks news"},
+        {"kind": "account", "value": "@anthropicai", "reason": "dup, different case"},
+        {"kind": "subreddit", "value": "r/ClaudeAI"},
+        {"kind": "rss", "value": "not a url"},
+        {"kind": "page_monitor", "value": "https://www.anthropic.com/news"},
+        {"kind": "telepathy", "value": "https://example.com"},
+        {"kind": "account", "value": "this handle is way too long to be real"},
+    ])
+    s = out["intent_plan"]["suggested_sources"]
+    assert [(x["kind"], x["value"]) for x in s] == [
+        ("account", "AnthropicAI"), ("subreddit", "ClaudeAI"),
+        ("page_monitor", "https://www.anthropic.com/news")]
+    assert s[0]["platform"] == "twitter" and s[1]["platform"] == "reddit"
+    # Unverified (verify=False): nothing is auto-selected.
+    assert all(not x["selected"] and not x["verified"] for x in s)
+
+
+def test_verification_selects_only_what_exists():
+    def fake_verify(s):
+        return s["kind"] == "rss"
+    with patch("services.source_verifier.verify_one", side_effect=fake_verify):
+        out = _plan_with_suggestions([
+            {"kind": "rss", "value": "https://example.com/feed.xml"},
+            {"kind": "account", "value": "ghost_handle"},
+        ], verify=True)
+    s = out["intent_plan"]["suggested_sources"]
+    assert (s[0]["verified"], s[0]["selected"]) == (True, True)
+    assert (s[1]["verified"], s[1]["selected"]) == (False, False)
+
+
+def test_resolver_consumes_selected_suggestions_only():
+    from services.source_resolver import SourceResolver
+    policy = json.dumps({"keyword_strategy": "default", "max_days": 7, "intent_plan": {
+        "suggested_sources": [
+            {"kind": "rss", "value": "https://example.com/feed.xml", "selected": True},
+            {"kind": "subreddit", "value": "ClaudeAI", "platform": "reddit", "selected": True},
+            {"kind": "account", "value": "AnthropicAI", "platform": "twitter", "selected": True},
+            {"kind": "rss", "value": "https://unchecked.example/feed", "selected": False},
+            {"kind": "page_monitor", "value": "https://www.anthropic.com/news", "selected": True},
+        ]}})
+    routes = SourceResolver(fetch_policy=policy).resolve_routes("KEYWORD_DISCOVERY", json.dumps(["claude"]))
+    urls = [r.url_or_command for r in routes]
+    assert "https://example.com/feed.xml" in urls
+    assert "https://www.reddit.com/r/ClaudeAI/new.rss" in urls
+    acct = [r for r in routes if r.route_id.startswith(("nitter_sugg", "rsshub_sugg", "agentic_sugg"))]
+    assert len(acct) == 3 and all(r.is_account for r in acct)
+    assert "https://unchecked.example/feed" not in urls
+    assert not any("anthropic.com/news" in u for u in urls), "page_monitor is a Subscription, not a route"
+    # Suggested sources outrank shared presets (5) but not the target's own routes.
+    assert all(r.priority == 4 for r in routes if r.route_id.startswith("sugg_"))
+
+
+def test_page_monitor_suggestion_materialises_a_subscription():
+    from backend.api.trackers import materialize_page_monitors
+    from db.database import get_session
+    from db.models import Tracker, Subscription
+    from sqlmodel import select
+    policy = json.dumps({"intent_plan": {"suggested_sources": [
+        {"kind": "page_monitor", "value": "https://www.anthropic.com/news", "selected": True},
+        {"kind": "page_monitor", "value": "https://ignored.example/x", "selected": False},
+    ]}})
+    with get_session() as s:
+        t = Tracker(name="claude-c", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=policy, fetch_interval_minutes=30)
+        s.add(t); s.commit(); s.refresh(t)
+        assert materialize_page_monitors(t, s) == 1
+        assert materialize_page_monitors(t, s) == 0          # idempotent
+        subs = s.exec(select(Subscription).where(
+            Subscription.target_url == "https://www.anthropic.com/news")).all()
+        assert len(subs) == 1 and subs[0].fetch_interval_minutes == 60
