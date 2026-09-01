@@ -365,3 +365,20 @@ class AccountGuardState(SQLModel, table=True):
     total_authorized_yield: int = Field(default=0)      # items produced via this account (utilization sentinel)
     last_yield_at: Optional[datetime] = None
     updated_at: datetime = Field(default_factory=utc_now_naive)
+
+
+class EmergentSource(SQLModel, table=True):
+    """P4.2 涌现源: a handle or publisher that keeps turning up inside a
+    target's attention-earning threads (services/emergent_sources.py). Pending
+    until the user promotes it (accepted → appended to the target's suggested
+    sources) or dismisses it (sticky across rescans)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tracker_id: int = Field(foreign_key="tracker.id", index=True)
+    kind: str = Field(description="account | domain")
+    value: str
+    value_key: str = Field(index=True, description="lower-cased value for dedup")
+    thread_count: int = Field(default=0)
+    sample_titles: str = Field(default="[]")
+    status: str = Field(default="pending", index=True, description="pending | accepted | dismissed | no_route")
+    first_seen_at: datetime = Field(default_factory=utc_now_naive)
+    updated_at: datetime = Field(default_factory=utc_now_naive)

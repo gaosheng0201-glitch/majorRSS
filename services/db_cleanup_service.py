@@ -276,6 +276,13 @@ def run_maintenance():
                             f"{dom['planned']} tracker(s); restamped {stamp['restamped']} articles.")
         except Exception as e:
             logger.warning(f"Visibility backfill skipped: {e}")
+        # P4.2: which handles/publishers keep showing up in attention-earning
+        # threads — deterministic, zero tokens, additive suggestions only.
+        try:
+            from services.emergent_sources import scan_emergent_sources
+            scan_emergent_sources()
+        except Exception as e:
+            logger.warning(f"Emergent source scan skipped: {e}")
         if res.get("planned"):
             logger.info(f"Multilingual alias backfill: {res}")
     except Exception as e:

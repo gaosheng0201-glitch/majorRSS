@@ -19,7 +19,7 @@ logger = get_logger("backend")
 
 from db.database import create_db_and_tables
 from scheduler import start_scheduler
-from backend.api import trackers, intelligence, briefing, monitors, settings, auth, source_presets
+from backend.api import trackers, intelligence, briefing, monitors, settings, auth, source_presets, emergent
 
 def _preload_persisted_config():
     """Load persisted config into os.environ at startup.
@@ -98,6 +98,7 @@ app.include_router(briefing.router, prefix="/api")
 app.include_router(monitors.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(source_presets.router, prefix="/api")
+app.include_router(emergent.router, prefix="/api")
 
 @app.get("/")
 def index():

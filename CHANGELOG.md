@@ -211,7 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P4.0c 建议源 + 存在性校验（09-01）**：规划器提示词第 6 条改为要求 `suggested_sources`（rss/account/subreddit/page_monitor/registry ≤8,带理由）;`_guard_suggestions` 整形去重;`services/source_verifier.py` 并行 6s 校验（RSS 可解析、页面 200、X handle 经 FxTwitter 档案端点验活、subreddit new.rss;只认正面证据）→ 通过默认勾选、未通过可见不勾;Discovery 提案卡逐条勾选;`SourceResolver._append_suggested_routes` 消费 `selected`（优先级 4）;page_monitor/registry 建目标时 `materialize_page_monitors` 物化为 Subscription;`POST /trackers/{id}/replan` + 订阅管理菜单「重新规划（补充源）」（决策点①手动,只补缺）。实测 claude 4/4 通过、渐冻症编造 RSS 被拦。
 - **线索全局化（09-01）**：语义层候选池改全局近 30 天（`_load_thread_pool`,每轮一次内存维护）;`StoryThread.tracker_ids` 透镜随成员扩张;垃圾地板按透镜内最匹配目标画像算;`/threads?tracker_id=` 按透镜过滤;雷达行标签显示透镜全部目标;归属匹配加 `ignore_keywords` 否决。迁移 0017 回填 13,500 条线索透镜（2,368 条含 ≥2 目标）,不做追溯合并。
 - **Fable 5.1 缺失案（09-01）**：当天发布;官方公告 URL `anthropic.com/claude-fable-and-mythos-5-1` 不在 `/news/` 下,第三方 feed 按路径过滤未收录;gnews 一天滞后;X 通道黑——线索为零。page_monitor 类建议（newsroom listing / what's-new 页）是此类漏网的唯一解,已由 c 刀提供。
-- 测试 70 → 81。
+- **P4.1 收口（09-01）**：规划提示词改为"新手不知道该找的一手源"框架;`_REGISTRY_LEXICON` 话题→结构化源映射（ClinicalTrials / NVD / FilmFreeway / arXiv / EDGAR）在 LLM 与无 key 两条路径都注入,仍过护栏与校验。
+- **P4.2 涌现源发现（09-01）**：`services/emergent_sources.py`（扫获注意力线索→按透镜计去重线索数→`EmergentSource` pending;"已追踪"按 curated/primary 到达域名与 from_account handle 判定;X 镜像/arxiv 归噪音、代码托管不抽 @、出版方门槛 6）;`/api/emergent/`（list/scan/accept/dismiss）;雷达页顶部一行提示 追踪/忽略;追踪过存在性校验后追加为 selected 建议源;维护任务每日扫描。实库干跑 7 候选（@ClaudeDevs/@OpenAI/@SpaceXAI…）。
+- 测试 70 → 85。
 
 ### Added
 - **Source Preset Seed Library**:

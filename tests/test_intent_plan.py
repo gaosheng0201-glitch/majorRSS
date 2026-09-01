@@ -314,3 +314,105 @@ def test_page_monitor_suggestion_materialises_a_subscription():
         subs = s.exec(select(Subscription).where(
             Subscription.target_url == "https://www.anthropic.com/news")).all()
         assert len(subs) == 1 and subs[0].fetch_interval_minutes == 60
+
+
+# --- P4.1 registry lexicon + P4.2 emergent sources ------------------------------
+
+def test_registry_lexicon_reaches_the_no_model_floor():
+    out = plan_intent("盯着渐冻症的新疗法", "渐冻症", use_llm=False, verify=False)
+    kinds = [(s["kind"], s["value"]) for s in out["intent_plan"]["suggested_sources"]]
+    assert any(k == "registry" and "clinicaltrials.gov" in v for k, v in kinds), kinds
+
+
+def test_extract_mentions_finds_handles_links_and_publishers():
+    from services.emergent_sources import extract_mentions
+    m = extract_mentions("Leak: per @jimmy_apples the model lands Tuesday",
+                         "see https://x.com/apples_jimmy/status/123 and mail me at foo@gmail.com",
+                         "https://www.theverge.com/2026/9/1/story")
+    assert ("account", "jimmy_apples") in m
+    assert ("account", "apples_jimmy") in m
+    assert ("domain", "theverge.com") in m
+    assert not any(v == "gmail" for _, v in m)
+    # Aggregator hosts are never a publisher identity.
+    assert ("domain", "news.google.com") not in extract_mentions("t", "", "https://news.google.com/rss/x")
+
+
+def _seed_emergent(handle="leakerguy", n_threads=3):
+    import json
+    from datetime import datetime
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread
+    with get_session() as s:
+        t = Tracker(name="emergent-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Foo"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        for i in range(n_threads):
+            th = StoryThread(tracker_id=t.id, tracker_ids=json.dumps([t.id]), title=f"story {i}",
+                             lifecycle="CORROBORATED", member_count=1, distinct_source_count=2,
+                             first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
+            s.add(th); s.commit(); s.refresh(th)
+            s.add(RawArticle(tracker_id=t.id, thread_id=th.id, title=f"as @{handle} reported {i}",
+                             url=f"https://outlet{i}.example/{handle}/{i}", content="body"))
+        s.commit()
+        return t.id
+
+
+def _cleanup_emergent():
+    # Leave no unembedded articles behind: test_pipeline_flows counts pending
+    # articles in the shared test DB.
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, EmergentSource
+    from sqlmodel import select, delete
+    with get_session() as s:
+        ids = [t.id for t in s.exec(select(Tracker).where(Tracker.name == "emergent-t")).all()]
+        if ids:
+            s.exec(delete(EmergentSource).where(EmergentSource.tracker_id.in_(ids)))
+            s.exec(delete(RawArticle).where(RawArticle.tracker_id.in_(ids)))
+            s.exec(delete(StoryThread).where(StoryThread.tracker_id.in_(ids)))
+            s.exec(delete(Tracker).where(Tracker.id.in_(ids)))
+            s.commit()
+
+
+def test_emergent_scan_promotes_recurring_handle_and_respects_dismiss():
+    from db.database import get_session
+    from db.models import EmergentSource
+    from services.emergent_sources import scan_emergent_sources, dismiss_emergent_source
+    from sqlmodel import select
+    tid = _seed_emergent("leakerguy", 3)
+    _seed_emergent("onlyonce", 1)
+    scan_emergent_sources(window_days=14, min_threads=3)
+    with get_session() as s:
+        rows = s.exec(select(EmergentSource).where(EmergentSource.tracker_id == tid)).all()
+        by_key = {r.value_key: r for r in rows}
+        assert "leakerguy" in by_key and by_key["leakerguy"].thread_count == 3
+        assert "onlyonce" not in by_key
+        # outlet0/1/2 are distinct domains → each seen once → never candidates.
+        assert not any(r.kind == "domain" for r in rows)
+        eid = by_key["leakerguy"].id
+    dismiss_emergent_source(eid)
+    scan_emergent_sources(window_days=14, min_threads=3)
+    with get_session() as s:
+        assert s.get(EmergentSource, eid).status == "dismissed"
+    _cleanup_emergent()
+
+
+def test_emergent_accept_appends_verified_suggestion():
+    import json
+    from db.database import get_session
+    from db.models import EmergentSource, Tracker
+    from services.emergent_sources import scan_emergent_sources, accept_emergent_source
+    from sqlmodel import select
+    tid = _seed_emergent("realhandle", 3)
+    scan_emergent_sources(window_days=14, min_threads=3)
+    with get_session() as s:
+        eid = s.exec(select(EmergentSource).where(EmergentSource.tracker_id == tid,
+                                                  EmergentSource.value_key == "realhandle")).first().id
+    with patch("services.source_verifier._twitter_handle_alive", return_value=True):
+        out = accept_emergent_source(eid)
+    assert out["ok"] and out["added"]["kind"] == "account"
+    with get_session() as s:
+        policy = json.loads(s.get(Tracker, tid).fetch_policy)
+        sugg = policy["intent_plan"]["suggested_sources"]
+        assert any(x["value"] == "realhandle" and x["selected"] and x["verified"] for x in sugg)
+        assert s.get(EmergentSource, eid).status == "accepted"
+    _cleanup_emergent()

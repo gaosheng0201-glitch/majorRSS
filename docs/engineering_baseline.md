@@ -31,7 +31,10 @@
 后端    backend/main.py   FastAPI + uvicorn；lifespan 启动调度器守护线程；启动预载 .env/config
 调度    scheduler.py      APScheduler 8 任务（poller/抓取/语义/融合/订阅diff/趋势/维护/心跳）
 规划    portfolio_planner.plan_intent  一句话 → IntentPlan（分道/多语言别名/官方域名/集合/建议源）
-        建议源经 source_verifier 存在性校验（FxTwitter 验 handle、RSS/页面/subreddit 探活）后才可选
+        建议源 = 模型发现（P4.1 新手问题）+ 话题→登记库映射（_REGISTRY_LEXICON,两条路径都走）
+        经 source_verifier 存在性校验（FxTwitter 验 handle、RSS/页面/subreddit 探活）后才可选
+发现    emergent_sources（P4.2）每日扫获注意力线索→反复被指向的 @handle/出版方→雷达页提示追踪
+        追踪=同一套校验后追加为 selected 建议源;只加不减
 抓取    scraper_service → SourceResolver(路由分组+账号盖章+建议源路由) → adapters → SourceNormalizer
         入库盖章:source_tier / from_account / also_tracker_ids(跨目标可见性,attribution.py 确定性匹配)
         护栏：source_health(端点退避/隔离/新鲜度断言) + host_politeness(主机限速/冷却/轮转)
@@ -48,7 +51,7 @@
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0017 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 81 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/发布合规）
+测试    tests/ 85 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -66,6 +69,7 @@
 | 跨目标可见性 | `services/attribution.py` | 入库确定性匹配:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
 | 线索透镜 | `StoryThread.tracker_ids` | 全局线索的"哪些目标关心";owner 只管叙述/板块/告警 |
 | 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
+| 涌现源 | `services/emergent_sources.py` | "已追踪"按数据判定（curated/primary 到达的域名、from_account 读到的 handle）;代码托管不抽 @;出版方门槛 6 |
 
 ## 3. 差距地图（当前仍存在的）
 
@@ -101,8 +105,8 @@ R1–R7 Phase 1 全部完成（2026-07 上旬）；之后执行队列以 [radar_
 ✅ 呈现层三修（RSS 时间戳 +5h、一手地板、仲裁 top-K）
 ✅ P6 雷达收口 + 当日补丁（时间诚实、板块筛选）
 ✅ P4.0a/b（意图探索 schema+分道+路由派生,2026-08-20）
-✅ 跨目标可见性（2026-08-26）· P4.0c 建议源+存在性校验 · 线索全局化（2026-09-01）
-▶ 下一步：P4.1/P4.2 → P5(等方案) → P7a/b → P3.1(最后)
+✅ 跨目标可见性（2026-08-26）· P4.0c 建议源+存在性校验 · 线索全局化 · P4.1 · P4.2（2026-09-01）
+▶ 下一步：P5(等方案) → P7a/b → P3.1(最后)
 ⚠ 快讯通道离线:nitter.net 已 410;无账号唯一结构路径=Grok relay(等作者 xAI key),一手路径=授权 agentic(等小号)
    随时可插：P2.2 简报接地性
 ```
@@ -121,7 +125,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（81 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（85 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

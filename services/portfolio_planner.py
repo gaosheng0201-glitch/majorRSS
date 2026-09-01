@@ -281,8 +281,11 @@ _INTENT_SYSTEM = (
     "4. ignore_keywords: disambiguate collisions (a 'gemini' AI target must exclude horoscope "
     "senses; 'grok' must exclude the Renault engine).\n"
     "5. selected_collections: only ids present in the catalog; prefer few and high-signal.\n"
-    "6. suggested_sources (max 8, each with a one-line reason): sources BEYOND the preset "
-    "collections that a serious follower of this target would watch. Kinds: 'rss' (the "
+    "6. suggested_sources (max 8, each with a one-line reason): answer the newcomer's "
+    "question — 'to follow this, which truly FIRST-HAND sources would I not know to look "
+    "for?' Name the people and outlets that break this topic's news before the aggregators "
+    "quote them (for X-first topics the leakers themselves), plus sources BEYOND the preset "
+    "collections a serious follower would watch. Kinds: 'rss' (the "
     "target's own feed URL), 'account' (the 1-3 X handles that break its news — value is "
     "the bare handle, platform 'twitter'), 'subreddit' (its community, bare name), "
     "'page_monitor' (a page whose CHANGE is the signal: the official newsroom LISTING page "
@@ -356,6 +359,44 @@ def _guard_suggestions(items: List[SourceSuggestion]) -> List[SourceSuggestion]:
     return out
 
 
+# P4.1 "话题→结构化源" mapping (roadmap: 罕见病→ClinicalTrials, 影展→FilmFreeway,
+# 漏洞→NVD, 论文→arXiv, 上市公司→EDGAR). Data, not code: each entry is a trigger
+# vocabulary and a URL template. Every result still goes through the guards and
+# the existence check like any model suggestion — the lexicon proposes, the
+# verifier decides.
+_REGISTRY_LEXICON = (
+    (("clinical trial", "clinicaltrials", "therapy", "therapies", "treatment", "drug",
+      "disease", "syndrome", "疗法", "新药", "临床", "试验", "疾病", "病", "治疗", "渐冻", "als",
+      "cancer", "癌", "alzheimer", "parkinson", "rare disease", "罕见病"),
+     "registry",
+     "https://clinicaltrials.gov/api/v2/studies?query.cond={q}&sort=LastUpdatePostDate:desc&pageSize=20",
+     "ClinicalTrials.gov 官方登记库:新试验与状态变化"),
+    (("cve", "vulnerability", "vulnerabilities", "exploit", "漏洞", "0day", "zero-day"),
+     "rss", "https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss-analyzed.xml",
+     "NVD 官方已分析漏洞 feed"),
+    (("film festival", "影展", "电影节", "短片", "short film"),
+     "page_monitor", "https://filmfreeway.com/festivals", "FilmFreeway 影展报名库"),
+    (("paper", "papers", "arxiv", "论文", "preprint", "预印本", "research"),
+     "rss", "https://export.arxiv.org/api/query?search_query=all:{q}&sortBy=submittedDate&sortOrder=descending&max_results=25",
+     "arXiv 最新预印本(按提交时间)"),
+    (("10-k", "8-k", "sec filing", "earnings", "财报", "上市公司", "ticker", "股票", "stock"),
+     "rss", "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&output=atom",
+     "SEC EDGAR 最新 8-K 公告"),
+)
+
+
+def _registry_suggestions(text: str, entities: List[AliasSpec]) -> List[SourceSuggestion]:
+    import urllib.parse
+    low = (text or "").lower()
+    en = next((a.text for a in entities or [] if a.lang == "en" and a.text), None)
+    q = urllib.parse.quote(en or (text or "").strip()[:60])
+    out = []
+    for triggers, kind, template, reason in _REGISTRY_LEXICON:
+        if any(t in low for t in triggers):
+            out.append(SourceSuggestion(kind=kind, value=template.format(q=q), reason=reason))
+    return out
+
+
 def plan_intent(intent_text: str, name: str = "", use_llm: bool = True, verify: bool = True) -> dict:
     """One sentence of intent → IntentPlan (+ compatibility down-conversion).
 
@@ -421,6 +462,10 @@ def plan_intent(intent_text: str, name: str = "", use_llm: bool = True, verify: 
         # A monitor without a concrete URL is not a monitor.
         plan.lane, plan.monitor_url = "radar", ""
         plan.lane_reason += " (downgraded: no concrete URL to watch)"
+    # P4.1 话题→结构化源: deterministic registry mapping, applied on BOTH paths
+    # (a model may not think of the registry; the no-key floor has no model).
+    plan.suggested_sources = list(plan.suggested_sources) + _registry_suggestions(
+        f"{name} {intent_text}", plan.entities)
     plan.suggested_sources = _guard_suggestions(plan.suggested_sources)
     if verify and plan.suggested_sources:
         from services.source_verifier import verify_suggestions

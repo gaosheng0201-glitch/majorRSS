@@ -50,6 +50,10 @@ interface StoryThread {
 }
 
 interface TrackerLite { id: number; name: string; }
+interface EmergentSource {
+  id: number; tracker_id: number; tracker_name: string;
+  kind: 'account' | 'domain'; value: string; thread_count: number;
+}
 
 interface CatchUp {
   since: string;
@@ -315,6 +319,20 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
   const [tab, setTab] = useState<string | null>('refined');
   const [trackers, setTrackers] = useState<TrackerLite[]>([]);
   const [trackerFilter, setTrackerFilter] = useState<number | null>(null);
+  // P4.2 涌现源：雷达教你自己的盲区——某个 @账号/出版方反复出现在获注意力的
+  // 线索里，就提示直接追踪。只加建议源（additive），追踪前仍过存在性校验。
+  const [emergent, setEmergent] = useState<EmergentSource[]>([]);
+  const loadEmergent = () =>
+    client.get<EmergentSource[]>('/emergent/?status=pending&limit=10').then(r => setEmergent(r.data || [])).catch(() => {});
+  const actOnEmergent = async (id: number, action: 'accept' | 'dismiss') => {
+    try {
+      const res = await client.post(`/emergent/${id}/${action}`, {}, { timeout: 30000 });
+      if (action === 'accept' && res.data && res.data.ok === false) {
+        alert(lang === 'zh' ? `无法追踪：${res.data.reason}` : `Cannot track: ${res.data.reason}`);
+      }
+    } catch { /* quiet */ }
+    loadEmergent();
+  };
   const [sinceAnchor] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_KEY));
 
   const fetchThreads = async () => {
@@ -348,6 +366,7 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
     fetchThreads();
     fetchCatchup();
     client.get<TrackerLite[]>('/trackers/').then(r => setTrackers(r.data || [])).catch(() => {});
+    loadEmergent();
     localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
     const t = setInterval(fetchThreads, 30000);
     return () => clearInterval(t);
@@ -405,6 +424,24 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
           ) : (
             <Text size="sm" c="dimmed">{lang === 'zh' ? '你关注的事，按时间读下来' : 'What you follow, read down by time'}</Text>
           )}
+          {(() => {
+            const e = emergent.find(x => trackerFilter === null || x.tracker_id === trackerFilter);
+            if (!e) return null;
+            const label = e.kind === 'account' ? '@' + e.value : e.value;
+            return (
+              <Text size="sm" c="dimmed">
+                {lang === 'zh' ? '这话题的爆料反复来自 ' : 'This topic keeps citing '}
+                <Text span fw={600} c="grape">{label}</Text>
+                {lang === 'zh'
+                  ? `（${e.thread_count} 条获注意力线索 · ${e.tracker_name}），要不要直接追踪？`
+                  : ` (${e.thread_count} attention-earning threads · ${e.tracker_name}) — track it directly?`}
+                {' '}
+                <Anchor size="sm" fw={600} onClick={() => actOnEmergent(e.id, 'accept')}>{lang === 'zh' ? '追踪' : 'Track'}</Anchor>
+                {' · '}
+                <Anchor size="sm" c="dimmed" onClick={() => actOnEmergent(e.id, 'dismiss')}>{lang === 'zh' ? '忽略' : 'Dismiss'}</Anchor>
+              </Text>
+            );
+          })()}
         </Stack>
         <Group gap="md">
           {/* Quiet focus filter — surface just the signal when noise is high. */}
