@@ -267,3 +267,32 @@ def test_storyline_links_kin_threads_without_manufacturing_corroboration():
         # Two reddit posts are ONE publisher: grouping bought no corroboration.
         assert sl.distinct_source_count == 1
         assert sl.has_refined is False
+
+
+def test_storyline_is_born_only_between_rumor_grade_threads():
+    """Two arXiv papers (curated) judged 'same story' must NOT become a rumor
+    line; a rumor line, once born, accepts any tier (the launch post joins)."""
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding, Storyline
+    from services.semantic_ingest import run_semantic_ingest
+    from sqlmodel import select, delete
+
+    with get_session() as s:
+        s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle)); s.exec(delete(StoryThread))
+        s.exec(delete(Storyline)); s.commit()
+        t = Tracker(name="story-c", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["steering"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        s.add(RawArticle(tracker_id=t.id, title="GAPS: dimension-level gates for activation steering",
+                         url="https://arxiv.org/abs/1", content="activation steering gates", source_tier="curated"))
+        s.commit()
+    run_semantic_ingest(limit=10, arbiter=_StoryArbiter())
+    with get_session() as s:
+        s.add(RawArticle(tracker_id=t.id, title="Conditional activation steering with sparse gates",
+                         url="https://arxiv.org/abs/2", content="activation steering gates sparse", source_tier="curated"))
+        s.commit()
+    out = run_semantic_ingest(limit=10, arbiter=_StoryArbiter())
+    assert out["storyline_links"] == 0
+    with get_session() as s:
+        assert s.exec(select(Storyline)).all() == []

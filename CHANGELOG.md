@@ -214,8 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P4.1 收口（09-01）**：规划提示词改为"新手不知道该找的一手源"框架;`_REGISTRY_LEXICON` 话题→结构化源映射（ClinicalTrials / NVD / FilmFreeway / arXiv / EDGAR）在 LLM 与无 key 两条路径都注入,仍过护栏与校验。
 - **P4.2 涌现源发现（09-01）**：`services/emergent_sources.py`（扫获注意力线索→按透镜计去重线索数→`EmergentSource` pending;"已追踪"按 curated/primary 到达域名与 from_account handle 判定;X 镜像/arxiv 归噪音、代码托管不抽 @、出版方门槛 6）;`/api/emergent/`（list/scan/accept/dismiss）;雷达页顶部一行提示 追踪/忽略;追踪过存在性校验后追加为 selected 建议源;维护任务每日扫描。实库干跑 7 候选（@ClaudeDevs/@OpenAI/@SpaceXAI…）。
 - **盖章只升不降（09-03,作者"顺手修了吧"）**：URL 全局唯一,首个送达的路由永久决定盖章——而最快的路由常常不是最可信的（blog.google 的 3.8 Flash 公告经 HN 先到=aggregated,几分钟后官方预设送来同一 URL 被当重复丢弃,线索停在"多源佐证"）。`DBRepository.promote_article_provenance`：重复 URL 若来自更高层级路由则提升 tier（永不下降）、补 from_account,升到 primary 时把线索置 CONFIRMED（ingest 只在成员加入时判）。测试 85→86。
-- **故事线层（09-03,作者裁决"只给可见性不给可信度"）**：仲裁同一次调用改答 `event/story/different`;story 且新建线索时认亲（`Storyline` + `StoryThread.storyline_id`,只链接不合并）;故事线出版方整条去重（聚合不制造佐证）;线报面三层（账号线报 > 故事线传闻(标签可见不折叠) > 聚合器单条折叠）;提炼卡"传闻自 X 起（N 条线报）"接续;融合门不变。迁移 0018。测试 86→87。
-- 测试 70 → 87。
+- **故事线层（09-03,作者裁决"只给可见性不给可信度"）**：仲裁同一次调用改答 `event/story/different`;story 且新建线索时认亲（`Storyline` + `StoryThread.storyline_id`,只链接不合并）;故事线出版方整条去重（聚合不制造佐证）;线报面三层（账号线报 > 故事线传闻(标签可见不折叠) > 聚合器单条折叠）;提炼卡"传闻自 X 起（N 条线报）"接续;融合门不变。迁移 0018。实机首轮修正：故事线只能在聚合层线索之间诞生（论文/精选源不会成"传闻线"）,任何层级可加入已有故事线。测试 86→88。
+- 测试 70 → 88。
 
 ### Added
 - **Source Preset Seed Library**:

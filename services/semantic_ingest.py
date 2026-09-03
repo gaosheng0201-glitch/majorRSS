@@ -56,7 +56,8 @@ _STORY_ARBITER_SYS = (
     "event — they report the SAME specific news event/announcement;\n"
     "story — different events, but the same developing storyline about the same "
     "specific subject (e.g. a rumor, then the leak, then the launch of ONE product);\n"
-    "different — otherwise. The same company or topic alone is 'different'."
+    "different — otherwise. The same company or topic alone is 'different'; research "
+    "papers, reviews, tutorials or opinion pieces on a similar subject are 'different'."
 )
 
 
@@ -81,6 +82,19 @@ def _llm_relation(provider, title_a, title_b):
     except Exception as e:
         logger.warning(f"Event arbiter failed ({e}); keeping embedding decision.")
         return None
+
+
+def _thread_is_rumor_grade(session, th) -> bool:
+    """A thread with no curated/primary member — the only kind a storyline may
+    be BORN from. Measured on the first live cycle: two arXiv papers on the
+    same subject were judged 'same story' and became a labelled rumor line,
+    which is the wrong word for research. Any tier may still JOIN an existing
+    storyline, so the official launch post keeps its "rumored since" lineage."""
+    from db.models import RawArticle
+    from services.provenance import HIGH_WEIGHT
+    tiers = session.exec(select(RawArticle.source_tier)
+                         .where(RawArticle.thread_id == th.id)).all()
+    return not any((t or "") in HIGH_WEIGHT for t in tiers)
 
 
 def _link_storyline(session, new_th, sibling_th) -> int:
@@ -502,8 +516,12 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 article.thread_id = th.id
                 thread_pool[th.id] = (th, list(vec))
                 created += 1
-                if story_sibling is not None and story_sibling in thread_by_id:
-                    refresh_sid = _link_storyline(session, th, thread_by_id[story_sibling])
+                _sib = thread_by_id.get(story_sibling) if story_sibling is not None else None
+                if _sib is not None and (
+                        _sib.storyline_id is not None
+                        or ((article.source_tier or "aggregated") == "aggregated"
+                            and _thread_is_rumor_grade(session, _sib))):
+                    refresh_sid = _link_storyline(session, th, _sib)
                     arb_story_links += 1
                     logger.info(f"Storyline link: '{(article.title or '')[:40]}' ~ thread "
                                 f"{story_sibling} (storyline {refresh_sid})")
