@@ -156,7 +156,14 @@ class SourceNormalizer:
             content_hash = item.fingerprint or hashlib.md5(canonical_url.encode('utf-8')).hexdigest()
             
             # Check db for duplicate URL or title
-            if self.db.check_url_exists(canonical_url) or self.db.check_title_exists(tracker_id, item.title):
+            if self.db.check_url_exists(canonical_url):
+                # Same URL again, possibly through a better route: let the
+                # provenance stamp rise (never fall) before dropping the copy.
+                self.db.promote_article_provenance(
+                    canonical_url, _item_tier, getattr(item, "from_account", False))
+                duplicates += 1
+                continue
+            if self.db.check_title_exists(tracker_id, item.title):
                 duplicates += 1
                 continue
 

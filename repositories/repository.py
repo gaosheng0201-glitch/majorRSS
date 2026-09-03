@@ -26,6 +26,42 @@ class DBRepository:
     def check_url_exists(self, url: str) -> bool:
         with get_session() as session:
             return session.exec(select(RawArticle).where(RawArticle.url == url)).first() is not None
+
+    def promote_article_provenance(self, url: str, tier: str, from_account: bool = False) -> bool:
+        """A URL is globally unique, so the FIRST route to deliver it stamps its
+        provenance forever — and the first route is often the fastest, not the
+        most trustworthy: blog.google's Gemini 3.8 announcement arrived via HN
+        (aggregated) minutes before the official preset delivered the same URL,
+        which was then dropped as a duplicate, leaving the thread 'corroborated'
+        instead of 'confirmed' with the vendor's own post inside it. Intake
+        stamps may RISE on re-encounter through a better route, never fall
+        (source_tiering §2: capture at intake — the later, better arrival is an
+        intake event too). A rise to primary also confirms the thread, since
+        ingest only evaluates that when a member joins."""
+        from services.provenance import Tier
+        rank = {Tier.AGGREGATED: 0, None: 0, Tier.CURATED: 1, Tier.PRIMARY: 2}
+        with get_session() as session:
+            art = session.exec(select(RawArticle).where(RawArticle.url == url)).first()
+            if not art:
+                return False
+            changed = False
+            if rank.get(tier, 0) > rank.get(art.source_tier, 0):
+                art.source_tier = tier
+                changed = True
+            if from_account and not art.from_account:
+                art.from_account = True
+                changed = True
+            if not changed:
+                return False
+            session.add(art)
+            if art.source_tier == Tier.PRIMARY and art.thread_id:
+                from db.models import StoryThread
+                th = session.get(StoryThread, art.thread_id)
+                if th and th.lifecycle != "CONFIRMED":
+                    th.lifecycle = "CONFIRMED"
+                    session.add(th)
+            session.commit()
+            return True
             
     def check_title_exists(self, tracker_id: int, title: str) -> bool:
         with get_session() as session:

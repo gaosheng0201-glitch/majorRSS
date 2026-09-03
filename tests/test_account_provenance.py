@@ -59,3 +59,37 @@ def test_the_gate_reads_the_stamp():
                  from_account=False)]
     worth, _ = _thread_worth_summary(thread, linked, tracker)
     assert not worth, "a link to x.com must not buy the people-radar bypass"
+
+
+def test_provenance_rises_on_reencounter_through_a_better_route_never_falls():
+    """blog.google's announcement arrived via HN first (aggregated); the official
+    preset delivering the same URL minutes later was dropped as a duplicate and
+    the stamp stayed low forever. The stamp may rise on re-encounter, and a rise
+    to primary confirms the thread."""
+    from datetime import datetime
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread
+    from repositories.repository import DBRepository
+    from sqlmodel import select
+    url = "https://blog.google/innovation-and-ai/gemini-3-8-flash/"
+    with get_session() as s:
+        t = Tracker(name="prov-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY")
+        s.add(t); s.commit(); s.refresh(t)
+        th = StoryThread(tracker_id=t.id, title="3.8 Flash", lifecycle="CORROBORATED",
+                         member_count=1, distinct_source_count=2,
+                         first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
+        s.add(th); s.commit(); s.refresh(th)
+        s.add(RawArticle(tracker_id=t.id, thread_id=th.id, title="Gemini 3.8 Flash", url=url,
+                         content="x", source_tier="aggregated"))
+        s.commit()
+        tid, thid = t.id, th.id
+    repo = DBRepository()
+    assert repo.promote_article_provenance(url, "primary") is True
+    assert repo.promote_article_provenance(url, "aggregated") is False   # never falls
+    with get_session() as s:
+        art = s.exec(select(RawArticle).where(RawArticle.url == url)).first()
+        assert art.source_tier == "primary"
+        assert s.get(StoryThread, thid).lifecycle == "CONFIRMED"
+        # cleanup so pending-article counts elsewhere stay exact
+        s.delete(art); s.delete(s.get(StoryThread, thid)); s.delete(s.get(Tracker, tid)); s.commit()
