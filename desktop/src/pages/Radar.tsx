@@ -27,6 +27,13 @@ import { safeHref } from '../components/sourceDisplay';
 // would turn the floor from a soft filter into an invisible one (trust loop).
 
 interface ThreadSource { title: string; url: string; }
+// 故事线（作者裁决 2026-09-03）：同一发展中的故事、不同事件的线索"认亲"。
+// 只给可见性不给可信度：出版方按整条故事线去重计数，reddit 一百帖仍是一家。
+interface StorylineInfo {
+  id: number; title: string | null; thread_count: number; member_count: number;
+  distinct_source_count: number; has_refined: boolean;
+  first_seen_at: string | null; last_update_at: string | null;
+}
 interface StoryThread {
   id: number;
   tracker_id: number | null;
@@ -47,6 +54,7 @@ interface StoryThread {
   validity_category: string | null;
   from_account: boolean;
   aggregated_only: boolean;
+  storyline?: StorylineInfo | null;
 }
 
 interface TrackerLite { id: number; name: string; }
@@ -169,6 +177,21 @@ function EventRow({ th, isDark, lang, tipoff, trackerName }: { th: StoryThread; 
           );
         })()}
         {trackerName && <Text size="xs" c="dimmed">· {trackerName}</Text>}
+        {(() => {
+          // Continuity: a refined story that was a rumor line first says so —
+          // the card no longer looks like it appeared from nowhere.
+          const sl = th.storyline;
+          if (!sl || sl.thread_count < 2 || !sl.first_seen_at || !th.first_seen_at) return null;
+          const gap = new Date(th.first_seen_at).getTime() - new Date(sl.first_seen_at).getTime();
+          if (gap < 24 * 3600 * 1000) return null;
+          return (
+            <Text size="xs" c="grape">
+              · {lang === 'zh'
+                  ? `传闻自 ${relativeTime(sl.first_seen_at, lang)} 起（${sl.thread_count} 条线报）`
+                  : `rumored since ${relativeTime(sl.first_seen_at, lang)} (${sl.thread_count} leads)`}
+            </Text>
+          );
+        })()}
         <Text size="xs" c="dimmed">·</Text>
         <Text size="xs" c="dimmed">{th.distinct_source_count} {lang === 'zh' ? '个来源' : 'sources'}</Text>
         {tipoff && (
@@ -240,6 +263,49 @@ function TimeBucketedList({ threads, isDark, lang, tipoffIds, timeOf, trackerNam
 // by what the intake stamps say they are. Collapse criterion = aggregator-only
 // AND single-source AND not from a named account — measured 90% of the lead
 // backlog, and the stratum that buried the genuine tip-offs.
+// One rumor line: the storyline header (labelled, with its honest publisher
+// count) and, on demand, the event threads that make it up.
+function StorylineRow({ sl, threads, isDark, lang, trackerNames }: {
+  sl: StorylineInfo; threads: StoryThread[]; isDark: boolean; lang: string; trackerNames?: Map<number, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const border = `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`;
+  return (
+    <Box style={{ padding: '12px 0', borderBottom: border }}>
+      <UnstyledButton onClick={() => setOpen(o => !o)} style={{ width: '100%' }}>
+        <Group gap={6} wrap="nowrap" align="flex-start">
+          {open ? <ChevronDown size={14} style={{ marginTop: 4 }} /> : <ChevronRight size={14} style={{ marginTop: 4 }} />}
+          <Stack gap={3}>
+            <Text style={{ fontSize: 15.5, fontWeight: 600, lineHeight: 1.45 }} className="title-text-color">
+              {sl.title || threads[0]?.title || (lang === 'zh' ? '未命名故事线' : 'Untitled storyline')}
+            </Text>
+            <Group gap={8} style={{ fontSize: 12 }}>
+              <Text size="xs" c="grape" fw={600}>{lang === 'zh' ? '传闻线' : 'rumor line'}</Text>
+              <Text size="xs" c="dimmed">
+                · {lang === 'zh'
+                    ? `${threads.length} 条线报 · ${sl.distinct_source_count} 家出版方`
+                    : `${threads.length} leads · ${sl.distinct_source_count} publishers`}
+              </Text>
+              <Text size="xs" c="dimmed">· {lang === 'zh' ? '首见 ' : 'first '}{relativeTime(sl.first_seen_at, lang)}</Text>
+              <Text size="xs" c="dimmed">· {lang === 'zh' ? '最近 ' : 'latest '}{relativeTime(sl.last_update_at, lang)}</Text>
+              {sl.distinct_source_count <= 1 && (
+                <Text size="xs" c="dimmed">· {lang === 'zh' ? '未经独立出版方证实' : 'no independent publisher yet'}</Text>
+              )}
+            </Group>
+          </Stack>
+        </Group>
+      </UnstyledButton>
+      {open && (
+        <Box pl={20}>
+          {threads.map(t => (
+            <EventRow key={t.id} th={t} isDark={isDark} lang={lang} trackerName={lensLabel(t, trackerNames)} />
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function LeadsView({ leads, isDark, lang, trackerNames }: { leads: StoryThread[]; isDark: boolean; lang: string; trackerNames?: Map<number, string> }) {
   // A tip's value is its novelty: the leads face orders by first appearance.
   const timeOf = (t: StoryThread) => t.first_seen_at;
@@ -248,15 +314,33 @@ function LeadsView({ leads, isDark, lang, trackerNames }: { leads: StoryThread[]
 
   const isCollapsible = (t: StoryThread) =>
     !t.from_account && t.aggregated_only && (t.distinct_source_count || 0) <= 1;
+  // Three strata (author ruling 2026-09-03): named-account tip-offs, then
+  // rumor lines (kin threads that proved persistence, not credibility — they
+  // are visible and labelled, never promoted by count), then the rest.
+  const inStoryline = (t: StoryThread) => !t.from_account && !!t.storyline && t.storyline.thread_count >= 2;
   const tipoffs = leads.filter(t => t.from_account);
-  const regular = leads.filter(t => !t.from_account && !isCollapsible(t));
-  const collapsed = leads.filter(isCollapsible);
+  const storied = leads.filter(inStoryline);
+  const regular = leads.filter(t => !t.from_account && !inStoryline(t) && !isCollapsible(t));
+  const collapsed = leads.filter(t => !inStoryline(t) && isCollapsible(t));
   const tipoffIds = new Set(tipoffs.map(t => t.id));
   const visible = [...tipoffs, ...regular];
+  const storylines = (() => {
+    const m = new Map<number, { sl: StorylineInfo; threads: StoryThread[] }>();
+    for (const t of storied) {
+      const sl = t.storyline as StorylineInfo;
+      const g = m.get(sl.id) || { sl, threads: [] };
+      g.threads.push(t);
+      m.set(sl.id, g);
+    }
+    const arr = [...m.values()];
+    for (const g of arr) g.threads.sort((a, b) => (b.first_seen_at || '').localeCompare(a.first_seen_at || ''));
+    arr.sort((a, b) => (b.sl.last_update_at || '').localeCompare(a.sl.last_update_at || ''));
+    return arr;
+  })();
 
   return (
     <Stack gap="md">
-      {visible.length === 0 && collapsed.length === 0 ? (
+      {visible.length === 0 && collapsed.length === 0 && storylines.length === 0 ? (
         <Text c="dimmed" size="sm" ta="center" py="xl">
           {lang === 'zh' ? '暂无线报。' : 'No leads yet.'}
         </Text>
@@ -265,6 +349,16 @@ function LeadsView({ leads, isDark, lang, trackerNames }: { leads: StoryThread[]
           {visible.length > 0 && (
             <TimeBucketedList threads={visible} isDark={isDark} lang={lang} tipoffIds={tipoffIds}
                               timeOf={timeOf} trackerNames={trackerNames} />
+          )}
+          {storylines.length > 0 && (
+            <Box>
+              <Text size="xs" c="dimmed" fw={600} mb={4} style={{ letterSpacing: 0.5 }}>
+                {lang === 'zh' ? `故事线传闻 · ${storylines.length} 条` : `RUMOR LINES · ${storylines.length}`}
+              </Text>
+              {storylines.map(g => (
+                <StorylineRow key={g.sl.id} sl={g.sl} threads={g.threads} isDark={isDark} lang={lang} trackerNames={trackerNames} />
+              ))}
+            </Box>
           )}
           {collapsed.length > 0 && (
             <Box>

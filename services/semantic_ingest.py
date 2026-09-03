@@ -45,6 +45,93 @@ _ARBITER_CALLS_PER_CYCLE = 300  # cost/latency cap; excess falls back to embeddi
 _ARBITER_CANDIDATES = 3
 
 
+# 故事线 arbiter (author ruling 2026-09-03): the same call now answers a
+# three-way question. "story" = not the same event, but the same developing
+# story ("internal testing" → "dropping today" → "released"); such threads are
+# linked as kin, never merged. Measured motive: 91% of arbiter answers were
+# splits, and one pre-release story was nine fragments, each too weak to earn
+# attention alone.
+_STORY_ARBITER_SYS = (
+    "You judge how two news headlines relate. Reply with exactly one word:\n"
+    "event — they report the SAME specific news event/announcement;\n"
+    "story — different events, but the same developing storyline about the same "
+    "specific subject (e.g. a rumor, then the leak, then the launch of ONE product);\n"
+    "different — otherwise. The same company or topic alone is 'different'."
+)
+
+
+def _llm_relation(provider, title_a, title_b):
+    """Three-way arbitration: 'event' | 'story' | 'different', or None if the
+    call failed (caller keeps the embedding decision)."""
+    try:
+        text, usage = provider.generate(
+            f"Headline A: {title_a}\nHeadline B: {title_b}",
+            system=_STORY_ARBITER_SYS, temperature=0.0)
+        try:
+            from llm.processor import _record_usage
+            _record_usage(getattr(provider, "name", "unknown"), "EventArbiter", usage)
+        except Exception:
+            pass
+        t = (text or "").strip().lower()
+        if t.startswith("event") or t.startswith("yes"):
+            return "event"
+        if t.startswith("story"):
+            return "story"
+        return "different"
+    except Exception as e:
+        logger.warning(f"Event arbiter failed ({e}); keeping embedding decision.")
+        return None
+
+
+def _link_storyline(session, new_th, sibling_th) -> int:
+    """Make two event threads kin. The sibling's storyline is reused; if it has
+    none, one is born from the pair."""
+    from db.models import Storyline
+    sid = sibling_th.storyline_id
+    if sid is None:
+        sl = Storyline(title=(sibling_th.title or "")[:120],
+                       first_seen_at=sibling_th.first_seen_at or _now(), last_update_at=_now())
+        session.add(sl)
+        session.commit()
+        session.refresh(sl)
+        sid = sl.id
+        sibling_th.storyline_id = sid
+        session.add(sibling_th)
+    new_th.storyline_id = sid
+    session.add(new_th)
+    session.commit()
+    return sid
+
+
+def _refresh_storyline(session, sid: int):
+    """Recompute a storyline's aggregates from its threads and their members.
+    distinct_source_count counts real publishers across everything — grouping
+    must never manufacture corroboration."""
+    from db.models import Storyline, StoryThread, RawArticle
+    sl = session.get(Storyline, sid)
+    if not sl:
+        return
+    threads = session.exec(select(StoryThread).where(StoryThread.storyline_id == sid)).all()
+    if not threads:
+        return
+    rows = session.exec(select(RawArticle.url, RawArticle.title)
+                        .where(RawArticle.thread_id.in_([t.id for t in threads]))).all()
+    lens = set()
+    for t in threads:
+        lens |= _thread_lens(t)
+    biggest = max(threads, key=lambda t: (t.member_count or 0, t.id))
+    sl.title = (biggest.title or "")[:120]
+    sl.thread_count = len(threads)
+    sl.member_count = len(rows)
+    sl.distinct_source_count = len({real_publisher(u, t) for (u, t) in rows})
+    sl.first_seen_at = min(t.first_seen_at for t in threads if t.first_seen_at)
+    sl.last_update_at = max(t.last_update_at for t in threads if t.last_update_at)
+    sl.tracker_ids = json.dumps(sorted(lens))
+    sl.has_refined = any(bool(t.summary) for t in threads)
+    session.add(sl)
+    session.commit()
+
+
 def _llm_same_event(provider, title_a, title_b):
     """LLM arbitration: same news event? True/False, or None if the call failed
     (caller then keeps the embedding decision). Cheap — a one-word completion."""
@@ -148,7 +235,7 @@ def _load_thread_pool(session, StoryThread) -> dict:
     return pool
 
 
-def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
+def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     """Embed and thread-cluster up to `limit` not-yet-embedded articles.
     Returns a small summary dict.
 
@@ -243,6 +330,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
 
     # LLM event arbiter (see _llm_same_event): only when a generation model is
     # configured; no-key users fall back to embedding-only clustering.
+    _arbiter_override = arbiter
     arbiter = None
     if gating_enabled:
         try:
@@ -252,6 +340,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 arbiter = _prov
         except Exception:
             arbiter = None
+    if _arbiter_override is not None:
+        arbiter = _arbiter_override      # injectable for tests
     arb_budget = _ARBITER_CALLS_PER_CYCLE
 
     created = 0
@@ -270,6 +360,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                                # have wrongly started from scratch
     arb_skipped_confident = 0  # merges accepted on embedding confidence alone
     arb_skipped_budget = 0     # gray-zone merges that ran out of budget
+    arb_story_links = 0        # new threads linked as kin of a same-story thread
     thread_pool = None         # global recent threads: id → (thread, centroid)
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
@@ -341,6 +432,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                                                 floor=sm.THREAD_CANDIDATE_FLOOR,
                                                 k=_ARBITER_CANDIDATES)
             tid = None
+            story_sibling = None   # first candidate judged 'same story, different event'
+            refresh_sid = None
             if cands:
                 best_tid, best_sim = cands[0]
                 if best_sim >= sm.THREAD_HIGH_CONFIDENCE:
@@ -364,8 +457,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                             break
                         arb_budget -= 1
                         arb_calls += 1
-                        same = _llm_same_event(arbiter, (thread_by_id[ctid].title or ""),
-                                               article.title or "")
+                        rel = _llm_relation(arbiter, (thread_by_id[ctid].title or ""),
+                                            article.title or "")
+                        same = (rel == "event") if rel is not None else None
+                        if rel == "story" and story_sibling is None:
+                            story_sibling = ctid
                         if same is True:
                             tid = ctid
                             if ctid != cands[0][0]:
@@ -406,6 +502,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 article.thread_id = th.id
                 thread_pool[th.id] = (th, list(vec))
                 created += 1
+                if story_sibling is not None and story_sibling in thread_by_id:
+                    refresh_sid = _link_storyline(session, th, thread_by_id[story_sibling])
+                    arb_story_links += 1
+                    logger.info(f"Storyline link: '{(article.title or '')[:40]}' ~ thread "
+                                f"{story_sibling} (storyline {refresh_sid})")
             else:
                 th = thread_by_id[tid]
                 new_centroid = sm.update_centroid(json.loads(th.centroid), th.member_count, vec)
@@ -416,6 +517,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 article.thread_id = th.id
                 # The lens widens as members from other targets join.
                 th.tracker_ids = json.dumps(sorted(_thread_lens(th) | set(lens_ids)))
+                refresh_sid = th.storyline_id
                 # Distinct-source count drives corroboration. Count unique real
                 # PUBLISHERS, not URL domains: Google News links all share
                 # news.google.com, so domain-counting made this ≡ 1 for every
@@ -475,19 +577,22 @@ def run_semantic_ingest(limit: int = 100, embedder=None) -> dict:
                 dim=len(vec), vector=json.dumps(vec), relevance=relevance,
             ))
             session.commit()
+            if refresh_sid:
+                _refresh_storyline(session, refresh_sid)
 
     logger.info(f"Semantic ingest: embedded {len(embedded)}, threads +{created} ~{updated}, "
                 f"gated {gated}, embed_skipped {embed_skipped} | "
                 f"arbiter: {arb_calls} calls, {arb_splits} splits, {arb_rescued} rescued, "
                 f"{arb_failed} failed, {arb_skipped_confident} skipped(confident), "
-                f"{arb_skipped_budget} skipped(budget)")
+                f"{arb_skipped_budget} skipped(budget), {arb_story_links} story-links")
     return {"embedded": len(embedded), "threads_created": created,
             "threads_updated": updated, "relevance_gated": gated,
             "embed_skipped": embed_skipped,
             "arbiter_calls": arb_calls, "arbiter_splits": arb_splits,
             "arbiter_failed": arb_failed,
             "arbiter_skipped_confident": arb_skipped_confident,
-            "arbiter_skipped_budget": arb_skipped_budget}
+            "arbiter_skipped_budget": arb_skipped_budget,
+            "storyline_links": arb_story_links}
 
 
 def refresh_resonance(window_days: int = 14) -> int:

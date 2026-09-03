@@ -285,6 +285,26 @@ class ArticleEmbedding(SQLModel, table=True):
     relevance: Optional[float] = Field(default=None, description="Max cosine vs the tracker's topic profile")
     created_at: datetime = Field(default_factory=utc_now_naive)
 
+class Storyline(SQLModel, table=True):
+    """故事线 (author ruling 2026-09-03): kinship between event threads that are
+    the same DEVELOPING story but not the same event — "internal testing" →
+    "dropping today" → "released". Grouping manufactures no corroboration:
+    distinct_source_count is publishers across ALL members (reddit stays one),
+    so a storyline of nine reddit posts is still one voice. It earns
+    VISIBILITY (its own labelled stratum in the leads face, below named-account
+    tip-offs), never credibility — promotion into the refined face still
+    belongs to the event threads and their publishers."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: Optional[str] = None
+    tracker_ids: Optional[str] = Field(default=None)
+    thread_count: int = Field(default=0)
+    member_count: int = Field(default=0)
+    distinct_source_count: int = Field(default=0)
+    has_refined: bool = Field(default=False)
+    first_seen_at: datetime = Field(default_factory=utc_now_naive)
+    last_update_at: datetime = Field(default_factory=utc_now_naive)
+
+
 class StoryThread(SQLModel, table=True):
     """A clustered event/issue line for a target. New content is compared to
     thread centroids: same event → merge (silent), new event → new thread.
@@ -297,6 +317,8 @@ class StoryThread(SQLModel, table=True):
     # thread concerns, unioned from members' owner + cross-target visibility
     # stamps as they join. The radar's filter chips test membership here.
     tracker_ids: Optional[str] = Field(default=None)
+    # 故事线 kinship (see Storyline). Null = not (yet) part of any storyline.
+    storyline_id: Optional[int] = Field(default=None, foreign_key="storyline.id", nullable=True, index=True)
     title: Optional[str] = None
     centroid: Optional[str] = Field(default=None, sa_column=Column(Text), description="JSON list[float] running centroid")
     member_count: int = Field(default=0)

@@ -218,3 +218,52 @@ def test_ignore_keywords_veto_cross_target_visibility():
     # An official-domain hit is never vetoed: the target's own channel is its own.
     assert relevant_tracker_ids("Exchange rate demo", "", "https://deepmind.google/blog/z",
                                 [gemini], owner_id=9) == [1]
+
+
+# --- 故事线 (author ruling 2026-09-03) ------------------------------------------
+
+class _StoryArbiter:
+    """Says every pair is the same developing story, never the same event."""
+    name = "stub-arbiter"
+    supports_generation = True
+
+    def generate(self, prompt, system=None, schema=None, temperature=0.0):
+        return "story", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+
+def test_storyline_links_kin_threads_without_manufacturing_corroboration():
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding, Storyline
+    from services.semantic_ingest import run_semantic_ingest
+    from sqlmodel import select, delete
+
+    with get_session() as s:
+        s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle)); s.exec(delete(StoryThread))
+        s.exec(delete(Storyline)); s.commit()
+        t = Tracker(name="story-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Gemini"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        s.add(RawArticle(tracker_id=t.id, title="Gemini 3.8 Flash internal testing begins at Google",
+                         url="https://www.reddit.com/r/Bard/comments/a1/x", content="Gemini 3.8 Flash testing",
+                         source_tier="aggregated"))
+        s.commit()
+    run_semantic_ingest(limit=10, arbiter=_StoryArbiter())
+    with get_session() as s:
+        s.add(RawArticle(tracker_id=t.id, title="Gemini 3.8 Flash release set for Wednesday",
+                         url="https://www.reddit.com/r/GeminiAI/comments/b2/y", content="Gemini 3.8 Flash release",
+                         source_tier="aggregated"))
+        s.commit()
+    out = run_semantic_ingest(limit=10, arbiter=_StoryArbiter())
+    assert out["storyline_links"] == 1, out
+
+    with get_session() as s:
+        threads = s.exec(select(StoryThread)).all()
+        assert len(threads) == 2, "kin are linked, never merged"
+        sids = {th.storyline_id for th in threads}
+        assert len(sids) == 1 and None not in sids
+        sl = s.get(Storyline, sids.pop())
+        assert sl.thread_count == 2 and sl.member_count == 2
+        # Two reddit posts are ONE publisher: grouping bought no corroboration.
+        assert sl.distinct_source_count == 1
+        assert sl.has_refined is False

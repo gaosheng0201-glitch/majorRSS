@@ -30,7 +30,8 @@ def run_migrations():
             "0014_first_party_floor_restamp",
             "0015_replay_material_timestamps",
             "0016_cross_target_visibility",
-            "0017_global_threads_lens"
+            "0017_global_threads_lens",
+            "0018_storyline_kinship"
         ]
         
         for m in migrations:
@@ -531,6 +532,19 @@ def run_migrations():
                         n += 1
                     session.commit()
                     print(f"global_threads_lens: {n} threads stamped with their lens")
+
+                elif m == "0018_storyline_kinship":
+                    # 故事线: the storyline table comes from create_all; threads
+                    # gain a nullable kinship column. No backfill — kinship is
+                    # judged by the arbiter as new members arrive.
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    conn = session.connection()
+                    if "storythread" in inspector.get_table_names():
+                        cols = [c["name"] for c in inspector.get_columns("storythread")]
+                        if "storyline_id" not in cols:
+                            conn.execute(text("ALTER TABLE storythread ADD COLUMN storyline_id INTEGER"))
+                    session.commit()
 
                 sv = SchemaVersion(version_id=m)
                 session.add(sv)

@@ -182,6 +182,22 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     if not threads:
         return []
 
+    # 故事线 kinship: the storyline aggregates ride along so the leads face can
+    # group kin threads into one labelled rumor line, and a refined card can say
+    # "rumored since …". Never affects ordering or the gate.
+    from db.models import Storyline
+    sids = {th.storyline_id for th in threads if getattr(th, "storyline_id", None)}
+    story_by_id = {}
+    if sids:
+        for sl in session.exec(select(Storyline).where(Storyline.id.in_(list(sids)))).all():
+            story_by_id[sl.id] = {
+                "id": sl.id, "title": sl.title, "thread_count": sl.thread_count,
+                "member_count": sl.member_count, "distinct_source_count": sl.distinct_source_count,
+                "has_refined": sl.has_refined,
+                "first_seen_at": sl.first_seen_at.isoformat() if sl.first_seen_at else None,
+                "last_update_at": sl.last_update_at.isoformat() if sl.last_update_at else None,
+            }
+
     # Batch member + alert loads (avoid N+1 across the thread list). The same
     # pass computes the lead-stratification flags — over ALL members, not just
     # the 8 kept for display, or a 9-member thread could misclassify.
@@ -250,6 +266,7 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "relevant_tracker_ids": sorted(
                 {tid for tid in ({th.tracker_id} | also_by_thread[th.id] | _stored_lens(th))
                  if tid is not None}),
+            "storyline": story_by_id.get(getattr(th, "storyline_id", None)),
             "from_account": flags_by_thread[th.id]["from_account"],
             "aggregated_only": flags_by_thread[th.id]["aggregated_only"],
         })

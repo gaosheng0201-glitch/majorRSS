@@ -41,17 +41,18 @@
         + account_guard(每账号预算/AIMD/熔断) + humanized(静默窗/抖动) + browser_pool(线程本地复用)
         错误归责：NOT_ENDPOINT_FAULT（429→主机层、能力缺失→自身诊断）不进端点健康
 语义    semantic_ingest   embed(去均值) → 垃圾地板(按透镜内最匹配目标画像) → 全局近 30 天候选池
-        top-K + LLM 事件仲裁 → StoryThread（全局唯一事件,tracker_ids=透镜,tracker_id 仅为首个 owner）
+        top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局唯一事件,tracker_ids=透镜）
+        story → 认亲 Storyline（只链接不合并;出版方按整条去重——聚合不制造佐证;只给可见性）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
 融合    processor_service 按线索出摘要（P1.1 门控挣得制）；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
-        聚合器单源默认折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
+        线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0017 幂等
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0018 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 85 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/发布合规）
+测试    tests/ 87 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -69,6 +70,7 @@
 | 跨目标可见性 | `services/attribution.py` | 入库确定性匹配:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
 | 线索透镜 | `StoryThread.tracker_ids` | 全局线索的"哪些目标关心";owner 只管叙述/板块/告警 |
 | 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
+| 故事线 | `StoryThread.storyline_id` → `Storyline` | 认亲不合并;出版方整条去重;线报面第二层;提炼卡"传闻自 X 起" |
 | 涌现源 | `services/emergent_sources.py` | "已追踪"按数据判定（curated/primary 到达的域名、from_account 读到的 handle）;代码托管不抽 @;出版方门槛 6 |
 
 ## 3. 差距地图（当前仍存在的）
@@ -80,7 +82,7 @@
 
 ### 3.2 结构性（记录不排期，见路线图同名节）
 - **同 tracker 内线索分裂**（全局化后仍可能）：严格 same-event 仲裁下同事件仍可能分成多条;存量跨目标重复线索不做追溯合并,随新成员到来收敛。
-- **仲裁"同一故事线"语义**：严格 same-event 下高拆分率部分是诚实的；等 top-K 后的 splits/rescued 数据再定，动语义有过度合并回归风险。
+- **仲裁语义**：same-event 仍严格（拆分率 91% 部分是诚实的）；"同一故事线"已作为第三答案落地为认亲而非合并（2026-09-03），过度合并风险因此不存在；仍可能同故事线被判 different（漏认亲,只影响可见性）。
 - **容量余量薄**：稳态进入≈消化≈16 条/分钟，无余量；再加探测目标 pending 将单调增长。是容量上限不是泄漏。
 - **优先级倒挂**：`max_sources_per_run` 封顶时 keyword 源(priority=1)压过精选源(priority=5)。
 - **慢滴积累跨过 25% 增量阈值**时最后一滴获"进展"标记——按裁决语义诚实，真故事线级进展识别归仲裁语义工作。
@@ -125,7 +127,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（85 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（87 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 
