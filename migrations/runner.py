@@ -31,7 +31,8 @@ def run_migrations():
             "0015_replay_material_timestamps",
             "0016_cross_target_visibility",
             "0017_global_threads_lens",
-            "0018_storyline_kinship"
+            "0018_storyline_kinship",
+            "0019_confirmed_needs_primary_stamp"
         ]
         
         for m in migrations:
@@ -532,6 +533,24 @@ def run_migrations():
                         n += 1
                     session.commit()
                     print(f"global_threads_lens: {n} threads stamped with their lens")
+
+                elif m == "0019_confirmed_needs_primary_stamp":
+                    # Threads born CONFIRMED from the URL floor alone (no member
+                    # carries a primary intake stamp; all members stamped) are
+                    # demoted to what their publishers earn. Summaries stay —
+                    # the money is spent — but the badge and the gate bypass go.
+                    from db.models import RawArticle, StoryThread
+                    from sqlmodel import select as _select
+                    n = 0
+                    for th in session.exec(_select(StoryThread).where(StoryThread.lifecycle == "CONFIRMED")).all():
+                        tiers = session.exec(_select(RawArticle.source_tier)
+                                             .where(RawArticle.thread_id == th.id)).all()
+                        if not tiers or any(t is None for t in tiers) or any(t == "primary" for t in tiers):
+                            continue
+                        th.lifecycle = "CORROBORATED" if (th.distinct_source_count or 0) >= 2 else "LEAD"
+                        session.add(th); n += 1
+                    session.commit()
+                    print(f"confirmed_needs_primary_stamp: {n} threads demoted")
 
                 elif m == "0018_storyline_kinship":
                     # 故事线: the storyline table comes from create_all; threads

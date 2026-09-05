@@ -416,6 +416,11 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
   // P4.2 涌现源：雷达教你自己的盲区——某个 @账号/出版方反复出现在获注意力的
   // 线索里，就提示直接追踪。只加建议源（additive），追踪前仍过存在性校验。
   const [emergent, setEmergent] = useState<EmergentSource[]>([]);
+  // 模型在融合时判为 [NOISE]/[SPAM] 的线索：钱已花，但不该和真新闻同列。
+  // 折叠而不是隐藏——模型会误判（黎曼 zeta 论文其实是 Claude 证的定理），
+  // 用户要能看见并核对。
+  const [showModelNoise, setShowModelNoise] = useState(false);
+  const isModelNoise = (t: StoryThread) => /NOISE|SPAM/i.test(t.validity_category || '');
   const loadEmergent = () =>
     client.get<EmergentSource[]>('/emergent/?status=pending&limit=10').then(r => setEmergent(r.data || [])).catch(() => {});
   const actOnEmergent = async (id: number, action: 'accept' | 'dismiss') => {
@@ -602,10 +607,30 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
         <Text c="dimmed" size="sm" ta="center" py="xl">
           {lang === 'zh' ? '还没有提炼出的事件。雷达抓取、聚类并挣得摘要后，会按时间出现在这里。' : 'No refined events yet. As threads earn summaries, they appear here by time.'}
         </Text>
-      ) : (
-        <TimeBucketedList threads={shownRefined} isDark={isDark} lang={lang} tipoffIds={refinedTipoffIds}
+      ) : (<>
+        <TimeBucketedList threads={shownRefined.filter(t => !isModelNoise(t))} isDark={isDark} lang={lang} tipoffIds={refinedTipoffIds}
                           timeOf={refinedTimeOf} trackerNames={trackerFilter === null ? trackerNames : undefined} />
-      )}
+        {shownRefined.some(isModelNoise) && (
+          <Box mt="md">
+            <UnstyledButton onClick={() => setShowModelNoise(s => !s)}>
+              <Group gap={4}>
+                {showModelNoise ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                <Text size="sm" c="dimmed">
+                  {lang === 'zh'
+                    ? `模型判为无关/重复 ${shownRefined.filter(isModelNoise).length} 条（可能误判，展开核对）`
+                    : `${shownRefined.filter(isModelNoise).length} judged irrelevant/duplicate by the model (may be wrong — expand to check)`}
+                </Text>
+              </Group>
+            </UnstyledButton>
+            {showModelNoise && (
+              <Box mt="xs">
+                <TimeBucketedList threads={shownRefined.filter(isModelNoise)} isDark={isDark} lang={lang}
+                                  timeOf={refinedTimeOf} trackerNames={trackerFilter === null ? trackerNames : undefined} />
+              </Box>
+            )}
+          </Box>
+        )}
+      </>)}
     </Box>
   );
 }

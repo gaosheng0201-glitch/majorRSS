@@ -505,8 +505,16 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                     centroid=json.dumps(vec),
                     member_count=1,
                     distinct_source_count=1,
+                    # CONFIRMED comes from the INTAKE STAMP (source_tiering §2); the
+                    # URL floor is a fallback for legacy NULL-tier rows only. It used
+                    # to apply to every URL, so a keyword-route catch on arxiv.org or
+                    # github.com — "Claude's Theorem" by a mathematician named Claude,
+                    # a random repo's release — was born CONFIRMED, passed the fusion
+                    # gate at any size, was paid for, and wore the badge. Measured:
+                    # 150 such threads, every one summarised.
                     lifecycle="CONFIRMED" if (article.source_tier == "primary"
-                                              or _is_first_party(article.url)) else "LEAD",
+                                              or (article.source_tier is None
+                                                  and _is_first_party(article.url))) else "LEAD",
                     first_seen_at=_now(),
                     last_update_at=_now(),
                 )

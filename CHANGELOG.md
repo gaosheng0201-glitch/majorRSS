@@ -215,7 +215,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P4.2 涌现源发现（09-01）**：`services/emergent_sources.py`（扫获注意力线索→按透镜计去重线索数→`EmergentSource` pending;"已追踪"按 curated/primary 到达域名与 from_account handle 判定;X 镜像/arxiv 归噪音、代码托管不抽 @、出版方门槛 6）;`/api/emergent/`（list/scan/accept/dismiss）;雷达页顶部一行提示 追踪/忽略;追踪过存在性校验后追加为 selected 建议源;维护任务每日扫描。实库干跑 7 候选（@ClaudeDevs/@OpenAI/@SpaceXAI…）。
 - **盖章只升不降（09-03,作者"顺手修了吧"）**：URL 全局唯一,首个送达的路由永久决定盖章——而最快的路由常常不是最可信的（blog.google 的 3.8 Flash 公告经 HN 先到=aggregated,几分钟后官方预设送来同一 URL 被当重复丢弃,线索停在"多源佐证"）。`DBRepository.promote_article_provenance`：重复 URL 若来自更高层级路由则提升 tier（永不下降）、补 from_account,升到 primary 时把线索置 CONFIRMED（ingest 只在成员加入时判）。测试 85→86。
 - **故事线层（09-03,作者裁决"只给可见性不给可信度"）**：仲裁同一次调用改答 `event/story/different`;story 且新建线索时认亲（`Storyline` + `StoryThread.storyline_id`,只链接不合并）;故事线出版方整条去重（聚合不制造佐证）;线报面三层（账号线报 > 故事线传闻(标签可见不折叠) > 聚合器单条折叠）;提炼卡"传闻自 X 起（N 条线报）"接续;融合门不变。迁移 0018。实机首轮修正：故事线只能在聚合层线索之间诞生（论文/精选源不会成"传闻线"）,任何层级可加入已有故事线。测试 86→88。
-- 测试 70 → 88。
+- **"无关内容进了提炼还挂已证实"（09-05,作者两张截图）**：分两层修。① 上游根因——新建线索的 CONFIRMED 判定用 URL 地板（arxiv.org/github.com 在一手域名表）而非入库盖章,关键词路由捞到的聚合层单条（"Claude's Theorem"是位数学家叫 Claude、随机仓库的发布页）出生即已证实→融合门放行→花钱→挂徽章;实测存量 150 条线索全部已提炼。改为 CONFIRMED 只读盖章,URL 地板仅对 NULL tier 旧行生效;迁移 0019 把 150 条降回出版方应得的生命周期（摘要保留）。② 模型判断——融合提示词此前只给"雷达板块"标签,不知道目标是什么,把 Claude 证的黎曼 zeta 定理当成"一个叫 Claude 的人"判为无关;现在把目标画像（名称/别名/官方域名/意图）交给摘要模型并定义相关性="被追踪主体参与了事件（行动者/产品/对象/工具）,不论领域;仅同名撞车才是 NOISE;拿不准偏向 VALID_NEWS"。③ 呈现——提炼面把模型判为 NOISE/SPAM 的线索（已提炼线索的 40%）折叠为"模型判为无关/重复 N 条（可能误判,展开核对）",不再与真新闻同列、也不隐藏。
+- **内置默认模型切到 gemini-3.8-flash**（作者要求;实机验证模型 id 可用）。
+- 测试 70 → 89。
 
 ### Added
 - **Source Preset Seed Library**:

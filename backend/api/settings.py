@@ -78,7 +78,7 @@ def get_llm_config():
         "model": os.environ.get("LLM_MODEL", ""),
         "embed_model": os.environ.get("LLM_EMBED_MODEL", ""),
         "defaults": {
-            "gemini": {"model": "gemini-3.6-flash", "embed_model": "gemini-embedding-2"},
+            "gemini": {"model": "gemini-3.8-flash", "embed_model": "gemini-embedding-2"},
             "openai_compatible": {"model": "gpt-4o-mini", "embed_model": "text-embedding-3-small"},
         },
     }

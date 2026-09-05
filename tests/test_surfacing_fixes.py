@@ -296,3 +296,37 @@ def test_storyline_is_born_only_between_rumor_grade_threads():
     assert out["storyline_links"] == 0
     with get_session() as s:
         assert s.exec(select(Storyline)).all() == []
+
+
+def _born_as(title, url, tier):
+    """Lifecycle a thread is BORN with for one article (fresh tables each time —
+    the no-arbiter fallback would otherwise merge anything above the floor)."""
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding, Storyline
+    from services.semantic_ingest import run_semantic_ingest
+    from sqlmodel import select, delete
+    with get_session() as s:
+        s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle)); s.exec(delete(StoryThread))
+        s.exec(delete(Storyline)); s.commit()
+        t = Tracker(name="birth-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Claude"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        s.add(RawArticle(tracker_id=t.id, title=title, url=url, content=title, source_tier=tier))
+        s.commit()
+    run_semantic_ingest(limit=10)
+    with get_session() as s:
+        return s.exec(select(StoryThread)).one().lifecycle
+
+
+def test_confirmed_at_birth_needs_a_primary_stamp_not_a_first_party_url():
+    """A keyword-route catch on arxiv.org/github.com is AGGREGATED and must be
+    born LEAD; the URL floor may only speak for legacy NULL-tier rows."""
+    assert _born_as("Lamzouri's new proof of Claude's Theorem on Riemann zeta zeros",
+                    "https://arxiv.org/abs/2609.02882", "aggregated") == "LEAD"
+    assert _born_as("Claude Code skills for advanced context engineering",
+                    "https://github.com/NeoLabHQ/context-engineering-kit", "aggregated") == "LEAD"
+    assert _born_as("Anthropic ships Claude for education districts",
+                    "https://www.anthropic.com/news/education-districts", "primary") == "CONFIRMED"
+    assert _born_as("Legacy row about Claude on the vendor site",
+                    "https://www.anthropic.com/news/legacy-row", None) == "CONFIRMED"   # NULL tier → URL floor

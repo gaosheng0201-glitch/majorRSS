@@ -44,15 +44,15 @@
         top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局唯一事件,tracker_ids=透镜）
         story → 认亲 Storyline（只链接不合并;出版方按整条去重——聚合不制造佐证;只给可见性）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
-融合    processor_service 按线索出摘要（P1.1 门控挣得制）；重摘要须实质增量
+融合    processor_service 按线索出摘要（P1.1 门控挣得制）；摘要模型拿到目标画像判相关性；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
         线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0018 幂等
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0019 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 88 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 89 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -127,7 +127,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（88 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（89 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

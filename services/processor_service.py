@@ -318,6 +318,29 @@ def process_tracker_fusion(tracker_id: int):
         time.sleep(1.5)
 
 
+def _target_profile(tracker) -> str:
+    """What the summariser is told the target IS — name, planned aliases, its own
+    domains and the planner's one-line reading of the intent — so relevance is
+    judged against the subject rather than against a radar-section label."""
+    import json as _json
+    parts = [f"name: {tracker.name}"]
+    try:
+        policy = _json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
+    except Exception:
+        policy = {}
+    ents = policy.get("entities") or []
+    if ents:
+        parts.append("aliases: " + ", ".join(str(e) for e in ents[:8]))
+    ip = policy.get("intent_plan") or {}
+    if ip.get("official_domains"):
+        parts.append("official domains: " + ", ".join(ip["official_domains"][:6]))
+    if ip.get("rationale"):
+        parts.append("intent: " + str(ip["rationale"])[:200])
+    elif ip.get("lane_reason"):
+        parts.append("intent: " + str(ip["lane_reason"])[:200])
+    return "; ".join(parts)
+
+
 def _fuse_thread(tracker, thread_id: int):
     """Summarize one event-thread's members into StoryThread.summary."""
     from db.database import get_session
@@ -464,6 +487,7 @@ def _fuse_thread(tracker, thread_id: int):
         result = process_article(
             bundled_text, tracker.radar_section,
             prompt_override=tracker.prompt_override, tracker_name=tracker.name,
+            target_profile=_target_profile(tracker),
         )
 
         # Cited = sources the summary is based on; the rest are same-event

@@ -58,7 +58,7 @@ class FactCheckResult(BaseModel):
     event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
     duplicate_of_report_id: Optional[int] = Field(default=None, description="If the core event in this batch is already reported in the provided list of 'Recent Summaries', set this to the ID of that duplicate report. Otherwise, return null.")
 
-def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None) -> FactCheckResult:
+def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None, target_profile: str = None) -> FactCheckResult:
     """
     Passes the scraped content through the configured provider (BYOK Gemini,
     OpenAI-compatible / local model) to fact-check, categorize, and summarize.
@@ -87,6 +87,21 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
             "Your job is to read open source news, GitHub trending descriptions, and community discussions. "
             "Summarize the community consensus or the tool's core utility. "
             "Determine if the content is valid news, spam, a malicious link, or just noise."
+        )
+
+    # Relevance is judged against the TARGET, and the target is a subject that
+    # may take part in an event anywhere — a maths paper is on-target when
+    # the tracked AI proved the theorem. Without this the model reasoned
+    # "a mathematician named Claude" and filed a real Claude result as noise
+    # (author's Riemann-zeta case, 2026-09-05).
+    if target_profile:
+        system_instruction += (
+            f"\n\nTRACKED TARGET: {target_profile}\n"
+            "RELEVANCE RULE: content is relevant when the tracked subject takes part in the "
+            "event — as the actor, the product, the thing acted upon, or the tool that produced "
+            "the result — WHATEVER the domain (science, law, sports…). A mere name collision "
+            "(a person, place or unrelated product sharing the name) is [NOISE]. When genuinely "
+            "unsure whether it is the tracked subject, prefer [VALID_NEWS] and say so in the summary."
         )
 
     target_lang = get_target_language()
