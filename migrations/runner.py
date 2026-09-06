@@ -32,7 +32,8 @@ def run_migrations():
             "0016_cross_target_visibility",
             "0017_global_threads_lens",
             "0018_storyline_kinship",
-            "0019_confirmed_needs_primary_stamp"
+            "0019_confirmed_needs_primary_stamp",
+            "0020_stamp_legacy_null_tiers"
         ]
         
         for m in migrations:
@@ -533,6 +534,23 @@ def run_migrations():
                         n += 1
                     session.commit()
                     print(f"global_threads_lens: {n} threads stamped with their lens")
+
+                elif m == "0020_stamp_legacy_null_tiers":
+                    # Provenance is decided at intake, once. Rows from before
+                    # stamping existed carried NULL and every consumer grew a
+                    # URL fallback for them. Encode that fallback here exactly
+                    # once — first-party floor → primary, else aggregated
+                    # (what the gate already assumed) — and the fallbacks go.
+                    from db.models import RawArticle
+                    from services.provenance import is_first_party
+                    from sqlmodel import select as _select
+                    n = p = 0
+                    for a in session.exec(_select(RawArticle).where(RawArticle.source_tier.is_(None))).all():
+                        a.source_tier = "primary" if is_first_party(a.url or "") else "aggregated"
+                        p += a.source_tier == "primary"
+                        session.add(a); n += 1
+                    session.commit()
+                    print(f"stamp_legacy_null_tiers: {n} rows stamped ({p} primary)")
 
                 elif m == "0019_confirmed_needs_primary_stamp":
                     # Threads born CONFIRMED from the URL floor alone (no member

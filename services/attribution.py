@@ -62,20 +62,8 @@ def load_profiles(session=None) -> List[TrackerProfile]:
     from sqlmodel import select
 
     def _build(trackers):
-        out = []
-        for t in trackers:
-            try:
-                policy = json.loads(t.fetch_policy) if t.fetch_policy else {}
-            except Exception:
-                policy = {}
-            ip = policy.get("intent_plan") or {}
-            entities = policy.get("entities") or []
-            if t.name and t.name not in entities:
-                entities = [t.name] + list(entities)
-            out.append(TrackerProfile(
-                t.id, entities, ip.get("official_domains") or [],
-                policy.get("ignore_keywords") or []))
-        return out
+        from services.target_profile import TargetProfile
+        return [TargetProfile.from_tracker(t).matcher() for t in trackers]
 
     if session is not None:
         return _build(session.exec(select(Tracker).where(Tracker.is_active == True)).all())  # noqa: E712

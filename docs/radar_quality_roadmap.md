@@ -358,7 +358,7 @@ editorial = sim(话题画像) − max(sim(非新闻原型))
 
 **归属**：R6「UI 换心脏」未完成的部分，非新功能。与 P5 互补：P5 治**分类**（哪些该进），P6 治**呈现**（进来的怎么排）。P6 不依赖 P5，可独立先做。
 
-> **出生即已证实的漏洞（2026-09-05 修）**：`semantic_ingest` 新建线索时 `_is_first_party(url)` 对任何 tier 生效,与"AGGREGATED 永不升级"和"消费期不重推导"两原则冲突——聚合层关键词捞到 arxiv/github 单条即 CONFIRMED,融合门"CONFIRMED 到达即实质"放行,150 条线索白花钱并挂"已证实"。修复：只读盖章,URL 地板仅 NULL tier;迁移 0019 降级存量。同时补两层：融合模型拿到目标画像+相关性定义（Claude 证的定理≠叫 Claude 的人）;提炼面折叠模型判 NOISE 的线索（可核对、可见）。后续若要"模型误判可一键纠正"归 P3.1 反馈。
+> **出生即已证实的漏洞（2026-09-05 修）**：`semantic_ingest` 新建线索时 `_is_first_party(url)` 对任何 tier 生效,与"AGGREGATED 永不升级"和"消费期不重推导"两原则冲突——聚合层关键词捞到 arxiv/github 单条即 CONFIRMED,融合门"CONFIRMED 到达即实质"放行,150 条线索白花钱并挂"已证实"。修复：只读盖章,URL 地板仅 NULL tier;迁移 0019 降级存量。同时补两层：融合模型拿到目标画像+相关性定义（Claude 证的定理≠叫 Claude 的人）;提炼面折叠模型判 NOISE 的线索（可核对、可见）。后续若要"模型误判可一键纠正"归 P3.1 反馈。**09-06 架构收口**（作者：不要打补丁）：盖章无 NULL（迁移 0020）+ 消费期零 URL 推导 + `lifecycle.py` 唯一生命周期规则 + `target_profile.py` 唯一目标定义——见 source_tiering.md §①′。
 
 ## 站位（2026-09-03，作者提出"需求是否被厂商 agent 内化"）
 

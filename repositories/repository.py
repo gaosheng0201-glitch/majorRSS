@@ -54,12 +54,17 @@ class DBRepository:
             if not changed:
                 return False
             session.add(art)
-            if art.source_tier == Tier.PRIMARY and art.thread_id:
+            if art.thread_id:
                 from db.models import StoryThread
+                from services.lifecycle import lifecycle_for
                 th = session.get(StoryThread, art.thread_id)
-                if th and th.lifecycle != "CONFIRMED":
-                    th.lifecycle = "CONFIRMED"
-                    session.add(th)
+                if th:
+                    tiers = session.exec(select(RawArticle.source_tier)
+                                         .where(RawArticle.thread_id == th.id)).all()
+                    new_lc = lifecycle_for(tiers, th.distinct_source_count, current=th.lifecycle)
+                    if new_lc != th.lifecycle:
+                        th.lifecycle = new_lc
+                        session.add(th)
             session.commit()
             return True
             

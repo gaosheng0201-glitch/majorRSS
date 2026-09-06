@@ -66,12 +66,15 @@ def _auth_platform_domains() -> set:
     return out
 
 
-def _source_kind(url: str) -> str:
-    # Provenance is shared infra now (docs/source_tiering.md §10): read
-    # first-party from services.provenance, not the semantic module.
-    from services.provenance import is_first_party as _is_first_party
-    if _is_first_party(url):
+def _source_kind(url: str, tier: str = None) -> str:
+    # First-party comes from the member's INTAKE STAMP when the caller has it;
+    # the URL floor is only a fallback for callers that hold a bare URL.
+    if tier == "primary":
         return "first_party"
+    if tier is None:
+        from services.provenance import is_first_party as _is_first_party
+        if _is_first_party(url):
+            return "first_party"
     d = _domain(url)
     social = ("x.com", "twitter.com", "reddit.com", "news.ycombinator.com", "weibo.com",
               "bilibili.com", "xiaohongshu.com", "instagram.com", "tiktok.com")
@@ -140,7 +143,7 @@ def build_published_digest(window_hours: int = 168) -> dict:
                     "title": clean_pii(m.title or ""),
                     "url": m.url,
                     "site": _domain(m.url),
-                    "kind": _source_kind(m.url),
+                    "kind": _source_kind(m.url, getattr(m, "source_tier", None)),
                     "published_at": _iso(m.published_at or m.created_at),
                     "quote": None,
                 })

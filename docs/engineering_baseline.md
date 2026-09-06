@@ -49,21 +49,23 @@
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
         线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0019 幂等
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0020 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 89 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 91 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
 
 | 关切 | 文件 | 要点 |
 |---|---|---|
-| 来源层级/一手判定 | `services/provenance.py` | 地板=前沿实验室自有频道档；组合型厂商博客**刻意不进**（Cloudflare 教训）；per-target 精确判定归 P4.0 |
+| 来源层级/一手判定 | `services/provenance.py` | 地板=前沿实验室自有频道档；组合型厂商博客**刻意不进**；per-target 由 intent_plan.official_domains 授予；**只在入口调用**——盖章无 NULL(迁移 0020),消费期零推导 |
 | 账号来源 | `SourceRoute.is_account → RawArticle.from_account` | 入口盖章，消费期禁止 URL 猜（Drift 2 教训） |
 | 端点健康 | `services/source_health.py` | 按端点退避；HTTP 200 ≠ 活着（按条目日期判活） |
 | 主机礼貌 | `services/host_politeness.py` | 429 冻主机、5xx 连三冻主机、轮转防饿死 |
 | 浏览器 | `services/browser_pool.py` | `ensure_browsers_path()` 对抗 Playwright frozen 假设；缺浏览器给安装指引 |
+| 生命周期 | `services/lifecycle.py` | 唯一规则:任一 primary 盖章→CONFIRMED,≥2 出版方→CORROBORATED;运行中只升不降 |
+| 目标定义 | `services/target_profile.py` | 一个对象三个视图:terms()(相关性门) / describe()(摘要模型) / matcher()(跨目标可见性) |
 | 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问；`rescued` 计数 = 旧 top-1 流程必错的合并 |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
@@ -127,7 +129,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（89 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（91 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

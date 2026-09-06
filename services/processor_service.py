@@ -30,7 +30,7 @@ FUSION_MIN_SOURCES = int(os.environ.get("FUSION_MIN_SOURCES", "3"))
 # already-summarised thread (see is_material_increment).
 FUSION_INCREMENT_GROWTH = float(os.environ.get("FUSION_INCREMENT_GROWTH", "0.25"))
 
-_LIFECYCLE_RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
+from services.lifecycle import RANK as _LIFECYCLE_RANK   # one rank table
 
 
 def is_material_increment(prev_count: int, prev_lifecycle: str,
@@ -319,26 +319,10 @@ def process_tracker_fusion(tracker_id: int):
 
 
 def _target_profile(tracker) -> str:
-    """What the summariser is told the target IS — name, planned aliases, its own
-    domains and the planner's one-line reading of the intent — so relevance is
-    judged against the subject rather than against a radar-section label."""
-    import json as _json
-    parts = [f"name: {tracker.name}"]
-    try:
-        policy = _json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
-    except Exception:
-        policy = {}
-    ents = policy.get("entities") or []
-    if ents:
-        parts.append("aliases: " + ", ".join(str(e) for e in ents[:8]))
-    ip = policy.get("intent_plan") or {}
-    if ip.get("official_domains"):
-        parts.append("official domains: " + ", ".join(ip["official_domains"][:6]))
-    if ip.get("rationale"):
-        parts.append("intent: " + str(ip["rationale"])[:200])
-    elif ip.get("lane_reason"):
-        parts.append("intent: " + str(ip["lane_reason"])[:200])
-    return "; ".join(parts)
+    """The summariser's briefing on the target — one definition of the target
+    (services/target_profile.py), viewed as text."""
+    from services.target_profile import TargetProfile
+    return TargetProfile.from_tracker(tracker).describe()
 
 
 def _fuse_thread(tracker, thread_id: int):

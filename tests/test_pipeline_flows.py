@@ -29,8 +29,14 @@ def _seed_tracker_with_articles(name, keywords, articles, high_attention=False):
                     source_intent="KEYWORD_DISCOVERY", radar_section="R", is_active=True,
                     is_high_attention=high_attention)
         s.add(t); s.commit(); s.refresh(t)
-        for title, url in articles:
-            s.add(RawArticle(tracker_id=t.id, title=title, url=url, content=title, processed=False))
+        # Every real row is stamped at intake (source_tiering §2; NULL is
+        # impossible after migration 0020), so the seed stamps too: a 2-tuple
+        # is an aggregated catch, a 3-tuple names its tier.
+        for spec in articles:
+            title, url = spec[0], spec[1]
+            tier = spec[2] if len(spec) > 2 else "aggregated"
+            s.add(RawArticle(tracker_id=t.id, title=title, url=url, content=title,
+                             processed=False, source_tier=tier))
         s.commit()
         return t.id
 
@@ -45,7 +51,7 @@ def test_semantic_ingest_clusters_gates_and_promotes():
         "Apple", ["apple siri", "ajax"],
         [("Apple rebuilds Siri on Ajax", "https://bloomberg.com/s1"),
          ("Apple Siri Ajax overhaul", "https://9to5mac.com/s2"),
-         ("Apple Siri repo", "https://github.com/apple/siri"),      # first-party -> CONFIRMED
+         ("Apple Siri repo", "https://github.com/apple/siri", "primary"),   # first-party stamp -> CONFIRMED
          ("Bitcoin ETF inflows record", "https://coindesk.com/b1")], # off-topic -> gated
     )
     res = run_semantic_ingest(embedder=_StubEmbedder())

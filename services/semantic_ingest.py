@@ -19,9 +19,10 @@ from services import semantic as sm
 # one home, read by semantic_ingest + publish_service (docs/source_tiering.md).
 from services.provenance import (
     domain as _domain,
-    is_first_party as _is_first_party,
     real_publisher,
 )
+from services.lifecycle import lifecycle_for
+from services.target_profile import TargetProfile
 
 logger = get_logger("semantic")
 
@@ -174,41 +175,9 @@ def _embed_text(article) -> str:
 
 
 def _profile_terms(tracker) -> list:
-    """Topic profile terms for a tracker: name + target keywords/entities +
-    keep_keywords. Embedded once and reused as the relevance reference."""
-    terms = []
-    if getattr(tracker, "name", None):
-        terms.append(tracker.name)
-    for field in ("target", "normalized_intent", "fetch_policy"):
-        raw = getattr(tracker, field, None)
-        if not raw:
-            continue
-        try:
-            data = json.loads(raw)
-        except Exception:
-            terms.append(str(raw))
-            continue
-        if isinstance(data, list):
-            terms += [str(x) for x in data]
-        elif isinstance(data, dict):
-            for k in ("topic", "entities", "keep_keywords", "keywords"):
-                v = data.get(k)
-                if isinstance(v, list):
-                    terms += [str(x) for x in v]
-                elif isinstance(v, str):
-                    terms.append(v)
-            for sig in data.get("signals", []) or []:
-                if isinstance(sig, dict) and sig.get("value"):
-                    terms.append(str(sig["value"]))
-    # Dedup, drop empties/URLs (URLs aren't good topic anchors).
-    seen, out = set(), []
-    for t in terms:
-        t = t.strip()
-        if not t or t.startswith("http") or t in seen:
-            continue
-        seen.add(t)
-        out.append(t)
-    return out[:20]
+    """Topic profile terms for a tracker — one definition of the target
+    (services/target_profile.py), viewed as embedding anchors."""
+    return TargetProfile.from_tracker(tracker).terms()
 
 
 _POOL_WINDOW_DAYS = 30   # a story older than this no longer accepts members
@@ -505,16 +474,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                     centroid=json.dumps(vec),
                     member_count=1,
                     distinct_source_count=1,
-                    # CONFIRMED comes from the INTAKE STAMP (source_tiering §2); the
-                    # URL floor is a fallback for legacy NULL-tier rows only. It used
-                    # to apply to every URL, so a keyword-route catch on arxiv.org or
-                    # github.com — "Claude's Theorem" by a mathematician named Claude,
-                    # a random repo's release — was born CONFIRMED, passed the fusion
-                    # gate at any size, was paid for, and wore the badge. Measured:
-                    # 150 such threads, every one summarised.
-                    lifecycle="CONFIRMED" if (article.source_tier == "primary"
-                                              or (article.source_tier is None
-                                                  and _is_first_party(article.url))) else "LEAD",
+                    # Lifecycle from the intake stamp, by the one rule
+                    # (services/lifecycle.py). Consumption never derives
+                    # provenance from a URL: legacy NULL stamps were written
+                    # once by migration 0020, so no fallback remains.
+                    lifecycle=lifecycle_for([article.source_tier], 1),
                     first_seen_at=_now(),
                     last_update_at=_now(),
                 )
@@ -567,23 +531,13 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                     if not any(is_near_duplicate(t, rep) for rep in families):
                         families.append(t)
                 th.distinct_source_count = min(len(pubs), len(families))
-                # Lifecycle: LEAD → CORROBORATED (≥2 independent sources) →
-                # CONFIRMED (a first-party/authoritative source present). A
-                # first-party source confirms directly, even with fewer sources.
-                # First-party from the INTAKE STAMP (source_tiering §2: capture
-                # at intake, never re-derive at consumption) — the stamp carries
-                # per-target official domains the URL check can't know. The URL
-                # fallback only covers legacy NULL-tier rows.
-                has_first_party = any((tier == "primary") or (tier is None and _is_first_party(u))
-                                      for (u, _t, tier) in member_rows)
-                has_first_party = has_first_party or article.source_tier == "primary" \
-                    or (article.source_tier is None and _is_first_party(article.url))
-                if has_first_party and th.lifecycle != "CONFIRMED":
-                    th.lifecycle = "CONFIRMED"
-                    logger.info(f"Thread {th.id} promoted → CONFIRMED (first-party source present)")
-                elif th.distinct_source_count >= 2 and th.lifecycle == "LEAD":
-                    th.lifecycle = "CORROBORATED"
-                    logger.info(f"Thread {th.id} promoted LEAD → CORROBORATED ({th.distinct_source_count} sources)")
+                # Lifecycle by the one rule, from stamps only (never demotes
+                # in the running pipeline; corrections are migrations).
+                new_lc = lifecycle_for([tier for (_u, _t, tier) in member_rows] + [article.source_tier],
+                                       th.distinct_source_count, current=th.lifecycle)
+                if new_lc != th.lifecycle:
+                    logger.info(f"Thread {th.id} {th.lifecycle} → {new_lc} ({th.distinct_source_count} sources)")
+                    th.lifecycle = new_lc
                 # Resonance: distinct sources per hour since the thread began.
                 first_seen = th.first_seen_at
                 if first_seen.tzinfo is not None:

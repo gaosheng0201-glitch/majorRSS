@@ -328,5 +328,39 @@ def test_confirmed_at_birth_needs_a_primary_stamp_not_a_first_party_url():
                     "https://github.com/NeoLabHQ/context-engineering-kit", "aggregated") == "LEAD"
     assert _born_as("Anthropic ships Claude for education districts",
                     "https://www.anthropic.com/news/education-districts", "primary") == "CONFIRMED"
+    # No consumption-time URL derivation remains: a NULL stamp (impossible after
+    # migration 0020) is simply "not primary".
     assert _born_as("Legacy row about Claude on the vendor site",
-                    "https://www.anthropic.com/news/legacy-row", None) == "CONFIRMED"   # NULL tier → URL floor
+                    "https://www.anthropic.com/news/legacy-row", None) == "LEAD"
+
+
+def test_lifecycle_rule_is_one_function():
+    from services.lifecycle import lifecycle_for
+    assert lifecycle_for(["aggregated"], 1) == "LEAD"
+    assert lifecycle_for(["aggregated", "aggregated"], 2) == "CORROBORATED"
+    assert lifecycle_for(["aggregated", "primary"], 1) == "CONFIRMED"
+    assert lifecycle_for(["curated"], 1) == "LEAD"                 # curated ≠ first-party
+    assert lifecycle_for([None], 1) == "LEAD"                      # no stamp = no claim
+    # The running pipeline never demotes; corrections are migrations.
+    assert lifecycle_for(["aggregated"], 1, current="CORROBORATED") == "CORROBORATED"
+
+
+def test_target_profile_is_the_single_definition():
+    import json
+    from db.models import Tracker
+    from services.target_profile import TargetProfile
+    t = Tracker(name="claude", tracker_type="KEYWORD", radar_section="AI", source_intent="KEYWORD_DISCOVERY",
+                target=json.dumps({"topic": "claude", "signals": [{"type": "keyword", "value": "Claude Code"}]}),
+                fetch_policy=json.dumps({"entities": ["Claude", "Anthropic", "克劳德"], "keep_keywords": ["leak"],
+                                         "ignore_keywords": ["exchange"],
+                                         "intent_plan": {"official_domains": ["anthropic.com", "claude.com"],
+                                                         "rationale": "follow the Claude model family"}}))
+    tp = TargetProfile.from_tracker(t)
+    terms = tp.terms()
+    assert terms[0] == "claude" and "Claude Code" in terms and "克劳德" in terms and "leak" in terms
+    d = tp.describe()
+    assert "name: claude" in d and "anthropic.com" in d and "follow the Claude model family" in d
+    m = tp.matcher()
+    assert m.official_domains == ("anthropic.com", "claude.com") and "exchange" in m.ignore_terms
+    # The matcher sees the name as an entity even when the plan omitted it.
+    assert any(rx.search("claude ships") for rx in m.latin_terms)
