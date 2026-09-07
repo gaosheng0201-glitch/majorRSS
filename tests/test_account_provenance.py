@@ -93,3 +93,33 @@ def test_provenance_rises_on_reencounter_through_a_better_route_never_falls():
         assert s.get(StoryThread, thid).lifecycle == "CONFIRMED"
         # cleanup so pending-article counts elsewhere stay exact
         s.delete(art); s.delete(s.get(StoryThread, thid)); s.delete(s.get(Tracker, tid)); s.commit()
+
+
+def test_firehose_presets_resolve_as_aggregated_routes():
+    """A category feed is a firehose: first-party for its items, never the
+    target's own channel. It must not be able to confirm a thread."""
+    import json
+    from db.database import get_session
+    from db.models import SourcePreset, SourcePresetCollection, SourcePresetCollectionItem
+    from services.source_resolver import SourceResolver
+    from services.provenance import Tier, is_firehose_url, tier_for_url
+    from sqlmodel import select
+    with get_session() as s:
+        if not s.exec(select(SourcePresetCollection).where(SourcePresetCollection.collection_id == "fh_test")).first():
+            s.add(SourcePresetCollection(collection_id="fh_test", title="t", description="", source_count=2))
+            s.add(SourcePreset(preset_id="fh_arxiv", title="arXiv cs.AI", source_type="arxiv",
+                               url="https://export.arxiv.org/rss/cs.AI"))
+            s.add(SourcePreset(preset_id="fh_blog", title="Lab blog", source_type="rss",
+                               url="https://deepmind.google/blog/rss.xml"))
+            s.add(SourcePresetCollectionItem(collection_id="fh_test", preset_id="fh_arxiv", sort_order=0))
+            s.add(SourcePresetCollectionItem(collection_id="fh_test", preset_id="fh_blog", sort_order=1))
+            s.commit()
+    r = SourceResolver(fetch_policy=json.dumps({"source_scope": ["fh_test"], "max_days": 7}))
+    routes = {rt.route_id: rt for rt in r.resolve_routes("RSS_FEED", "")}
+    assert routes["preset_fh_arxiv"].tier == Tier.AGGREGATED
+    assert routes["preset_fh_blog"].tier == Tier.CURATED
+    assert is_firehose_url("https://export.arxiv.org/api/query?search_query=all:ALS")
+    # An arXiv item through an AGGREGATED route can never become PRIMARY.
+    assert tier_for_url("https://arxiv.org/abs/2609.02882", Tier.AGGREGATED) == Tier.AGGREGATED
+    # And arxiv.org is no longer on the global first-party floor at all.
+    assert tier_for_url("https://arxiv.org/abs/2609.02882", Tier.CURATED) == Tier.CURATED

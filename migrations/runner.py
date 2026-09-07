@@ -33,7 +33,8 @@ def run_migrations():
             "0017_global_threads_lens",
             "0018_storyline_kinship",
             "0019_confirmed_needs_primary_stamp",
-            "0020_stamp_legacy_null_tiers"
+            "0020_stamp_legacy_null_tiers",
+            "0021_firehose_routes_are_aggregated"
         ]
         
         for m in migrations:
@@ -551,6 +552,39 @@ def run_migrations():
                         session.add(a); n += 1
                     session.commit()
                     print(f"stamp_legacy_null_tiers: {n} rows stamped ({p} primary)")
+
+                elif m == "0021_firehose_routes_are_aggregated":
+                    # arXiv category feeds were CURATED routes whose items the
+                    # first-party floor lifted to PRIMARY, so every paper was
+                    # born CONFIRMED and summarised. Firehose routes are
+                    # AGGREGATED from here on; restamp what they delivered and
+                    # demote threads that were confirmed by nothing else.
+                    from db.models import RawArticle, StoryThread
+                    from services.provenance import is_firehose_item_url
+                    from sqlmodel import select as _select
+                    restamped = 0
+                    touched = set()
+                    for a in session.exec(_select(RawArticle).where(
+                            RawArticle.source_tier.in_(["primary", "curated"]))).all():
+                        if is_firehose_item_url(a.url or ""):
+                            a.source_tier = "aggregated"
+                            session.add(a); restamped += 1
+                            if a.thread_id:
+                                touched.add(a.thread_id)
+                    session.commit()
+                    demoted = 0
+                    for tid in touched:
+                        th = session.get(StoryThread, tid)
+                        if not th or th.lifecycle != "CONFIRMED":
+                            continue
+                        tiers = session.exec(_select(RawArticle.source_tier)
+                                             .where(RawArticle.thread_id == tid)).all()
+                        if any(t == "primary" for t in tiers):
+                            continue
+                        th.lifecycle = "CORROBORATED" if (th.distinct_source_count or 0) >= 2 else "LEAD"
+                        session.add(th); demoted += 1
+                    session.commit()
+                    print(f"firehose_routes_are_aggregated: {restamped} articles restamped, {demoted} threads demoted")
 
                 elif m == "0019_confirmed_needs_primary_stamp":
                     # Threads born CONFIRMED from the URL floor alone (no member

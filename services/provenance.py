@@ -51,7 +51,9 @@ HIGH_WEIGHT = (Tier.PRIMARY, Tier.CURATED)
 #     per-target judgement is the P4.0 planner's, not a global list's.
 _FIRST_PARTY_SUFFIXES = (".gov", ".gov.cn", ".gov.uk", ".mil", ".edu")
 _FIRST_PARTY_DOMAINS = (
-    "arxiv.org", "github.com", "github.io", "openai.com", "anthropic.com",
+    # arxiv.org is deliberately ABSENT: a paper is first-party for itself,
+    # never "the target's own channel". Category feeds are firehoses (below).
+    "github.com", "github.io", "openai.com", "anthropic.com",
     "blog.google", "ai.googleblog.com", "developer.apple.com", "apple.com",
     "microsoft.com", "nvidia.com", "sec.gov", "fda.gov", "who.int",
     "clinicaltrials.gov", "europa.eu",
@@ -61,6 +63,34 @@ _FIRST_PARTY_DOMAINS = (
     # Code-host guard still applies: only /blog and release paths upgrade.
     "huggingface.co", "github.blog",
 )
+
+# FIREHOSES (source_tiering §2, 2026-09-07): a category or listing feed — every
+# paper in arXiv cs.AI, an HN front page, GitHub trending — delivers the whole
+# category, not a channel the target owns. Such ROUTES are AGGREGATED however
+# reputable the host: items must earn attention like any keyword catch (junk
+# floor, keep_keywords, corroboration) and can never confirm a thread. Measured
+# before this rule: 78 arXiv singletons born CONFIRMED and summarised in two
+# days, 73 judged off-topic by the model — three quarters of fusion spend.
+_FIREHOSE_ROUTE_PATTERNS = (
+    "export.arxiv.org/", "rss.arxiv.org/", "arxiv.org/a/", "arxiv.org/list/",
+    "hnrss.org/frontpage", "hnrss.org/newest", "hnrss.org/best",
+    "github.com/trending", "news.ycombinator.com/rss",
+)
+_FIREHOSE_ITEM_HOSTS = ("arxiv.org",)
+
+
+def is_firehose_url(route_url: str) -> bool:
+    """Is this FEED/route URL a category or listing firehose?"""
+    u = (route_url or "").lower().replace("https://", "").replace("http://", "").replace("www.", "", 1)
+    return any(u.startswith(p) or ("/" + p) in u for p in _FIREHOSE_ROUTE_PATTERNS)
+
+
+def is_firehose_item_url(item_url: str) -> bool:
+    """Does this ITEM URL live on a host that only firehose routes deliver?
+    Used by the one-time restamp; new items are tiered by their route."""
+    d = domain(item_url or "")
+    return any(d == h or d.endswith("." + h) for h in _FIREHOSE_ITEM_HOSTS)
+
 
 # Aggregator / meta-search domains: many real outlets hide behind one domain, so
 # the domain is NOT a publisher identity for corroboration counting.

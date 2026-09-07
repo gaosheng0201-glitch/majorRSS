@@ -108,6 +108,7 @@ resolver 是**唯一同时知道"抓取意图渠道"**的地方（`services/sour
 
 要点：
 - **AGGREGATED 恒定**。gnews 抓的文章 URL 恒为 `news.google.com` 重定向，不会因为偶然指向 openai 就升级——关键词搜索的"杂"是它的本质。
+- **类目/列表型源 = 消防栓（2026-09-07 补）**。arXiv cs.AI 这类"类目里每篇都来"的 feed、HN 首页、GitHub trending，路由层级恒为 AGGREGATED——**不论主机多有名**。它的条目对自己是一手，对目标从来不是"目标自己的频道"；CONFIRMED 的含义是"官方公告",一篇随机论文不是。判定在 `provenance.is_firehose_url`（路由 URL 模式）+ preset `source_type=arxiv`。实测反例：两天 78 篇 arXiv 单源出生即已证实并提炼，73 篇被模型判无关，占融合支出四分之三。arxiv.org 同时从全局一手地板移除。
 - **PRIMARY 升级用现成的 `_is_first_party`**（`services/semantic_ingest.py:83`，已识别 gov/edu/arxiv/github/厂商域名）。把它抽到共享位置（如 `services/provenance.py`）供 resolver 和 semantic 共用，避免两份名单漂移。
 - 账号路由默认 CURATED，不强判 PRIMARY——"被追踪的人是否就是报道主体"难可靠判定，留给枚举将来细分，宁可保守。
 

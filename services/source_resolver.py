@@ -201,9 +201,11 @@ class SourceResolver:
             if kind == "rss":
                 if value in existing:
                     continue
+                from services.provenance import is_firehose_url
                 added.append(SourceRoute(route_id=f"sugg_rss_{i}", adapter="RssAdapter",
                                          url_or_command=value, purpose="discovery",
-                                         requires_auth=False, platform="rss", priority=4))
+                                         requires_auth=False, platform="rss", priority=4,
+                                         tier=Tier.AGGREGATED if is_firehose_url(value) else Tier.CURATED))
                 existing.add(value)
             elif kind == "subreddit":
                 url = f"https://www.reddit.com/r/{value}/new.rss"
@@ -284,6 +286,17 @@ class SourceResolver:
                         adapter, platform = "AgenticAdapter", "web"
                     else:
                         adapter, platform = "RssAdapter", "rss"
+                    # Route-level tiering dominates for FIREHOSES (source_tiering
+                    # §2): a category/listing feed — arXiv cs.AI, an HN front
+                    # page, GitHub trending — delivers everything in the category,
+                    # not the target's own channel. Its items are first-party for
+                    # THEMSELVES, never an announcement about the target, so they
+                    # must earn attention like any keyword catch: junk floor,
+                    # keep_keywords, corroboration. Measured 2026-09-07: 78 arXiv
+                    # singletons born CONFIRMED and summarised in two days, 73 of
+                    # them judged off-topic by the model — three quarters of spend.
+                    from services.provenance import is_firehose_url
+                    firehose = (stype == "arxiv") or is_firehose_url(url)
                     added.append(SourceRoute(
                         route_id=f"preset_{pid}",
                         adapter=adapter,
@@ -295,6 +308,7 @@ class SourceResolver:
                         # the budget cap keeps the user's explicit sources +
                         # their fallbacks before tangential portfolio presets.
                         priority=5,
+                        tier=Tier.AGGREGATED if firehose else Tier.CURATED,
                     ))
                     existing_urls.add(preset.url)
             return routes + added
