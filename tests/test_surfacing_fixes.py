@@ -402,3 +402,32 @@ def test_arbiter_failure_never_merges_on_embedding_alone():
     assert out["arbiter_failed"] >= 1
     with get_session() as s:
         assert len(s.exec(select(StoryThread)).all()) == 2, "no merge without a judge"
+
+
+def test_fusion_briefing_covers_every_target_in_the_lens():
+    """A thread fetched by openAI but concerning gemini must brief the
+    summariser on BOTH — relevance is judged per thread, not per fetcher."""
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread
+    from services.processor_service import _lens_profile
+    with get_session() as s:
+        g = Tracker(name="gemini-lens", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY",
+                    fetch_policy=json.dumps({"entities": ["Gemini", "DeepMind"],
+                                             "intent_plan": {"official_domains": ["deepmind.google"]}}))
+        o = Tracker(name="openai-lens", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["OpenAI"]}))
+        s.add(g); s.add(o); s.commit(); s.refresh(g); s.refresh(o)
+        th = StoryThread(tracker_id=o.id, tracker_ids=json.dumps([o.id]), title="WeatherNext 3",
+                         lifecycle="CONFIRMED", member_count=1, distinct_source_count=1)
+        s.add(th); s.commit(); s.refresh(th)
+        m = RawArticle(tracker_id=o.id, thread_id=th.id, title="Introducing WeatherNext 3",
+                       url="https://deepmind.google/blog/weathernext-3", content="x", source_tier="primary",
+                       also_tracker_ids=json.dumps([g.id]))
+        s.add(m); s.commit(); s.refresh(m)
+        text = _lens_profile(s, th, [m], o)
+        assert "[gemini-lens]" in text and "[openai-lens]" in text
+        assert "deepmind.google" in text
+        # cleanup
+        s.delete(m); s.delete(th); s.delete(g); s.delete(o); s.commit()

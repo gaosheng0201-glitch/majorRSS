@@ -318,6 +318,44 @@ def process_tracker_fusion(tracker_id: int):
         time.sleep(1.5)
 
 
+def _lens_profile(session, thread, members, pass_tracker) -> str:
+    """The summariser's briefing covers EVERY target in the thread's lens.
+
+    全局线索 made a thread one event across targets, but fusion still spoke
+    from whichever tracker's processing pass reached it — the fetcher, or the
+    tracker whose member arrived last. A DeepMind weather model fetched
+    through the openAI target was therefore judged against openAI's profile
+    and filed as noise, while gemini (in the lens, deepmind.google its own
+    domain) never got a say (author's screenshot 2026-09-09). Relevance is a
+    property of the thread, so it is judged against all of its targets."""
+    import json as _json
+    from db.models import Tracker
+    from services.target_profile import TargetProfile
+    ids = set()
+    if getattr(thread, "tracker_id", None) is not None:
+        ids.add(thread.tracker_id)
+    if getattr(pass_tracker, "id", None) is not None:
+        ids.add(pass_tracker.id)
+    try:
+        ids.update(int(i) for i in _json.loads(getattr(thread, "tracker_ids", None) or "[]") if i is not None)
+    except Exception:
+        pass
+    for m in members:
+        if getattr(m, "tracker_id", None) is not None:
+            ids.add(m.tracker_id)
+        try:
+            ids.update(int(i) for i in _json.loads(getattr(m, "also_tracker_ids", None) or "[]") if i is not None)
+        except Exception:
+            pass
+    parts = []
+    for tid in sorted(ids):
+        t = session.get(Tracker, tid)
+        if t is None:
+            continue
+        parts.append(f"[{t.name}] " + TargetProfile.from_tracker(t).describe())
+    return "\n".join(parts) if parts else _target_profile(pass_tracker)
+
+
 def _target_profile(tracker) -> str:
     """The summariser's briefing on the target — one definition of the target
     (services/target_profile.py), viewed as text."""
@@ -467,11 +505,12 @@ def _fuse_thread(tracker, thread_id: int):
 
         db.set_pipeline_status(tracker.name, "AI Fusion",
                                f"Summarizing event thread ({len(members)} sources)...")
-        bundled_text = f"=== OSINT FUSION FOR TARGET: {tracker.target} ===\n\n" + "".join(entries)
+        lens_profile = _lens_profile(session, thread, members, tracker)
+        bundled_text = "=== OSINT FUSION (thread may concern several tracked targets) ===\n\n" + "".join(entries)
         result = process_article(
             bundled_text, tracker.radar_section,
             prompt_override=tracker.prompt_override, tracker_name=tracker.name,
-            target_profile=_target_profile(tracker),
+            target_profile=lens_profile,
         )
 
         # Cited = sources the summary is based on; the rest are same-event

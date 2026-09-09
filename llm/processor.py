@@ -96,12 +96,13 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
     # (author's Riemann-zeta case, 2026-09-05).
     if target_profile:
         system_instruction += (
-            f"\n\nTRACKED TARGET: {target_profile}\n"
-            "RELEVANCE RULE: content is relevant when the tracked subject takes part in the "
+            f"\n\nTRACKED TARGETS (this story may concern any of them; one line each):\n{target_profile}\n"
+            "RELEVANCE RULE: content is relevant when AT LEAST ONE listed target takes part in the "
             "event — as the actor, the product, the thing acted upon, or the tool that produced "
-            "the result — WHATEVER the domain (science, law, sports…). A mere name collision "
-            "(a person, place or unrelated product sharing the name) is [NOISE]. When genuinely "
-            "unsure whether it is the tracked subject, prefer [VALID_NEWS] and say so in the summary."
+            "the result — WHATEVER the domain (science, law, sports…). Judge against every listed "
+            "target before deciding; name the target(s) it concerns in the summary. It is [NOISE] "
+            "only if it concerns NONE of them, or only a name collision (a person, place or "
+            "unrelated product sharing a name). When genuinely unsure, prefer [VALID_NEWS] and say so."
         )
 
     target_lang = get_target_language()
