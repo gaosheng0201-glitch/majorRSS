@@ -364,3 +364,41 @@ def test_target_profile_is_the_single_definition():
     assert m.official_domains == ("anthropic.com", "claude.com") and "exchange" in m.ignore_terms
     # The matcher sees the name as an entity even when the plan omitted it.
     assert any(rx.search("claude ships") for rx in m.latin_terms)
+
+
+class _BrokenArbiter:
+    """Every call errors — the 429 / outage case."""
+    name = "broken-arbiter"
+    supports_generation = True
+
+    def generate(self, prompt, system=None, schema=None, temperature=0.0):
+        raise RuntimeError("503 upstream")
+
+
+def test_arbiter_failure_never_merges_on_embedding_alone():
+    """When the judge is unavailable, a gray-zone candidate must NOT be merged
+    into an existing thread: a wrong merge poisons a summary and resurfaces an
+    old story; a split is recoverable."""
+    import json
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding, Storyline
+    from services.semantic_ingest import run_semantic_ingest
+    from sqlmodel import select, delete
+    with get_session() as s:
+        s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle)); s.exec(delete(StoryThread))
+        s.exec(delete(Storyline)); s.commit()
+        t = Tracker(name="arb-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Claude Code"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        s.add(RawArticle(tracker_id=t.id, title="Anthropic turns Claude Code auto mode on by default",
+                         url="https://a.example/1", content="Claude Code auto mode default", source_tier="aggregated"))
+        s.commit()
+    run_semantic_ingest(limit=10, arbiter=_BrokenArbiter())
+    with get_session() as s:
+        s.add(RawArticle(tracker_id=t.id, title="Anthropic raises Claude Code quota by 25 percent",
+                         url="https://a.example/2", content="Claude Code quota raised", source_tier="aggregated"))
+        s.commit()
+    out = run_semantic_ingest(limit=10, arbiter=_BrokenArbiter())
+    assert out["arbiter_failed"] >= 1
+    with get_session() as s:
+        assert len(s.exec(select(StoryThread)).all()) == 2, "no merge without a judge"

@@ -81,7 +81,7 @@ def _llm_relation(provider, title_a, title_b):
             return "story"
         return "different"
     except Exception as e:
-        logger.warning(f"Event arbiter failed ({e}); keeping embedding decision.")
+        logger.warning(f"Event arbiter failed ({e}); gray-zone candidates will NOT be merged this time.")
         return None
 
 
@@ -161,7 +161,7 @@ def _llm_same_event(provider, title_a, title_b):
             pass
         return text.strip().lower().startswith("y")
     except Exception as e:
-        logger.warning(f"Event arbiter failed ({e}); keeping embedding decision.")
+        logger.warning(f"Event arbiter failed ({e}); gray-zone candidates will NOT be merged this time.")
         return None
 
 
@@ -428,7 +428,12 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                     # No arbiter configured: keep the embedding decision.
                     tid = best_tid
                 elif arb_budget <= 0:
-                    tid = best_tid
+                    # Budget gone: a gray-zone merge without a judge is the
+                    # unrecoverable mistake (it poisons a summary and resurfaces
+                    # an old thread as "progress" — measured 2026-09-09: a quota
+                    # story and a culture piece joined a 27-day-old auto-mode
+                    # thread at sim 0.60/0.56). A new thread is the recoverable
+                    # one: the global pool and storylines can still relate it.
                     arb_skipped_budget += 1
                 else:
                     for ctid, csim in cands:
@@ -456,10 +461,10 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                                             f"(top-1 {cands[0][0]} was rejected)")
                             break
                         if same is None:
-                            # Call errored: keep the embedding decision for THIS
-                            # candidate (the pre-arbiter behaviour) and stop.
+                            # Call errored: do NOT merge on the embedding alone —
+                            # same reasoning as the budget path above. The
+                            # article starts its own thread; nothing is lost.
                             arb_failed += 1
-                            tid = ctid
                             break
                         arb_splits += 1
                         logger.info(f"Arbiter split (sim={csim:.2f}): '{(article.title or '')[:40]}' "
