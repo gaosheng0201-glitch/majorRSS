@@ -83,8 +83,10 @@ def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_api_se
     feed = []
     for th in threads:
         tracker_name = "Unknown"
-        if th.tracker_id:
-            tracker = session.get(Tracker, th.tracker_id)
+        from services import thread_targets as tt
+        _pt = tt.primary_target_id(tt.rows_for(session, [th.id])[th.id], th.tracker_id)
+        if _pt:
+            tracker = session.get(Tracker, _pt)
             if tracker:
                 tracker_name = tracker.name
 
@@ -118,16 +120,6 @@ def get_all_alerts(session: Session = Depends(get_api_session)):
     alert_responses = [make_alert_response(a, session) for a in alerts]
     return alert_responses
 
-def _stored_lens(th) -> set:
-    """The thread's own lens (全局线索: every target it concerns), as stamped by
-    the semantic layer; members' visibility stamps are unioned in by the caller
-    so pre-migration rows still resolve."""
-    try:
-        return {int(i) for i in json.loads(th.tracker_ids or "[]") if i is not None}
-    except Exception:
-        return set()
-
-
 @router.get("/threads")
 def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
                       session: Session = Depends(get_api_session)):
@@ -148,13 +140,10 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     from db.models import StoryThread, RadarAlert
     q = select(StoryThread)
     if tracker_id is not None:
-        # 全局线索: a target is a lens, so "this target's threads" means every
-        # thread whose lens contains it, not only the ones it started. The LIKE
-        # is a coarse SQL pre-filter (matches 14 for 4); the exact membership
-        # test happens below on the parsed set.
-        from sqlmodel import or_
-        q = q.where(or_(StoryThread.tracker_id == tracker_id,
-                        StoryThread.tracker_ids.like(f"%{tracker_id}%")))
+        # 目标即查询: "this target's threads" = the threads related to it.
+        from db.models import ThreadTarget
+        q = q.where(StoryThread.id.in_(
+            select(ThreadTarget.thread_id).where(ThreadTarget.tracker_id == tracker_id)))
     # Ordering is time-honesty (author ruling 2026-08-13). last_update_at bumps
     # on ANY member join, so a three-week-old thread outranked that day's real
     # news because outlet #40 republished it. summarized_at only moves on a
@@ -170,15 +159,6 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     else:
         order = (StoryThread.is_resonant.desc(), StoryThread.last_update_at.desc())
     threads = session.exec(q.order_by(*order).limit(limit)).all()
-    if tracker_id is not None:
-        def _lens(th):
-            ids = {th.tracker_id}
-            try:
-                ids.update(int(i) for i in json.loads(th.tracker_ids or "[]"))
-            except Exception:
-                pass
-            return ids
-        threads = [th for th in threads if tracker_id in _lens(th)]
     if not threads:
         return []
 
@@ -203,11 +183,10 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
     # the 8 kept for display, or a 9-member thread could misclassify.
     thread_ids = [th.id for th in threads]
     members_by_thread = {tid: [] for tid in thread_ids}
-    # Cross-target visibility (author ruling 2026-08-26): a thread is relevant
-    # to its OWNER plus every target its members matched at intake. The filter
-    # chips test membership of this set, so a Claude official post owned by the
-    # grok tracker still shows under the claude chip — the same thread, once.
-    also_by_thread = {tid: set() for tid in thread_ids}
+    # 目标即查询: who a thread concerns is the ThreadTarget relation — one
+    # symmetric answer per (thread, target), plus the summariser's verdict.
+    from services import thread_targets as tt
+    target_rows = tt.rows_for(session, thread_ids)
     # from_account: any member arrived via a route the user created by NAMING an
     # account (stamped at intake — provenance is never re-derived from URLs).
     # aggregated_only: no member outside the keyword firehose; NULL tier counts
@@ -220,13 +199,6 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
         bucket = members_by_thread.get(art.thread_id)
         if bucket is not None and len(bucket) < 8:
             bucket.append({"title": art.title, "url": art.url})
-        aset = also_by_thread.get(art.thread_id)
-        if aset is not None and getattr(art, "also_tracker_ids", None):
-            try:
-                import json as _json
-                aset.update(_json.loads(art.also_tracker_ids))
-            except Exception:
-                pass
         f = flags_by_thread.get(art.thread_id)
         if f is not None:
             if getattr(art, "from_account", False):
@@ -248,7 +220,7 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             clean_sum = clean_sum.split("\n---\n", 1)[0].strip()
         out.append({
             "id": th.id,
-            "tracker_id": th.tracker_id,
+            "tracker_id": tt.primary_target_id(target_rows.get(th.id, []), th.tracker_id),
             "title": display_title or th.title,
             "lifecycle": th.lifecycle,
             "distinct_source_count": th.distinct_source_count,
@@ -263,9 +235,12 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "summary": clean_sum or None,
             "importance_score": th.importance_score,
             "validity_category": th.validity_category,
-            "relevant_tracker_ids": sorted(
-                {tid for tid in ({th.tracker_id} | also_by_thread[th.id] | _stored_lens(th))
-                 if tid is not None}),
+            "relevant_tracker_ids": sorted(r.tracker_id for r in target_rows.get(th.id, [])
+                                           if r.llm_verdict is not False),
+            # Related by the matcher, but the summariser judged it a name
+            # collision for these targets — folded under their chip, never hidden.
+            "irrelevant_tracker_ids": sorted(r.tracker_id for r in target_rows.get(th.id, [])
+                                             if r.llm_verdict is False),
             "storyline": story_by_id.get(getattr(th, "storyline_id", None)),
             "from_account": flags_by_thread[th.id]["from_account"],
             "aggregated_only": flags_by_thread[th.id]["aggregated_only"],

@@ -56,9 +56,10 @@ class FactCheckResult(BaseModel):
     key_entities: list[str] = Field(default=[], description="List of core entities (people, products, companies) mentioned, max 5.")
     relevant_source_indices: list[int] = Field(default=[], description="List of Source indices (e.g. [1, 3]) that were actually relevant to the news and used for the summary. Exclude indices of noise or irrelevant sources.")
     event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
+    concerned_targets: Optional[list[str]] = Field(default=None, description="Names (exactly as listed in the system instructions) of the tracked targets that genuinely take part in this event. Empty list if none does. Null only if no targets were listed.")
     duplicate_of_report_id: Optional[int] = Field(default=None, description="If the core event in this batch is already reported in the provided list of 'Recent Summaries', set this to the ID of that duplicate report. Otherwise, return null.")
 
-def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None, target_profile: str = None) -> FactCheckResult:
+def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None, candidate_targets: list = None) -> FactCheckResult:
     """
     Passes the scraped content through the configured provider (BYOK Gemini,
     OpenAI-compatible / local model) to fact-check, categorize, and summarize.
@@ -89,20 +90,23 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
             "Determine if the content is valid news, spam, a malicious link, or just noise."
         )
 
-    # Relevance is judged against the TARGET, and the target is a subject that
-    # may take part in an event anywhere — a maths paper is on-target when
-    # the tracked AI proved the theorem. Without this the model reasoned
-    # "a mathematician named Claude" and filed a real Claude result as noise
-    # (author's Riemann-zeta case, 2026-09-05).
-    if target_profile:
+    # 目标即查询: "what happened" and "who cares" are two questions. Asking them
+    # as one made the summary a verdict about a reader — "unrelated to the
+    # monitored target OpenAI", about a DeepMind post gemini also watched; "a
+    # person named Claude", about a theorem Claude proved. The summary is now a
+    # neutral account of the event; involvement is a separate structured field.
+    if candidate_targets:
+        listing = "\n".join(f"- {n}: {d}" for n, d in candidate_targets)
         system_instruction += (
-            f"\n\nTRACKED TARGETS (this story may concern any of them; one line each):\n{target_profile}\n"
-            "RELEVANCE RULE: content is relevant when AT LEAST ONE listed target takes part in the "
-            "event — as the actor, the product, the thing acted upon, or the tool that produced "
-            "the result — WHATEVER the domain (science, law, sports…). Judge against every listed "
-            "target before deciding; name the target(s) it concerns in the summary. It is [NOISE] "
-            "only if it concerns NONE of them, or only a name collision (a person, place or "
-            "unrelated product sharing a name). When genuinely unsure, prefer [VALID_NEWS] and say so."
+            "\n\nSummarise the EVENT itself, neutrally. Never describe content as irrelevant or as "
+            "noise because of who might be tracking it: validity_category is about the content's "
+            "nature (real news vs spam / empty chatter / a duplicate), not about any reader.\n"
+            f"SEPARATELY, these tracked targets may be concerned:\n{listing}\n"
+            "In `concerned_targets` list the NAMES (exactly as given) of those that genuinely take "
+            "part in the event — as actor, product, the thing acted upon, or the tool that produced "
+            "the result — WHATEVER the domain (science, law, sports…). A mere name collision (a "
+            "person, place or unrelated product sharing the name) is not involvement. When genuinely "
+            "unsure, include the target."
         )
 
     target_lang = get_target_language()

@@ -1,6 +1,6 @@
 # MajorRSS 工程基准（Engineering Baseline）
 
-> 最后更新：2026-09-01
+> 最后更新：2026-09-17
 >
 > **本文档是现行唯一的工程状态基准。**
 >
@@ -36,23 +36,23 @@
 发现    emergent_sources（P4.2）每日扫获注意力线索→反复被指向的 @handle/出版方→雷达页提示追踪
         追踪=同一套校验后追加为 selected 建议源;只加不减
 抓取    scraper_service → SourceResolver(路由分组+账号盖章+建议源路由) → adapters → SourceNormalizer
-        入库盖章:source_tier / from_account / also_tracker_ids(跨目标可见性,attribution.py 确定性匹配)
+        入库盖章:source_tier / from_account（文章只带出处;tracker_id 仅为"经谁发现"）
         护栏：source_health(端点退避/隔离/新鲜度断言) + host_politeness(主机限速/冷却/轮转)
         + account_guard(每账号预算/AIMD/熔断) + humanized(静默窗/抖动) + browser_pool(线程本地复用)
         错误归责：NOT_ENDPOINT_FAULT（429→主机层、能力缺失→自身诊断）不进端点健康
 语义    semantic_ingest   embed(去均值) → 垃圾地板(按透镜内最匹配目标画像) → 全局近 30 天候选池
-        top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局唯一事件,tracker_ids=透镜）
+        top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局无主）→ ThreadTarget 关系（目标即查询）
         story → 认亲 Storyline（只链接不合并;出版方按整条去重——聚合不制造佐证;只给可见性）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
-融合    processor_service 按线索出摘要（P1.1 门控挣得制）；摘要模型拿到**透镜内全部目标**画像判相关性；重摘要须实质增量
+融合    processor_service 按线索走一遍（P1.1 门控挣得制;无目标关心不花钱）；摘要中立,涉及目标为独立结构化输出；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
         线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0021 幂等
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0022 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 94 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 95 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -69,8 +69,8 @@
 | 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问三分法；`rescued` 计数 = 旧 top-1 流程必错的合并；**预算耗尽/出错=不并**（错并不可逆,拆分可逆） |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
-| 跨目标可见性 | `services/attribution.py` | 入库确定性匹配:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
-| 线索透镜 | `StoryThread.tracker_ids` | 全局线索的"哪些目标关心";owner 只管叙述/板块/告警 |
+| 目标匹配器 | `services/attribution.py` | 对全部目标对称判定:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
+| 目标即查询 | `services/thread_targets.py` + `ThreadTarget` | 线索/文章全局无主;关系=对称匹配+聚合发现路由+模型判定（False 只折叠）;融合按线索一遍、摘要中立;无目标关心不花钱。设计记录 docs/targets_are_queries.md |
 | 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
 | 故事线 | `StoryThread.storyline_id` → `Storyline` | 认亲不合并;出版方整条去重;线报面第二层;提炼卡"传闻自 X 起" |
 | 涌现源 | `services/emergent_sources.py` | "已追踪"按数据判定（curated/primary 到达的域名、from_account 读到的 handle）;代码托管不抽 @;出版方门槛 6 |
@@ -129,7 +129,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（94 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（95 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

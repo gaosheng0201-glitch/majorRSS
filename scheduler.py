@@ -11,7 +11,7 @@ from db.database import create_db_and_tables
 from migrations.runner import run_migrations
 from repositories.repository import DBRepository
 from services.scraper_service import scrape_single_tracker
-from services.processor_service import process_tracker_fusion
+from services.processor_service import process_tracker_fusion, process_pending_threads
 from services.app_mode import is_pure_rss_mode
 from services import scheduler_state
 from services.log_service import get_logger
@@ -181,14 +181,11 @@ def run_processing_job():
         return
 
     logger.info("Running Intelligence Fusion job...")
-    trackers_with_work = db.get_trackers_with_unprocessed_articles()
-    
-    # Process trackers sequentially to prevent concurrent Gemini API rate limit spikes
-    for tid in trackers_with_work:
-        try:
-            process_tracker_fusion(tid)
-        except Exception as e:
-            logger.error(f"Error processing fusion for tracker {tid}: {e}", exc_info=e)
+    # 目标即查询: one pass over threads, not one pass per target.
+    try:
+        process_pending_threads()
+    except Exception as e:
+        logger.error(f"Error in fusion pass: {e}", exc_info=e)
 
 def run_trend_scan_job():
     if is_pure_rss_mode():

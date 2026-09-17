@@ -268,12 +268,12 @@ def run_maintenance():
         # cross-target visibility so the new knowledge reaches recent rows.
         try:
             from services.portfolio_planner import backfill_official_domains
-            from services.attribution import restamp_recent
+            from services.thread_targets import rebuild_recent
             dom = backfill_official_domains()
             if dom.get("planned"):
-                stamp = restamp_recent()
+                stamp = rebuild_recent()
                 logger.info(f"Cross-target visibility: domains backfilled for "
-                            f"{dom['planned']} tracker(s); restamped {stamp['restamped']} articles.")
+                            f"{dom['planned']} tracker(s); added {stamp['relations_added']} thread-target relations.")
         except Exception as e:
             logger.warning(f"Visibility backfill skipped: {e}")
         # P4.2: which handles/publishers keep showing up in attention-earning

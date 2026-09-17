@@ -351,6 +351,8 @@ def _seed_emergent(handle="leakerguy", n_threads=3):
                              lifecycle="CORROBORATED", member_count=1, distinct_source_count=2,
                              first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
             s.add(th); s.commit(); s.refresh(th)
+            from db.models import ThreadTarget
+            s.add(ThreadTarget(thread_id=th.id, tracker_id=t.id, source="route"))
             s.add(RawArticle(tracker_id=t.id, thread_id=th.id, title=f"as @{handle} reported {i}",
                              url=f"https://outlet{i}.example/{handle}/{i}", content="body"))
         s.commit()
@@ -361,11 +363,12 @@ def _cleanup_emergent():
     # Leave no unembedded articles behind: test_pipeline_flows counts pending
     # articles in the shared test DB.
     from db.database import get_session
-    from db.models import Tracker, RawArticle, StoryThread, EmergentSource
+    from db.models import Tracker, RawArticle, StoryThread, EmergentSource, ThreadTarget
     from sqlmodel import select, delete
     with get_session() as s:
         ids = [t.id for t in s.exec(select(Tracker).where(Tracker.name == "emergent-t")).all()]
         if ids:
+            s.exec(delete(ThreadTarget).where(ThreadTarget.tracker_id.in_(ids)))
             s.exec(delete(EmergentSource).where(EmergentSource.tracker_id.in_(ids)))
             s.exec(delete(RawArticle).where(RawArticle.tracker_id.in_(ids)))
             s.exec(delete(StoryThread).where(StoryThread.tracker_id.in_(ids)))

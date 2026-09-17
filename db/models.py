@@ -1,7 +1,7 @@
 from typing import Optional
 from sqlmodel import Field, SQLModel
 from datetime import datetime, timezone
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, Text, UniqueConstraint
 
 def utc_now_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -63,7 +63,7 @@ class RawArticle(SQLModel, table=True):
     # JSON list of OTHER tracker ids whose planned profile this item matches,
     # computed deterministically at intake (services/attribution.py). Ownership
     # (tracker_id) stays with the fetcher; this only widens the filter.
-    also_tracker_ids: Optional[str] = Field(default=None)
+    also_tracker_ids: Optional[str] = Field(default=None)   # DEPRECATED (目标即查询): unused, see ThreadTarget
     # True when this item arrived through a route the user created by NAMING an
     # account (the people radar) — stamped at intake, like source_tier, per
     # docs/source_tiering.md §2 "capture now, weight-application later".
@@ -316,7 +316,7 @@ class StoryThread(SQLModel, table=True):
     # narration/section/alerts). This JSON list is the LENS — every target the
     # thread concerns, unioned from members' owner + cross-target visibility
     # stamps as they join. The radar's filter chips test membership here.
-    tracker_ids: Optional[str] = Field(default=None)
+    tracker_ids: Optional[str] = Field(default=None)   # DEPRECATED (目标即查询): unused, see ThreadTarget
     # 故事线 kinship (see Storyline). Null = not (yet) part of any storyline.
     storyline_id: Optional[int] = Field(default=None, foreign_key="storyline.id", nullable=True, index=True)
     title: Optional[str] = None
@@ -404,3 +404,15 @@ class EmergentSource(SQLModel, table=True):
     status: str = Field(default="pending", index=True, description="pending | accepted | dismissed | no_route")
     first_seen_at: datetime = Field(default_factory=utc_now_naive)
     updated_at: datetime = Field(default_factory=utc_now_naive)
+
+
+class ThreadTarget(SQLModel, table=True):
+    """目标即查询: which targets a (global, ownerless) thread concerns — see
+    services/thread_targets.py. One row per (thread, target)."""
+    __table_args__ = (UniqueConstraint("thread_id", "tracker_id", name="uq_thread_target"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    thread_id: int = Field(foreign_key="storythread.id", index=True)
+    tracker_id: int = Field(foreign_key="tracker.id", index=True)
+    source: str = Field(default="match", description="match | route | llm")
+    llm_verdict: Optional[bool] = Field(default=None, description="summariser's involvement judgement; False folds, never deletes")
+    created_at: datetime = Field(default_factory=utc_now_naive)

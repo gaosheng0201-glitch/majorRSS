@@ -113,30 +113,3 @@ def relevant_tracker_ids(title: str, content: str, url: str,
         if _matches(p, title, content, d):
             out.append(p.tracker_id)
     return out
-
-
-def restamp_recent(days: int = 30) -> dict:
-    """Recompute cross-target visibility for recent articles against CURRENT
-    profiles. Idempotent and deterministic; run after profile backfills so
-    newly-learned official_domains reach rows stamped before the knowledge
-    existed."""
-    from datetime import datetime, timedelta
-    from db.database import get_session
-    from db.models import RawArticle
-    from sqlmodel import select
-
-    changed = 0
-    with get_session() as session:
-        profiles = load_profiles(session)
-        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-        rows = session.exec(select(RawArticle).where(RawArticle.created_at >= cutoff)).all()
-        for r in rows:
-            ids = relevant_tracker_ids(r.title or "", (r.content or "")[:20000],
-                                       r.url or "", profiles, owner_id=r.tracker_id)
-            new = json.dumps(ids) if ids else None
-            if new != r.also_tracker_ids:
-                r.also_tracker_ids = new
-                session.add(r)
-                changed += 1
-        session.commit()
-    return {"restamped": changed, "scanned": len(rows)}

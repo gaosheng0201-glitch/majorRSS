@@ -176,9 +176,11 @@ def build_published_digest(window_hours: int = 168) -> dict:
                     "citation_indexes": [0],
                 }]
 
-            topic_id = f"topic-{th.tracker_id}" if th.tracker_id else "topic-general"
-            if topic_id not in topics_seen and th.tracker_id:
-                tr = session.get(Tracker, th.tracker_id)
+            from services import thread_targets as tt
+            _pt = tt.primary_target_id(tt.rows_for(session, [th.id])[th.id], th.tracker_id)
+            topic_id = f"topic-{_pt}" if _pt else "topic-general"
+            if topic_id not in topics_seen and _pt:
+                tr = session.get(Tracker, _pt)
                 topics_seen[topic_id] = {
                     "id": topic_id,
                     "title": (tr.name if tr else "综合"),

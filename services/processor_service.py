@@ -188,13 +188,15 @@ def _has_something_to_synthesize(thread, members) -> bool:
     return False
 
 
-def _thread_worth_summary(thread, members, tracker):
+def _thread_worth_summary(thread, members, targets):
     """P1.1 channel-tiered gate: does this event-thread earn an LLM summary, or
     stay a lead (title + sources, no generation model touched)? "The source you
     opted into is itself a signal": curated presets, tracked accounts and
     first-party sources always pass; the keyword firehose must earn it via
     resonance or multi-source corroboration. Returns (worth: bool, reason: str)."""
     from services.provenance import HIGH_WEIGHT, Tier
+    if targets is not None and not isinstance(targets, (list, tuple)):
+        targets = [targets]          # a single target is still a valid argument
     tiers = {getattr(m, "source_tier", None) for m in members}
     # PRIMARY only. CURATED used to auto-pass too, on the reasoning that "you
     # picked this source" — but you pick a SOURCE, not every topic it covers. A
@@ -221,7 +223,7 @@ def _thread_worth_summary(thread, members, tracker):
         return True, "tracked account (people radar)"
     if thread.lifecycle == "CONFIRMED":            # a first-party source is present
         return True, "CONFIRMED lifecycle"
-    if getattr(tracker, "is_high_attention", False):
+    if any(getattr(t, "is_high_attention", False) for t in (targets or [])):
         return True, "high-attention target"
     if thread.is_resonant:
         return True, "resonant"
@@ -254,51 +256,34 @@ def is_llm_budget_exhausted() -> bool:
         return True
     return False
 
-def process_tracker_fusion(tracker_id: int):
-    """P2.1: fuse per EVENT-THREAD, not blind 10-article batches. The semantic
-    layer already merged same-event articles into one StoryThread; fusion now
-    summarizes a thread's members into ONE summary on the thread. This fixes the
-    fragmentation (one event → one card, not N) and removes the cross-report dedup
-    machinery (the thread IS the dedup unit). Articles without a thread_id are NOT
-    fused — they wait for the semantic layer to cluster them (cluster-first, then
-    LLM). IntelReport is deprecated; the summary lives on StoryThread.summary."""
+def process_pending_threads():
+    """目标即查询: fusion walks THREADS, once, not trackers. A thread is a global
+    event; which targets it concerns lives in ThreadTarget and is no part of how
+    — or how many times — it gets summarised. Per-tracker passes were how one
+    event was narrated from whichever target happened to reach it first."""
     if is_pure_rss_mode():
-        return
-
-    tracker = db.get_tracker(tracker_id)
-    if not tracker:
         return
 
     import time
     from db.database import get_session
     from db.models import RawArticle, StoryThread
-    from sqlmodel import select
+    from sqlmodel import select, or_
 
     with get_session() as s:
         # Threads with NEW unprocessed (non-gated) members — fresh content.
         rows = s.exec(
             select(RawArticle.thread_id).where(
-                RawArticle.tracker_id == tracker_id,
-                RawArticle.processed == False,
-                RawArticle.relevance_gated == False,
+                RawArticle.processed == False,          # noqa: E712
+                RawArticle.relevance_gated == False,    # noqa: E712
                 RawArticle.thread_id.is_not(None),
             ).distinct()
         ).all()
-        # Threads never summarized yet (backlog / post-deploy transition): their
-        # members may already be processed, so normal fusion would skip them
-        # forever. Fold them in HERE — this IS the backfill, so the feed
-        # self-populates after deploy with no dead function or manual step. Once
-        # summarized they drop out unless new members arrive. (When the P1.1 gate
-        # lands it applies here too, so noise threads aren't backfilled.)
-        from sqlmodel import or_
+        # Never-summarised threads that changed since the gate last saw them
+        # (the backlog grows unboundedly; churn must not grow with it).
         backlog = s.exec(
             select(StoryThread.id).where(
-                StoryThread.tracker_id == tracker_id,
                 StoryThread.summary.is_(None),
                 StoryThread.member_count > 0,
-                # Re-evaluate a gated thread only when it has CHANGED since the
-                # gate last saw it — not every 5-minute cycle forever (the gated
-                # backlog grows unboundedly; churn must not grow with it).
                 or_(StoryThread.gate_checked_at.is_(None),
                     StoryThread.last_update_at > StoryThread.gate_checked_at),
             )
@@ -307,64 +292,50 @@ def process_tracker_fusion(tracker_id: int):
 
     for thread_id in pending_thread_ids:
         if is_llm_budget_exhausted():
-            db.set_pipeline_status(tracker.name, "AI Fusion",
+            db.set_pipeline_status("radar", "AI Fusion",
                                    "Daily LLM token budget exhausted; deferring processing to tomorrow.")
             break
         try:
-            _fuse_thread(tracker, thread_id)
+            _fuse_thread(thread_id)
         except Exception as e:
             logger.error(f"Fusion failed for thread {thread_id}: {e}", exc_info=e)
         # Protect API RPM between per-thread summaries.
         time.sleep(1.5)
 
 
-def _lens_profile(session, thread, members, pass_tracker) -> str:
-    """The summariser's briefing covers EVERY target in the thread's lens.
+def process_tracker_fusion(tracker_id: int = None):
+    """Kept for callers that still ask for one target's fusion (task queue):
+    there is no per-target fusion any more — the global pass covers it."""
+    process_pending_threads()
 
-    全局线索 made a thread one event across targets, but fusion still spoke
-    from whichever tracker's processing pass reached it — the fetcher, or the
-    tracker whose member arrived last. A DeepMind weather model fetched
-    through the openAI target was therefore judged against openAI's profile
-    and filed as noise, while gemini (in the lens, deepmind.google its own
-    domain) never got a say (author's screenshot 2026-09-09). Relevance is a
-    property of the thread, so it is judged against all of its targets."""
-    import json as _json
+
+def _thread_targets(session, thread_id: int, include_rejected: bool = False) -> list:
+    """The targets a thread concerns (ThreadTarget), as Tracker rows, lowest id
+    first. `include_rejected` also returns those the summariser judged a name
+    collision — shown to it again on re-fusion so a verdict can change."""
     from db.models import Tracker
-    from services.target_profile import TargetProfile
-    ids = set()
-    if getattr(thread, "tracker_id", None) is not None:
-        ids.add(thread.tracker_id)
-    if getattr(pass_tracker, "id", None) is not None:
-        ids.add(pass_tracker.id)
-    try:
-        ids.update(int(i) for i in _json.loads(getattr(thread, "tracker_ids", None) or "[]") if i is not None)
-    except Exception:
-        pass
-    for m in members:
-        if getattr(m, "tracker_id", None) is not None:
-            ids.add(m.tracker_id)
-        try:
-            ids.update(int(i) for i in _json.loads(getattr(m, "also_tracker_ids", None) or "[]") if i is not None)
-        except Exception:
-            pass
-    parts = []
-    for tid in sorted(ids):
+    from services import thread_targets as tt
+    out = []
+    for tid in sorted(tt.related_ids(session, thread_id, include_rejected=include_rejected)):
         t = session.get(Tracker, tid)
-        if t is None:
-            continue
-        parts.append(f"[{t.name}] " + TargetProfile.from_tracker(t).describe())
-    return "\n".join(parts) if parts else _target_profile(pass_tracker)
+        if t is not None:
+            out.append(t)
+    return out
 
 
-def _target_profile(tracker) -> str:
-    """The summariser's briefing on the target — one definition of the target
-    (services/target_profile.py), viewed as text."""
-    from services.target_profile import TargetProfile
-    return TargetProfile.from_tracker(tracker).describe()
+def _mark_seen(session, thread, members):
+    thread.gate_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    session.add(thread)
+    for u in members:
+        if not u.processed:
+            u.processed = True
+            session.add(u)
+    session.commit()
 
 
-def _fuse_thread(tracker, thread_id: int):
-    """Summarize one event-thread's members into StoryThread.summary."""
+def _fuse_thread(thread_id: int):
+    """Summarize one event-thread's members into StoryThread.summary — a neutral
+    account of the event. Who it concerns is a separate output (ThreadTarget)."""
     from db.database import get_session
     from db.models import RawArticle, StoryThread
     from sqlmodel import select
@@ -379,6 +350,17 @@ def _fuse_thread(tracker, thread_id: int):
         ).all()
         if not members:
             return
+
+        # 目标即查询: the thread is ownerless. A thread that concerns NO target
+        # is nobody's news — it costs nothing (new rule; previously the fetcher
+        # "owned" it and paid). `tracker` below is only a label for section /
+        # status lines, never a point of view.
+        targets = _thread_targets(session, thread_id)
+        if not targets:
+            _mark_seen(session, thread, members)
+            logger.info(f"Thread {thread_id} concerns no target; stays a lead (no spend).")
+            return
+        tracker = targets[0]
 
         # P1.1 channel-tiered gate: only worthy threads earn an LLM summary; the
         # rest stay leads (visible in the radar as title + sources, no generation
@@ -441,7 +423,7 @@ def _fuse_thread(tracker, thread_id: int):
                             f"{prev_life}→{thread.lifecycle}); keeping existing summary.")
                 return
 
-        worth, reason = _thread_worth_summary(thread, members, tracker)
+        worth, reason = _thread_worth_summary(thread, members, targets)
         if not worth:
             # Mark the batch as SEEN: members flip processed=True (they were
             # deliberately held, not "pending" — the Dashboard KPI must not count
@@ -505,13 +487,25 @@ def _fuse_thread(tracker, thread_id: int):
 
         db.set_pipeline_status(tracker.name, "AI Fusion",
                                f"Summarizing event thread ({len(members)} sources)...")
-        lens_profile = _lens_profile(session, thread, members, tracker)
-        bundled_text = "=== OSINT FUSION (thread may concern several tracked targets) ===\n\n" + "".join(entries)
+        from services.target_profile import TargetProfile
+        from services import thread_targets as tt
+        candidates = _thread_targets(session, thread_id, include_rejected=True)
+        overrides = [t.prompt_override for t in targets if t.prompt_override]
+        bundled_text = "=== OSINT FUSION ===\n\n" + "".join(entries)
         result = process_article(
             bundled_text, tracker.radar_section,
-            prompt_override=tracker.prompt_override, tracker_name=tracker.name,
-            target_profile=lens_profile,
+            # A user directive belongs to ONE target; with several concerned it
+            # would impose one reader's wish on everyone's summary.
+            prompt_override=overrides[0] if len(targets) == 1 and overrides else None,
+            tracker_name=tracker.name,
+            candidate_targets=[(t.name, TargetProfile.from_tracker(t).describe()) for t in candidates],
         )
+        named = getattr(result, "concerned_targets", None)
+        if named is not None:
+            by_name = {t.name.strip().lower(): t.id for t in candidates}
+            concerned = {by_name[n.strip().lower()] for n in named
+                         if isinstance(n, str) and n.strip().lower() in by_name}
+            tt.record_verdicts(session, thread_id, concerned, {t.id for t in candidates})
 
         # Cited = sources the summary is based on; the rest are same-event
         # corroboration (honest labels, per P0.2), not noise.
@@ -536,7 +530,7 @@ def _fuse_thread(tracker, thread_id: int):
             f"[TITLE: {result.title}]\n\n{result.llm_summary}\n\n---\n"
             f"**:material/menu_book: 摘要引用来源:**\n{cited_links}"
             f"{dup_block}"
-            f"\n\n<br>\n\n**:material/radar: 探测任务来源 (Tracker):** `{tracker.name}`"
+            f"\n\n<br>\n\n**:material/radar: 涉及目标 (Targets):** `{' · '.join(t.name for t in targets)}`"
         )
         composite_urls = ", ".join([urllib.parse.urlparse(u.url).netloc for u in members])
         if len(composite_urls) > 80:

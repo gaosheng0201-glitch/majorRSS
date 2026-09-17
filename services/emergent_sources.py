@@ -75,17 +75,6 @@ def extract_mentions(title: str, content: str, url: str) -> Set[Tuple[str, str]]
     return out
 
 
-def _thread_lens(th) -> Set[int]:
-    ids = set()
-    if th.tracker_id is not None:
-        ids.add(int(th.tracker_id))
-    try:
-        ids.update(int(i) for i in json.loads(th.tracker_ids or "[]") if i is not None)
-    except Exception:
-        pass
-    return ids
-
-
 def _already_watched(session, cutoff) -> Tuple[Set[str], Dict[int, Set[str]]]:
     """Sources already watched, as lower-cased keys 'account:handle' /
     'domain:host'. Global = the preset library PLUS what deliberate routes
@@ -155,7 +144,9 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
         )).all()
         if not threads:
             return {"scanned_threads": 0, "candidates": 0, "new": 0}
-        lens_by_thread = {th.id: _thread_lens(th) for th in threads}
+        from services import thread_targets as tt
+        lens_by_thread = {tid: {r.tracker_id for r in rows if r.llm_verdict is not False}
+                          for tid, rows in tt.rows_for(session, [th.id for th in threads]).items()}
         title_by_thread = {th.id: (th.title or "")[:80] for th in threads}
 
         counts: Dict[Tuple[int, str, str], dict] = {}

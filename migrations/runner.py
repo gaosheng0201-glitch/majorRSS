@@ -34,7 +34,8 @@ def run_migrations():
             "0018_storyline_kinship",
             "0019_confirmed_needs_primary_stamp",
             "0020_stamp_legacy_null_tiers",
-            "0021_firehose_routes_are_aggregated"
+            "0021_firehose_routes_are_aggregated",
+            "0022_targets_are_queries"
         ]
         
         for m in migrations:
@@ -552,6 +553,24 @@ def run_migrations():
                         session.add(a); n += 1
                     session.commit()
                     print(f"stamp_legacy_null_tiers: {n} rows stamped ({p} primary)")
+
+                elif m == "0022_targets_are_queries":
+                    # 目标即查询: build the thread↔target relation for every
+                    # existing thread from its members, by the same symmetric
+                    # rule new articles get (matcher over ALL targets + the
+                    # discovering target for aggregated items). The old lens
+                    # columns are not read: they carry the ownership-by-race
+                    # this change exists to remove. Deterministic, no LLM.
+                    from db.models import StoryThread
+                    from services import thread_targets as tt
+                    from sqlmodel import select as _select
+                    matchers = tt.load_matchers(session)
+                    ids = session.exec(_select(StoryThread.id)).all()
+                    added = 0
+                    for k in range(0, len(ids), 500):
+                        added += tt.rebuild(session, ids[k:k + 500], matchers)
+                        session.commit()
+                    print(f"targets_are_queries: {added} relations over {len(ids)} threads")
 
                 elif m == "0021_firehose_routes_are_aggregated":
                     # arXiv category feeds were CURATED routes whose items the

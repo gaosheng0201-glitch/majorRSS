@@ -193,8 +193,7 @@ def test_same_event_from_two_targets_becomes_one_thread_with_both_in_lens():
         s.add(RawArticle(tracker_id=a.id, title=title, url="https://one.example/fable",
                          content=title, source_tier="aggregated"))
         s.add(RawArticle(tracker_id=b.id, title=title + " - Outlet Two",
-                         url="https://two.example/fable", content=title, source_tier="aggregated",
-                         also_tracker_ids=json.dumps([a.id])))
+                         url="https://two.example/fable", content=title, source_tier="aggregated"))
         s.commit()
 
     out = run_semantic_ingest(limit=10)
@@ -203,8 +202,14 @@ def test_same_event_from_two_targets_becomes_one_thread_with_both_in_lens():
     with get_session() as s:
         threads = s.exec(select(StoryThread)).all()
         assert len(threads) == 1, [t.title for t in threads]
-        lens = set(json.loads(threads[0].tracker_ids))
-        assert lens == {a.id, b.id}
+        from db.models import ThreadTarget
+        rel = {r.tracker_id: r.source for r in s.exec(
+            select(ThreadTarget).where(ThreadTarget.thread_id == threads[0].id)).all()}
+        # claude-g by the matcher (the title names Claude); gemini-g because its
+        # keyword route discovered an aggregated item — nobody "owns" the thread.
+        # (Symmetric matching sees every active target in the shared test DB, so
+        # other leftovers may match "Claude" too — that is the point of it.)
+        assert {a.id, b.id} <= set(rel) and rel[a.id] == "match" and rel[b.id] == "route"
         assert threads[0].member_count == 2
 
 
@@ -404,30 +409,49 @@ def test_arbiter_failure_never_merges_on_embedding_alone():
         assert len(s.exec(select(StoryThread)).all()) == 2, "no merge without a judge"
 
 
-def test_fusion_briefing_covers_every_target_in_the_lens():
-    """A thread fetched by openAI but concerning gemini must brief the
-    summariser on BOTH — relevance is judged per thread, not per fetcher."""
+def test_targets_are_queries_symmetric_and_ownerless():
+    """The WeatherNext case: a deepmind.google post discovered through the
+    openAI target concerns gemini (its own domain) and does NOT concern openAI —
+    discovery through a curated/primary route is not a relation. An aggregated
+    item, by contrast, exists only because it passed the discoverer's keyword
+    route, so that target is related."""
+    import json
+    from types import SimpleNamespace as NS
+    from services.target_profile import TargetProfile
+    from services.thread_targets import targets_for_article
+    gem = NS(id=1, name="gemini", fetch_policy=json.dumps({"entities": ["Gemini", "DeepMind"],
+             "intent_plan": {"official_domains": ["deepmind.google"]}}), target="[]", normalized_intent=None)
+    oai = NS(id=3, name="openAI", fetch_policy=json.dumps({"entities": ["OpenAI", "ChatGPT"]}),
+             target="[]", normalized_intent=None)
+    matchers = [TargetProfile.from_tracker(t).matcher() for t in (gem, oai)]
+    post = NS(title="Introducing WeatherNext 3", content="our most accurate weather model",
+              url="https://deepmind.google/blog/weathernext-3", source_tier="primary", tracker_id=3)
+    assert targets_for_article(post, matchers) == {1: "match"}
+    catch = NS(title="Some roundup of the week", content="thin body",
+               url="https://news.google.com/rss/articles/x", source_tier="aggregated", tracker_id=3)
+    assert targets_for_article(catch, matchers) == {3: "route"}
+
+
+def test_a_thread_that_concerns_no_target_is_not_paid_for():
+    """New rule that ownership used to hide: nobody's news costs nothing."""
     import json
     from db.database import get_session
     from db.models import Tracker, RawArticle, StoryThread
-    from services.processor_service import _lens_profile
+    from services.processor_service import _fuse_thread
     with get_session() as s:
-        g = Tracker(name="gemini-lens", tracker_type="KEYWORD", target="[]", radar_section="AI",
-                    source_intent="KEYWORD_DISCOVERY",
-                    fetch_policy=json.dumps({"entities": ["Gemini", "DeepMind"],
-                                             "intent_plan": {"official_domains": ["deepmind.google"]}}))
-        o = Tracker(name="openai-lens", tracker_type="KEYWORD", target="[]", radar_section="AI",
-                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["OpenAI"]}))
-        s.add(g); s.add(o); s.commit(); s.refresh(g); s.refresh(o)
-        th = StoryThread(tracker_id=o.id, tracker_ids=json.dumps([o.id]), title="WeatherNext 3",
-                         lifecycle="CONFIRMED", member_count=1, distinct_source_count=1)
+        t = Tracker(name="nobody-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Zzyzx"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        th = StoryThread(tracker_id=t.id, title="Unrelated curated post", lifecycle="CONFIRMED",
+                         member_count=1, distinct_source_count=1)
         s.add(th); s.commit(); s.refresh(th)
-        m = RawArticle(tracker_id=o.id, thread_id=th.id, title="Introducing WeatherNext 3",
-                       url="https://deepmind.google/blog/weathernext-3", content="x", source_tier="primary",
-                       also_tracker_ids=json.dumps([g.id]))
-        s.add(m); s.commit(); s.refresh(m)
-        text = _lens_profile(s, th, [m], o)
-        assert "[gemini-lens]" in text and "[openai-lens]" in text
-        assert "deepmind.google" in text
-        # cleanup
-        s.delete(m); s.delete(th); s.delete(g); s.delete(o); s.commit()
+        a = RawArticle(tracker_id=t.id, thread_id=th.id, title="Unrelated curated post",
+                       url="https://vendor.example/post", content="x", source_tier="primary")
+        s.add(a); s.commit(); s.refresh(a)
+        tid, aid, trid = th.id, a.id, t.id
+    _fuse_thread(tid)          # no ThreadTarget rows → must not reach any model
+    with get_session() as s:
+        th = s.get(StoryThread, tid)
+        assert th.summary is None and th.gate_checked_at is not None
+        assert s.get(RawArticle, aid).processed is True
+        s.delete(s.get(RawArticle, aid)); s.delete(th); s.delete(s.get(Tracker, trid)); s.commit()

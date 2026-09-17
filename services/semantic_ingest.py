@@ -131,9 +131,6 @@ def _refresh_storyline(session, sid: int):
         return
     rows = session.exec(select(RawArticle.url, RawArticle.title)
                         .where(RawArticle.thread_id.in_([t.id for t in threads]))).all()
-    lens = set()
-    for t in threads:
-        lens |= _thread_lens(t)
     biggest = max(threads, key=lambda t: (t.member_count or 0, t.id))
     sl.title = (biggest.title or "")[:120]
     sl.thread_count = len(threads)
@@ -141,7 +138,6 @@ def _refresh_storyline(session, sid: int):
     sl.distinct_source_count = len({real_publisher(u, t) for (u, t) in rows})
     sl.first_seen_at = min(t.first_seen_at for t in threads if t.first_seen_at)
     sl.last_update_at = max(t.last_update_at for t in threads if t.last_update_at)
-    sl.tracker_ids = json.dumps(sorted(lens))
     sl.has_refined = any(bool(t.summary) for t in threads)
     session.add(sl)
     session.commit()
@@ -181,25 +177,6 @@ def _profile_terms(tracker) -> list:
 
 
 _POOL_WINDOW_DAYS = 30   # a story older than this no longer accepts members
-
-
-def _also_ids(article) -> list:
-    try:
-        ids = json.loads(getattr(article, "also_tracker_ids", None) or "[]")
-        return [int(i) for i in ids if i is not None]
-    except Exception:
-        return []
-
-
-def _thread_lens(th) -> set:
-    ids = set()
-    if th.tracker_id is not None:
-        ids.add(th.tracker_id)
-    try:
-        ids.update(int(i) for i in json.loads(th.tracker_ids or "[]") if i is not None)
-    except Exception:
-        pass
-    return ids
 
 
 def _load_thread_pool(session, StoryThread) -> dict:
@@ -345,6 +322,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     arb_skipped_budget = 0     # gray-zone merges that ran out of budget
     arb_story_links = 0        # new threads linked as kin of a same-story thread
     thread_pool = None         # global recent threads: id → (thread, centroid)
+    from services import thread_targets as tt
+    matchers = tt.load_matchers()
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
         for article, vec in embedded:
@@ -354,12 +333,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
             # scored 0.41+ against 0.35 and 0/1590 were ever gated. Stored
             # `relevance` values are therefore centered-space going forward
             # (historical rows are raw-space; scales differ).
-            # 全局线索: an article concerns its fetcher AND every target its
-            # intake stamp matched (also_tracker_ids). The junk floor used to
-            # judge it by the fetcher's profile alone, so a Claude post that
-            # gemini's route happened to fetch was scored against gemini's
-            # profile — the best-matching target's profile is the honest one.
-            lens_ids = [article.tracker_id] + _also_ids(article)
+            # 目标即查询: which targets this article concerns is a symmetric
+            # question (services/thread_targets.py); the junk floor scores it
+            # against the best of THOSE, never against "whoever fetched it".
+            article_targets = tt.targets_for_article(article, matchers)
+            lens_ids = list(article_targets) or [article.tracker_id]
             relevance = None
             for lid in lens_ids:
                 p = _profile_vecs(lid)
@@ -474,7 +452,6 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 # outright (an official announcement); otherwise it starts LEAD.
                 th = StoryThread(
                     tracker_id=article.tracker_id,
-                    tracker_ids=json.dumps(sorted(set(lens_ids))),
                     title=(article.title or "")[:120],
                     centroid=json.dumps(vec),
                     member_count=1,
@@ -493,6 +470,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 article.thread_id = th.id
                 thread_pool[th.id] = (th, list(vec))
                 created += 1
+                tt.link(session, th.id, article_targets)
                 _sib = thread_by_id.get(story_sibling) if story_sibling is not None else None
                 if _sib is not None and (
                         _sib.storyline_id is not None
@@ -510,8 +488,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 th.member_count += 1
                 th.last_update_at = _now()
                 article.thread_id = th.id
-                # The lens widens as members from other targets join.
-                th.tracker_ids = json.dumps(sorted(_thread_lens(th) | set(lens_ids)))
+                tt.link(session, th.id, article_targets)
                 refresh_sid = th.storyline_id
                 # Distinct-source count drives corroboration. Count unique real
                 # PUBLISHERS, not URL domains: Google News links all share

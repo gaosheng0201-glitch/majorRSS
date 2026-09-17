@@ -75,8 +75,11 @@ def evaluate_alerts(window_hours: int = 48, synthesize: bool = True) -> dict:
         ).all()
 
         for th in threads:
-            tracker = session.get(Tracker, th.tracker_id) if th.tracker_id else None
-            high = bool(tracker and tracker.is_high_attention)
+            # 目标即查询: high attention belongs to ANY target the thread concerns.
+            from services import thread_targets as tt
+            _rows = tt.rows_for(session, [th.id])[th.id]
+            _related = [session.get(Tracker, r.tracker_id) for r in _rows if r.llm_verdict is not False]
+            high = any(t is not None and t.is_high_attention for t in _related)
 
             triggers = []
             if th.is_resonant:
@@ -95,7 +98,7 @@ def evaluate_alerts(window_hours: int = 48, synthesize: bool = True) -> dict:
                 title, summary = _synthesize(th, articles) if synthesize else (th.title, None)
                 alert = RadarAlert(
                     thread_id=th.id,
-                    tracker_id=th.tracker_id,
+                    tracker_id=tt.primary_target_id(_rows, th.tracker_id),
                     reason=reason,
                     title=title,
                     summary=summary,

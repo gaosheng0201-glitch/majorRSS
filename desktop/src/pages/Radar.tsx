@@ -49,6 +49,7 @@ interface StoryThread {
   sources: ThreadSource[];
   summarized_at: string | null;
   relevant_tracker_ids?: number[];
+  irrelevant_tracker_ids?: number[];
   summary: string | null;
   importance_score: number;
   validity_category: string | null;
@@ -420,7 +421,10 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
   // 折叠而不是隐藏——模型会误判（黎曼 zeta 论文其实是 Claude 证的定理），
   // 用户要能看见并核对。
   const [showModelNoise, setShowModelNoise] = useState(false);
-  const isModelNoise = (t: StoryThread) => /NOISE|SPAM/i.test(t.validity_category || '');
+  // 目标即查询：摘要是中立的；"与某目标无关"是关系表上的独立判定。按目标筛选时，
+  // 被模型判为"与该目标只是同名撞车"的线索也进折叠区（可核对，不隐藏）。
+  const isModelNoise = (t: StoryThread) => /NOISE|SPAM/i.test(t.validity_category || '')
+    || (trackerFilter !== null && (t.irrelevant_tracker_ids || []).includes(trackerFilter));
   const loadEmergent = () =>
     client.get<EmergentSource[]>('/emergent/?status=pending&limit=10').then(r => setEmergent(r.data || [])).catch(() => {});
   const actOnEmergent = async (id: number, action: 'accept' | 'dismiss') => {
@@ -493,8 +497,8 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
   // 集合过滤（作者裁决 2026-08-26）：一条线索属于它的 owner + 入库时匹配到的
   // 全部目标——同一篇,两边都显示。老数据无集合字段时退回 owner 判断。
   const byTracker = (t: StoryThread) => trackerFilter === null
-    || (t.relevant_tracker_ids ? t.relevant_tracker_ids.includes(trackerFilter)
-                               : t.tracker_id === trackerFilter);
+    || (t.relevant_tracker_ids || []).includes(trackerFilter)
+    || (t.irrelevant_tracker_ids || []).includes(trackerFilter);
   const shownLeads = leads.filter(byTracker);
   const focusCount = refined.filter(byTracker).filter(isFocus).length;
   const shownRefined = refined.filter(byTracker).filter(t => !focusOnly || isFocus(t));
