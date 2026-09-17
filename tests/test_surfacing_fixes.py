@@ -232,7 +232,7 @@ class _StoryArbiter:
     name = "stub-arbiter"
     supports_generation = True
 
-    def generate(self, prompt, system=None, schema=None, temperature=0.0):
+    def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
         return "story", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 
 
@@ -376,7 +376,7 @@ class _BrokenArbiter:
     name = "broken-arbiter"
     supports_generation = True
 
-    def generate(self, prompt, system=None, schema=None, temperature=0.0):
+    def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
         raise RuntimeError("503 upstream")
 
 

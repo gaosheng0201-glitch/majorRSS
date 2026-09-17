@@ -68,7 +68,7 @@ def _llm_relation(provider, title_a, title_b):
     try:
         text, usage = provider.generate(
             f"Headline A: {title_a}\nHeadline B: {title_b}",
-            system=_STORY_ARBITER_SYS, temperature=0.0)
+            system=_STORY_ARBITER_SYS, temperature=0.0, thinking_budget=0)
         try:
             from llm.processor import _record_usage
             _record_usage(getattr(provider, "name", "unknown"), "EventArbiter", usage)

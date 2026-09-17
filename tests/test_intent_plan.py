@@ -20,7 +20,7 @@ class _StubPlanner:
     def __init__(self, payload: dict):
         self._payload = payload
 
-    def generate(self, prompt, system=None, schema=None, temperature=0.0):
+    def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
         return json.dumps(self._payload), {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 
 

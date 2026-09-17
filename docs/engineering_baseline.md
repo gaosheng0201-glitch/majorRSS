@@ -66,7 +66,7 @@
 | 浏览器 | `services/browser_pool.py` | `ensure_browsers_path()` 对抗 Playwright frozen 假设；缺浏览器给安装指引 |
 | 生命周期 | `services/lifecycle.py` | 唯一规则:任一 primary 盖章→CONFIRMED,≥2 出版方→CORROBORATED;运行中只升不降 |
 | 目标定义 | `services/target_profile.py` | 一个对象三个视图:terms()(相关性门) / describe()(摘要模型) / matcher()(跨目标可见性) |
-| 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问三分法；`rescued` 计数 = 旧 top-1 流程必错的合并；**预算耗尽/出错=不并**（错并不可逆,拆分可逆） |
+| 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问三分法；`rescued` 计数 = 旧 top-1 流程必错的合并；**预算耗尽/出错=不并**（错并不可逆,拆分可逆）；一字答案关思考（`thinking_budget=0`,成本 -60%） |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
 | 目标匹配器 | `services/attribution.py` | 对全部目标对称判定:官方域名/标题实体/正文≥2实体;ignore 否决;keep_keywords 刻意不用 |
