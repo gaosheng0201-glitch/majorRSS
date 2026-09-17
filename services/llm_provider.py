@@ -103,7 +103,7 @@ class LLMProvider:
     name = "base"
     supports_generation = False
 
-    def generate(self, prompt: str, *, system: Optional[str] = None, schema=None, thinking_budget=None,
+    def generate(self, prompt: str, *, system: Optional[str] = None, schema=None, thinking_budget=None, thinking_level=None,
                  temperature: float = 0.2, model: Optional[str] = None) -> Tuple[str, dict]:
         raise NotImplementedError
 
@@ -145,12 +145,12 @@ class GeminiProvider(LLMProvider):
     _no_thinking_control: set = set()
 
     def generate(self, prompt, *, system=None, schema=None, temperature=0.2, model=None,
-                 thinking_budget=None):
-        """`thinking_budget=0` turns hidden reasoning off for calls whose answer
-        is one word. Measured on the event arbiter (2026-09-17): 52% of its
-        tokens were thoughts behind a single-word verdict — 268 → 128 tokens
-        per call with identical answers — and the arbiter was 92% of all
-        generation spend. Unsupported models fall back silently."""
+                 thinking_budget=None, thinking_level=None):
+        """Thinking control for calls whose answer is one word. Measured on the
+        event arbiter (2026-09-17, 9 pairs × 2): default 16/18 correct at 348
+        tokens/call; `thinking_level="low"` 17/18 at 177; budget 0 17/18 at
+        189. The author preferred lowering to switching off, and low is both
+        cheaper and steadier. Unsupported models fall back silently."""
         from google.genai import types
         cfg = {"temperature": temperature}
         if system:
@@ -161,12 +161,17 @@ class GeminiProvider(LLMProvider):
         use_model = model or self.model
         client = self._client()  # hold a ref through the blocking send (see _client)
         resp = None
-        if thinking_budget is not None and use_model not in self._no_thinking_control:
+        tc = {}
+        if thinking_level is not None:
+            tc["thinking_level"] = thinking_level
+        elif thinking_budget is not None:
+            tc["thinking_budget"] = thinking_budget
+        if tc and use_model not in self._no_thinking_control:
             try:
                 resp = client.models.generate_content(
                     model=use_model, contents=prompt,
                     config=types.GenerateContentConfig(
-                        **cfg, thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)))
+                        **cfg, thinking_config=types.ThinkingConfig(**tc)))
             except Exception as e:
                 if "INVALID_ARGUMENT" not in str(e) and "thinking" not in str(e).lower():
                     raise
@@ -240,7 +245,7 @@ class OpenAICompatibleProvider(LLMProvider):
         return h
 
     def generate(self, prompt, *, system=None, schema=None, temperature=0.2, model=None,
-                 thinking_budget=None):   # accepted for interface parity; not applicable here
+                 thinking_budget=None, thinking_level=None):   # interface parity; not applicable here
         import requests
         messages = []
         if system:
