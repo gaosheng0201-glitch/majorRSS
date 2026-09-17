@@ -40,14 +40,14 @@
         护栏：source_health(端点退避/隔离/新鲜度断言) + host_politeness(主机限速/冷却/轮转)
         + account_guard(每账号预算/AIMD/熔断) + humanized(静默窗/抖动) + browser_pool(线程本地复用)
         错误归责：NOT_ENDPOINT_FAULT（429→主机层、能力缺失→自身诊断）不进端点健康
-语义    semantic_ingest   embed(去均值) → 垃圾地板(按透镜内最匹配目标画像) → 全局近 30 天候选池
+语义    semantic_ingest   embed(去均值) → 垃圾地板(按该文章涉及的目标中最匹配的画像) → 全局近 30 天候选池
         top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局无主）→ ThreadTarget 关系（目标即查询）
         story → 认亲 Storyline（只链接不合并;出版方按整条去重——聚合不制造佐证;只给可见性）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
 融合    processor_service 按线索走一遍（P1.1 门控挣得制;无目标关心不花钱）；摘要中立,涉及目标为独立结构化输出；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
-        线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按透镜集合;行标签=透镜内全部目标。纯 RSS 模式 = 原始订阅流本身
+        线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按 ThreadTarget 关系;行标签=线索涉及的全部目标;被模型判为同名撞车的在该目标下折叠。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0022 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
