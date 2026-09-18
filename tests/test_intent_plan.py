@@ -449,3 +449,9 @@ def test_specific_aliases_get_their_own_route_even_in_a_covered_edition():
     assert alias[0].count("4") >= 1, "versioned aliases rank first"
     assert len(alias) <= _MAX_ALIAS_ROUTES
     assert any("ceid=JP:ja" in r.url_or_command for r in routes), "other editions still get their OR route"
+
+
+def test_older_versions_than_a_watched_alias_are_not_suggested():
+    from services.emergent_sources import _highest_alias_version, _version_of
+    assert _highest_alias_version(["Gemini", "Gemini 4", "Gemini 4 Pro", "Gemini Flash"], "Gemini") == 4.0
+    assert _version_of("Gemini 3.8 Flash") == 3.8 and _version_of("Gemini Ultra") is None

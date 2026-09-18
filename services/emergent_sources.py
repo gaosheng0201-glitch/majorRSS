@@ -99,6 +99,31 @@ def extract_version_terms(title: str, latin_aliases) -> Set[str]:
     return out
 
 
+_VER_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)")
+
+
+def _version_of(term: str):
+    m = _VER_NUM_RE.search(term or "")
+    try:
+        return float(m.group(1)) if m else None
+    except ValueError:
+        return None
+
+
+def _highest_alias_version(aliases, anchor: str):
+    """The newest version the target already names for this product anchor —
+    "what is coming" is at or above it; older versions are history, not a
+    watch term (first live scan offered Gemini 3.5/3.6/3.7 to a target that
+    already watches Gemini 4)."""
+    best = None
+    for a in aliases:
+        if a.lower().startswith(anchor.lower()):
+            v = _version_of(a)
+            if v is not None and (best is None or v > best):
+                best = v
+    return best
+
+
 def _already_watched(session, cutoff) -> Tuple[Set[str], Dict[int, Set[str]]]:
     """Sources already watched, as lower-cased keys 'account:handle' /
     'domain:host'. Global = the preset library PLUS what deliberate routes
@@ -192,6 +217,11 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
             mentions = extract_mentions(title, content, url)
             for tracker_id in lens_by_thread[tid]:
                 for term in extract_version_terms(title, aliases_by_tracker.get(tracker_id, [])):
+                    anchor = term.split()[0]
+                    floor = _highest_alias_version(aliases_by_tracker.get(tracker_id, []), anchor)
+                    v = _version_of(term)
+                    if floor is not None and v is not None and v < floor:
+                        continue          # an older version than one already watched
                     key = (tracker_id, "term", term.lower())
                     counts.setdefault(key, {"value": term, "threads": set()})["threads"].add(tid)
                 for kind, value in mentions:
