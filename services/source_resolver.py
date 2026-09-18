@@ -119,6 +119,11 @@ def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
     ]
 
 
+# Specific-alias routes per target in the default edition (each is a full
+# Google News query; the arbiter pays per item, so this is bounded).
+_MAX_ALIAS_ROUTES = 6
+
+
 class SourceResolver:
     def __init__(self, fetch_policy: Optional[str] = None, auth_profile_id: Optional[int] = None):
         self.auth_profile_id = auth_profile_id
@@ -553,26 +558,47 @@ class SourceResolver:
                    if isinstance(a, dict) and (a.get("text") or "").strip()]
         if (planned or aliases) and strategy in ["default", "news_only", "tech_sources", "trusted_news_only"]:
             covered = {gnews_locale_params(k) for k in keywords}
+            base_terms = {k.strip().lower() for k in keywords}
             by_edition = {}
+            # Specific aliases in an edition the user's own keywords ALREADY
+            # query. They used to be skipped as "covered" — but a generic query
+            # is exactly what drowns them: measured 2026-09-18, "gemini" returned
+            # 100 items of which 2 mentioned Gemini 4, while "Gemini 4 Pro" alone
+            # returned the leak coverage the radar had missed entirely. Each such
+            # alias gets its OWN route (OR-grouping dilutes: 10 → 5 items), the
+            # most specific (versioned) first, bounded.
+            specific = {}
+            def _consider(loc, text):
+                text = text.strip()
+                if not text or text.lower() in base_terms:
+                    return
+                if loc in covered:
+                    if loc == "":
+                        specific.setdefault(text.lower(), text)
+                    return
+                bucket = by_edition.setdefault(loc, [])
+                if text not in bucket:
+                    bucket.append(text)
             if planned:
                 # P4.0b: the plan SAYS each alias's editions — no guessing. One
                 # (alias, region) pair per edition bucket; aliases sharing an
                 # edition are OR-ed into one route as before.
                 for a in planned:
-                    regions = a.get("regions") or [""]
-                    for rg in regions[:3]:
-                        loc = gnews_edition_params(a.get("lang", ""), rg)
-                        if loc in covered:
-                            continue
-                        bucket = by_edition.setdefault(loc, [])
-                        if a["text"].strip() not in bucket:
-                            bucket.append(a["text"].strip())
+                    for rg in (a.get("regions") or [""])[:3]:
+                        _consider(gnews_edition_params(a.get("lang", ""), rg), a["text"])
             else:
                 for a in aliases:
-                    loc = gnews_locale_params(a)
-                    if loc in covered:
-                        continue          # that edition is already queried
-                    by_edition.setdefault(loc, []).append(a.strip())
+                    _consider(gnews_locale_params(a), a)
+            ranked = sorted(specific.values(), key=lambda t: (not any(ch.isdigit() for ch in t), -len(t)))
+            for i, term in enumerate(ranked[:_MAX_ALIAS_ROUTES]):
+                q = f'"{term}"' + (f" when:{max_days}d" if max_days > 0 else "")
+                routes.append(SourceRoute(
+                    route_id=f"gnews_alias_{i}",
+                    adapter="RssAdapter",
+                    url_or_command=f"https://news.google.com/rss/search?q={urllib.parse.quote(q)}",
+                    purpose="discovery", requires_auth=False, platform="gnews",
+                    priority=2, tier=Tier.AGGREGATED,
+                ))
             by_edition = dict(list(by_edition.items())[:8])   # bound route count
             for i, (loc, terms) in enumerate(by_edition.items()):
                 q = " OR ".join(f'"{t}"' for t in terms[:6])

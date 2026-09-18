@@ -419,3 +419,33 @@ def test_emergent_accept_appends_verified_suggestion():
         assert any(x["value"] == "realhandle" and x["selected"] and x["verified"] for x in sugg)
         assert s.get(EmergentSource, eid).status == "accepted"
     _cleanup_emergent()
+
+
+def test_version_terms_are_alias_anchored_title_phrases():
+    from services.emergent_sources import extract_version_terms
+    t = extract_version_terms("Gemini 4 Pro vs Gemini 3.8 Flash (Pelican Riding a Bicycle)", ["Gemini", "Google Gemini"])
+    assert {"Gemini 4", "Gemini 4 Pro", "Gemini 3.8", "Gemini 3.8 Flash"} <= t
+    assert extract_version_terms("Gemini exchange lists 4 new tokens", ["Gemini"]) == set()
+    assert extract_version_terms("GPT-6 Astra ranks 2nd on Agent Arena", ["GPT"]) == {"GPT 6", "GPT 6 Astra"} or \
+           "GPT 6" in extract_version_terms("GPT-6 Astra ranks 2nd on Agent Arena", ["GPT"])
+
+
+def test_specific_aliases_get_their_own_route_even_in_a_covered_edition():
+    """'gemini' covers the en-US edition, but 'Gemini 4 Pro' must still be
+    queried on its own — versioned aliases first, base keyword never duplicated."""
+    import urllib.parse
+    from services.source_resolver import SourceResolver, _MAX_ALIAS_ROUTES
+    policy = json.dumps({"keyword_strategy": "default", "max_days": 7, "intent_plan": {"entities": [
+        {"text": "Gemini", "lang": "en", "regions": ["US"]},
+        {"text": "Gemini Advanced", "lang": "en", "regions": ["US"]},
+        {"text": "Gemini 4 Pro", "lang": "en", "regions": ["US"]},
+        {"text": "Gemini 4", "lang": "en", "regions": ["US"]},
+        {"text": "ジェミニ", "lang": "ja", "regions": ["JP"]},
+    ]}})
+    routes = SourceResolver(fetch_policy=policy)._resolve_keyword_routes(json.dumps(["gemini"]))
+    alias = [urllib.parse.unquote(r.url_or_command) for r in routes if r.route_id.startswith("gnews_alias")]
+    assert any('"Gemini 4 Pro"' in u for u in alias) and any('"Gemini 4"' in u for u in alias)
+    assert not any('"Gemini"' in u for u in alias), "the base keyword is not re-queried"
+    assert alias[0].count("4") >= 1, "versioned aliases rank first"
+    assert len(alias) <= _MAX_ALIAS_ROUTES
+    assert any("ceid=JP:ja" in r.url_or_command for r in routes), "other editions still get their OR route"

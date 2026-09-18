@@ -61,7 +61,7 @@ interface StoryThread {
 interface TrackerLite { id: number; name: string; }
 interface EmergentSource {
   id: number; tracker_id: number; tracker_name: string;
-  kind: 'account' | 'domain'; value: string; thread_count: number;
+  kind: 'account' | 'domain' | 'term'; value: string; thread_count: number;
 }
 
 interface CatchUp {
@@ -530,16 +530,19 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
           {(() => {
             const e = emergent.find(x => trackerFilter === null || x.tracker_id === trackerFilter);
             if (!e) return null;
-            const label = e.kind === 'account' ? '@' + e.value : e.value;
+            const label = e.kind === 'account' ? '@' + e.value : e.kind === 'term' ? `“${e.value}”` : e.value;
+            const isTerm = e.kind === 'term';
             return (
               <Text size="sm" c="dimmed">
-                {lang === 'zh' ? '这话题的爆料反复来自 ' : 'This topic keeps citing '}
+                {isTerm
+                  ? (lang === 'zh' ? '这话题的线报里反复出现 ' : 'This topic\'s leads keep mentioning ')
+                  : (lang === 'zh' ? '这话题的爆料反复来自 ' : 'This topic keeps citing ')}
                 <Text span fw={600} c="grape">{label}</Text>
                 {lang === 'zh'
-                  ? `（${e.thread_count} 条获注意力线索 · ${e.tracker_name}），要不要直接追踪？`
-                  : ` (${e.thread_count} attention-earning threads · ${e.tracker_name}) — track it directly?`}
+                  ? `（${e.thread_count} 条线索 · ${e.tracker_name}），${isTerm ? '要不要加进追踪词？' : '要不要直接追踪？'}`
+                  : ` (${e.thread_count} threads · ${e.tracker_name}) — ${isTerm ? 'add it as a watch term?' : 'track it directly?'}`}
                 {' '}
-                <Anchor size="sm" fw={600} onClick={() => actOnEmergent(e.id, 'accept')}>{lang === 'zh' ? '追踪' : 'Track'}</Anchor>
+                <Anchor size="sm" fw={600} onClick={() => actOnEmergent(e.id, 'accept')}>{isTerm ? (lang === 'zh' ? '加入' : 'Add') : (lang === 'zh' ? '追踪' : 'Track')}</Anchor>
                 {' · '}
                 <Anchor size="sm" c="dimmed" onClick={() => actOnEmergent(e.id, 'dismiss')}>{lang === 'zh' ? '忽略' : 'Dismiss'}</Anchor>
               </Text>

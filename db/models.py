@@ -396,7 +396,7 @@ class EmergentSource(SQLModel, table=True):
     sources) or dismisses it (sticky across rescans)."""
     id: Optional[int] = Field(default=None, primary_key=True)
     tracker_id: int = Field(foreign_key="tracker.id", index=True)
-    kind: str = Field(description="account | domain")
+    kind: str = Field(description="account | domain | term")
     value: str
     value_key: str = Field(index=True, description="lower-cased value for dedup")
     thread_count: int = Field(default=0)

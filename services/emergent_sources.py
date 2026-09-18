@@ -75,6 +75,30 @@ def extract_mentions(title: str, content: str, url: str) -> Set[Tuple[str, str]]
     return out
 
 
+_VERSION_TERM_RE = r"(?<![0-9A-Za-z])({alias})\s?-?\s?(\d+(?:\.\d+)?)(?:\s?(Pro|Flash|Ultra|Lite|Max|Mini|Nano|Turbo|Plus|Sol|Astra|Cyber))?(?![0-9A-Za-z])"
+
+
+def extract_version_terms(title: str, latin_aliases) -> Set[str]:
+    """涌现关键词: alias-anchored version phrases in a TITLE — "Gemini 4 Pro",
+    "GPT-6", "Fable 5.1" — the names leaks and pre-release tests are reported
+    under. Anchored on the target's own aliases for precision; titles only.
+    Why deterministic and not the planner: a model's world knowledge lags the
+    product line (asked for Gemini's successor in 2026-09 it offered "Gemini
+    2.5" and "Gemini 3"); the target's own leads already say "Gemini 4 Pro"."""
+    out: Set[str] = set()
+    t = title or ""
+    for alias in latin_aliases:
+        a = alias.strip()
+        if len(a) < 3 or re.search(r"\d", a):
+            continue          # anchor on the bare product name, not on a versioned alias
+        for m in re.finditer(_VERSION_TERM_RE.format(alias=re.escape(a)), t, re.I):
+            base = f"{m.group(1)} {m.group(2)}"
+            out.add(base)
+            if m.group(3):
+                out.add(f"{base} {m.group(3)}")
+    return out
+
+
 def _already_watched(session, cutoff) -> Tuple[Set[str], Dict[int, Set[str]]]:
     """Sources already watched, as lower-cased keys 'account:handle' /
     'domain:host'. Global = the preset library PLUS what deliberate routes
@@ -117,6 +141,11 @@ def _already_watched(session, cutoff) -> Tuple[Set[str], Dict[int, Set[str]]]:
         except Exception:
             continue
         ip = policy.get("intent_plan") or {}
+        for e in policy.get("entities") or []:
+            per[t.id].add("term:" + str(e).strip().lower())
+        for a in ip.get("entities") or []:
+            if isinstance(a, dict) and a.get("text"):
+                per[t.id].add("term:" + str(a["text"]).strip().lower())
         for d in ip.get("official_domains") or []:
             per[t.id].add("domain:" + d.lower())
         for s in ip.get("suggested_sources") or []:
@@ -147,6 +176,13 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
         from services import thread_targets as tt
         lens_by_thread = {tid: {r.tracker_id for r in rows if r.llm_verdict is not False}
                           for tid, rows in tt.rows_for(session, [th.id for th in threads]).items()}
+        from db.models import Tracker
+        from services.target_profile import TargetProfile
+        aliases_by_tracker: Dict[int, List[str]] = {}
+        for t in session.exec(select(Tracker)).all():
+            prof = TargetProfile.from_tracker(t)
+            aliases_by_tracker[t.id] = [e for e in ([prof.name] + prof.entities)
+                                        if e and not re.search(r"[一-鿿぀-ヿ가-힯]", e)]
         title_by_thread = {th.id: (th.title or "")[:80] for th in threads}
 
         counts: Dict[Tuple[int, str, str], dict] = {}
@@ -154,9 +190,10 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
                 RawArticle.thread_id, RawArticle.title, RawArticle.content, RawArticle.url)
                 .where(RawArticle.thread_id.in_(list(lens_by_thread.keys())))).all():
             mentions = extract_mentions(title, content, url)
-            if not mentions:
-                continue
             for tracker_id in lens_by_thread[tid]:
+                for term in extract_version_terms(title, aliases_by_tracker.get(tracker_id, [])):
+                    key = (tracker_id, "term", term.lower())
+                    counts.setdefault(key, {"value": term, "threads": set()})["threads"].add(tid)
                 for kind, value in mentions:
                     key = (tracker_id, kind, value.lower())
                     slot = counts.setdefault(key, {"value": value, "threads": set()})
@@ -223,6 +260,23 @@ def accept_emergent_source(emergent_id: int) -> dict:
         tracker = session.get(Tracker, row.tracker_id)
         if not tracker:
             return {"ok": False, "reason": "target gone"}
+        if row.kind == "term":
+            # A recurring version phrase becomes an alias: the matcher and the
+            # per-edition keyword routes derive from aliases, so the next leak
+            # under that name is both fetched and related.
+            try:
+                policy = json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
+            except Exception:
+                policy = {}
+            ip = policy.get("intent_plan") or {}
+            if row.value.lower() not in {str(e).lower() for e in policy.get("entities") or []}:
+                policy.setdefault("entities", []).append(row.value)
+                ip.setdefault("entities", []).append({"text": row.value, "lang": "en", "regions": ["US"], "role": "product"})
+            policy["intent_plan"] = ip
+            tracker.fetch_policy = json.dumps(policy)
+            row.status = "accepted"; row.updated_at = datetime.utcnow()
+            session.add(tracker); session.add(row); session.commit()
+            return {"ok": True, "added": {"kind": "term", "value": row.value}}
         if row.kind == "account":
             try:
                 ok = _twitter_handle_alive(row.value)

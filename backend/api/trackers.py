@@ -186,10 +186,19 @@ def replan_tracker(tracker_id: int, session: Session = Depends(get_api_session))
     ip["suggested_sources"] = new_plan.get("suggested_sources") or []
     if not ip.get("official_domains") and new_plan.get("official_domains"):
         ip["official_domains"] = new_plan["official_domains"]
-    if not ip.get("entities") and new_plan.get("entities"):
-        ip["entities"] = new_plan["entities"]
-    if not policy.get("entities") and new_plan.get("entities"):
-        policy["entities"] = [a.get("text") for a in new_plan["entities"] if a.get("text")]
+    # Aliases are ADDITIVE on replan: a product line grows successor names and
+    # codenames over time ("Gemini 4", "argon"), and those are exactly the
+    # terms leaks are reported under. Measured 2026-09-18: the generic "gemini"
+    # query returned 100 items of which 2 mentioned Gemini 4; "Gemini 4 Pro"
+    # returned the leak coverage the radar had missed entirely.
+    have_texts = {str(a.get("text") if isinstance(a, dict) else a).strip().lower()
+                  for a in (ip.get("entities") or [])} | {str(e).strip().lower() for e in (policy.get("entities") or [])}
+    for a in new_plan.get("entities") or []:
+        text = (a.get("text") or "").strip() if isinstance(a, dict) else str(a).strip()
+        if text and text.lower() not in have_texts:
+            ip.setdefault("entities", []).append(a)
+            policy.setdefault("entities", []).append(text)
+            have_texts.add(text.lower())
     policy["intent_plan"] = ip
     tracker.fetch_policy = json.dumps(policy)
     session.add(tracker)
