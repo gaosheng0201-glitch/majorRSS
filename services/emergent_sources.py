@@ -260,8 +260,46 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
                 row.updated_at = now
             session.add(row)
         session.commit()
-    logger.info(f"Emergent sources: scanned {len(threads)} threads, {candidates} candidates, {new} new")
-    return {"scanned_threads": len(threads), "candidates": candidates, "new": new}
+        # 自然新版本 (author ruling 2026-09-18): a version phrase anchored on the
+        # target's own name, at or above every version it already watches, and
+        # recurring across several threads needs nobody's confirmation. It is
+        # applied on the spot; the user is told, not asked. Accounts and
+        # publishers still ask — following a person is a judgement call.
+        auto = 0
+        for row in session.exec(select(EmergentSource).where(
+                EmergentSource.kind == "term", EmergentSource.status == "pending")).all():
+            tr = session.get(Tracker, row.tracker_id)
+            if tr is None:
+                continue
+            if _apply_term_alias(session, tr, row):
+                auto += 1
+                logger.info(f"Emergent term auto-added as alias: '{row.value}' → target '{tr.name}' "
+                            f"({row.thread_count} threads)")
+        session.commit()
+    logger.info(f"Emergent sources: scanned {len(threads)} threads, {candidates} candidates, {new} new, "
+                f"{auto} version terms auto-added")
+    return {"scanned_threads": len(threads), "candidates": candidates, "new": new, "terms_auto_added": auto}
+
+
+def _apply_term_alias(session, tracker, row) -> bool:
+    """A recurring version phrase becomes an alias of its target: the matcher
+    and the per-alias routes derive from aliases, so the next leak under that
+    name is both fetched and related. Returns True if the alias was new."""
+    try:
+        policy = json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
+    except Exception:
+        policy = {}
+    ip = policy.get("intent_plan") or {}
+    added = False
+    if row.value.lower() not in {str(e).lower() for e in policy.get("entities") or []}:
+        policy.setdefault("entities", []).append(row.value)
+        ip.setdefault("entities", []).append({"text": row.value, "lang": "en", "regions": ["US"], "role": "product"})
+        added = True
+    policy["intent_plan"] = ip
+    tracker.fetch_policy = json.dumps(policy)
+    row.status = "accepted"; row.updated_at = datetime.utcnow()
+    session.add(tracker); session.add(row)
+    return added
 
 
 def _discover_feed(host: str) -> Optional[str]:
@@ -291,21 +329,7 @@ def accept_emergent_source(emergent_id: int) -> dict:
         if not tracker:
             return {"ok": False, "reason": "target gone"}
         if row.kind == "term":
-            # A recurring version phrase becomes an alias: the matcher and the
-            # per-edition keyword routes derive from aliases, so the next leak
-            # under that name is both fetched and related.
-            try:
-                policy = json.loads(tracker.fetch_policy) if tracker.fetch_policy else {}
-            except Exception:
-                policy = {}
-            ip = policy.get("intent_plan") or {}
-            if row.value.lower() not in {str(e).lower() for e in policy.get("entities") or []}:
-                policy.setdefault("entities", []).append(row.value)
-                ip.setdefault("entities", []).append({"text": row.value, "lang": "en", "regions": ["US"], "role": "product"})
-            policy["intent_plan"] = ip
-            tracker.fetch_policy = json.dumps(policy)
-            row.status = "accepted"; row.updated_at = datetime.utcnow()
-            session.add(tracker); session.add(row); session.commit()
+            _apply_term_alias(session, tracker, row); session.commit()
             return {"ok": True, "added": {"kind": "term", "value": row.value}}
         if row.kind == "account":
             try:

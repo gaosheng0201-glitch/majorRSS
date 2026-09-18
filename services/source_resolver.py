@@ -121,7 +121,28 @@ def _twitter_account_routes(handle: str, id_prefix: str, auth_profile_id=None,
 
 # Specific-alias routes per target in the default edition (each is a full
 # Google News query; the arbiter pays per item, so this is bounded).
-_MAX_ALIAS_ROUTES = 6
+_MAX_ALIAS_ROUTES = 8
+
+_VERSIONED_ALIAS_RE = __import__("re").compile(r"^([A-Za-z][A-Za-z ]{1,30}?)\s(\d+)(?:\.(\d+))?(?:\s[A-Za-z]+)?$")
+
+
+def _successor_probes(aliases) -> List[str]:
+    """For each product anchor with a versioned alias, the next minor and next
+    major version names, from the HIGHEST version the aliases already name."""
+    best = {}
+    for a in aliases:
+        m = _VERSIONED_ALIAS_RE.match((a or "").strip())
+        if not m:
+            continue
+        anchor, major, minor = m.group(1).strip(), int(m.group(2)), int(m.group(3) or 0)
+        key = anchor.lower()
+        if key not in best or (major, minor) > best[key][1]:
+            best[key] = (anchor, (major, minor))
+    out = []
+    for anchor, (major, minor) in best.values():
+        out.append(f"{anchor} {major}.{minor + 1}")
+        out.append(f"{anchor} {major + 1}")
+    return out
 
 
 class SourceResolver:
@@ -589,6 +610,16 @@ class SourceResolver:
             else:
                 for a in aliases:
                     _consider(gnews_locale_params(a), a)
+            # 自然新版本: a product line's successor is part of watching it. For
+            # each versioned alias, also probe the next minor and the next major
+            # ("Gemini 4" → "Gemini 4.1", "Gemini 5"). Deterministic and zero
+            # token — the planner cannot know what is coming (its knowledge ends
+            # at training; asked in 2026-09 it offered "Gemini 3" as Gemini's
+            # successor). Probes are cheap conditional GETs that return nothing
+            # until the name exists; when it does, the item is fetched, the term
+            # recurs, and emergent_sources promotes it to a real alias.
+            for probe in _successor_probes(list(specific.values()) + [k for k in keywords]):
+                specific.setdefault(probe.lower(), probe)
             ranked = sorted(specific.values(), key=lambda t: (not any(ch.isdigit() for ch in t), -len(t)))
             for i, term in enumerate(ranked[:_MAX_ALIAS_ROUTES]):
                 q = f'"{term}"' + (f" when:{max_days}d" if max_days > 0 else "")

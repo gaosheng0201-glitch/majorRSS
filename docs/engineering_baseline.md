@@ -52,7 +52,7 @@
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0022 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 97 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 100 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -66,7 +66,7 @@
 | 浏览器 | `services/browser_pool.py` | `ensure_browsers_path()` 对抗 Playwright frozen 假设；缺浏览器给安装指引 |
 | 生命周期 | `services/lifecycle.py` | 唯一规则:任一 primary 盖章→CONFIRMED,≥2 出版方→CORROBORATED;运行中只升不降 |
 | 目标定义 | `services/target_profile.py` | 一个对象三个视图:terms()(相关性门) / describe()(摘要模型) / matcher()(跨目标可见性) |
-| 别名路由 | `source_resolver._resolve_keyword_routes` | 具体别名各自成 gnews 路由（`gnews_alias_N`,版本词优先,上限 6）;其他版本 OR 合并;笼统词淹没具体词是实测事实 |
+| 别名路由 | `source_resolver._resolve_keyword_routes` | 具体别名各自成 gnews 路由（`gnews_alias_N`,版本词优先,上限 8）+ 后继版本自动探测（`_successor_probes`）;其他语言版本 OR 合并 |
 | 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问三分法；`rescued` 计数 = 旧 top-1 流程必错的合并；**预算耗尽/出错=不并**（错并不可逆,拆分可逆）；一字答案用低思考等级（`thinking_level="low"`,成本 -50%,正确率不降） |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
@@ -74,7 +74,7 @@
 | 目标即查询 | `services/thread_targets.py` + `ThreadTarget` | 线索/文章全局无主;关系=对称匹配+聚合发现路由+模型判定（False 只折叠）;融合按线索一遍、摘要中立;无目标关心不花钱。设计记录 docs/targets_are_queries.md |
 | 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
 | 故事线 | `StoryThread.storyline_id` → `Storyline` | 认亲不合并;出版方整条去重;线报面第二层;提炼卡"传闻自 X 起" |
-| 涌现源/关键词 | `services/emergent_sources.py` | "已追踪"按数据判定;代码托管不抽 @;出版方门槛 6;**版本短语**（别名锚定,标题,≥3 线索）→ 建议成别名（规划器给不出"下一代"） |
+| 涌现源/关键词 | `services/emergent_sources.py` | "已追踪"按数据判定;代码托管不抽 @;出版方门槛 6;**版本短语**（别名锚定,标题,≥3 线索,版本≥已知）→ **自动**成别名,不问用户（规划器给不出"下一代"） |
 
 ## 3. 差距地图（当前仍存在的）
 
@@ -130,7 +130,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（97 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（100 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

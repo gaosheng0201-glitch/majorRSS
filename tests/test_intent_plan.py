@@ -455,3 +455,42 @@ def test_older_versions_than_a_watched_alias_are_not_suggested():
     from services.emergent_sources import _highest_alias_version, _version_of
     assert _highest_alias_version(["Gemini", "Gemini 4", "Gemini 4 Pro", "Gemini Flash"], "Gemini") == 4.0
     assert _version_of("Gemini 3.8 Flash") == 3.8 and _version_of("Gemini Ultra") is None
+
+
+def test_successor_probes_follow_the_highest_watched_version():
+    from services.source_resolver import _successor_probes
+    probes = set(_successor_probes(["Gemini", "Gemini 4", "Gemini 4 Pro", "Gemini 3.8 Flash", "Grok 4.6", "ジェミニ"]))
+    assert {"Gemini 4.1", "Gemini 5", "Grok 4.7", "Grok 5"} <= probes
+    assert "Gemini 3.9" not in probes, "probes come from the highest version, not every version"
+
+
+def test_recurring_version_terms_are_auto_added_as_aliases():
+    import json
+    from db.database import get_session
+    from db.models import Tracker, EmergentSource
+    from services.emergent_sources import scan_emergent_sources
+    from sqlmodel import select
+    tid = _seed_emergent("someone", 0)
+    with get_session() as s:
+        t = s.get(Tracker, tid); t.fetch_policy = json.dumps({"entities": ["Foo"]}); s.add(t); s.commit()
+    # three attention-earning threads whose titles say "Foo 7 Pro"
+    import datetime as _dt
+    from db.models import RawArticle, StoryThread, ThreadTarget
+    with get_session() as s:
+        for i in range(3):
+            th = StoryThread(tracker_id=tid, title=f"Foo 7 Pro spotted in arena test {i}", lifecycle="CORROBORATED",
+                             member_count=1, distinct_source_count=2,
+                             first_seen_at=_dt.datetime.utcnow(), last_update_at=_dt.datetime.utcnow())
+            s.add(th); s.commit(); s.refresh(th)
+            s.add(ThreadTarget(thread_id=th.id, tracker_id=tid, source="route"))
+            s.add(RawArticle(tracker_id=tid, thread_id=th.id, title=f"Foo 7 Pro spotted in arena test {i}",
+                             url=f"https://o{i}.example/foo7/{i}", content="x", source_tier="aggregated"))
+        s.commit()
+    out = scan_emergent_sources(window_days=14, min_threads=3)
+    assert out["terms_auto_added"] >= 1
+    with get_session() as s:
+        ents = json.loads(s.get(Tracker, tid).fetch_policy)["entities"]
+        assert "Foo 7 Pro" in ents and "Foo 7" in ents
+        assert all(r.status == "accepted" for r in s.exec(select(EmergentSource).where(
+            EmergentSource.tracker_id == tid, EmergentSource.kind == "term")).all())
+    _cleanup_emergent()
