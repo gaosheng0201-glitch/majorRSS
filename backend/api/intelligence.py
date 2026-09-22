@@ -120,6 +120,20 @@ def get_all_alerts(session: Session = Depends(get_api_session)):
     alert_responses = [make_alert_response(a, session) for a in alerts]
     return alert_responses
 
+def _cited_ids(th) -> set:
+    try:
+        return {int(i) for i in json.loads(getattr(th, "cited_article_ids", None) or "[]")}
+    except Exception:
+        return set()
+
+
+def _ordered_sources(th, members: list, cap: int = 8) -> list:
+    cited = _cited_ids(th)
+    first = [dict(m, cited=True) for m in members if m["id"] in cited]
+    rest = [dict(m, cited=False) for m in members if m["id"] not in cited]
+    return [{k: v for k, v in m.items() if k != "id"} for m in (first + rest)[:cap]]
+
+
 @router.get("/threads")
 def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
                       session: Session = Depends(get_api_session)):
@@ -197,8 +211,8 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
         .order_by(RawArticle.created_at.desc())
     ).all():
         bucket = members_by_thread.get(art.thread_id)
-        if bucket is not None and len(bucket) < 8:
-            bucket.append({"title": art.title, "url": art.url})
+        if bucket is not None:
+            bucket.append({"title": art.title, "url": art.url, "id": art.id})
         f = flags_by_thread.get(art.thread_id)
         if f is not None:
             if getattr(art, "from_account", False):
@@ -231,7 +245,10 @@ def get_story_threads(limit: int = 40, tracker_id: int = None, view: str = None,
             "first_seen_at": th.first_seen_at.isoformat() if th.first_seen_at else None,
             "summarized_at": th.summarized_at.isoformat() if th.summarized_at else None,
             "alert_reasons": sorted(reasons_by_thread[th.id]),
-            "sources": members_by_thread[th.id],
+            # Cited first (what the summary rests on), then same-event
+            # corroboration, 8 in all — the card's headline links to a cited one.
+            "sources": _ordered_sources(th, members_by_thread[th.id]),
+            "cited_count": len(_cited_ids(th)),
             "summary": clean_sum or None,
             "importance_score": th.importance_score,
             "validity_category": th.validity_category,

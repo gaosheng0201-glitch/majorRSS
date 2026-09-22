@@ -516,6 +516,7 @@ def _fuse_thread(thread_id: int):
         if not valid_sources:
             valid_sources = list(selected)
         valid_ids = {u.id for u in valid_sources}
+        thread.cited_article_ids = json.dumps(sorted(valid_ids))
         # Corroboration = every OTHER member of the event, INCLUDING members past
         # the char/count cap — so nothing is silently dropped from provenance (#2).
         other_sources = [u for u in members if u.id not in valid_ids]

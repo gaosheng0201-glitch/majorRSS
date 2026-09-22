@@ -28,9 +28,9 @@ from services.provenance import real_publisher
 
 logger = get_logger("merge")
 
-WINDOW_HOURS = 48
-MIN_SIMILARITY = 0.70     # centred cosine between centroids; the confident-merge line is 0.80
-MAX_PAIRS_PER_RUN = 20
+from services.merge_policy import (POSTHOC_WINDOW_HOURS as WINDOW_HOURS,
+                                   POSTHOC_MIN_SIMILARITY as MIN_SIMILARITY,
+                                   POSTHOC_MAX_PAIRS as MAX_PAIRS_PER_RUN)
 _LIFE_RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
 
 
@@ -113,7 +113,7 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
             arbiter = None
     if arbiter is None:
         return {"pairs": 0, "merged": 0, "reason": "no arbiter"}
-    merged = asked = 0
+    merged = asked = linked = 0
     with get_session() as session:
         # centred space, same correction as ingest
         stored = []
@@ -141,8 +141,22 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
                 session.add(ThreadPairVerdict(thread_a=a, thread_b=b, verdict="merged", similarity=sim))
                 merged += 1
             else:
+                if rel == "story":
+                    # Kin, not the same event: link the storyline the way intake
+                    # does, under the same birth rule (a storyline is born only
+                    # between rumor-grade threads; any thread may JOIN one).
+                    from services.semantic_ingest import _link_storyline, _refresh_storyline, _thread_is_rumor_grade
+                    older, younger = (ta, tb) if (ta.first_seen_at or datetime.max) <= (tb.first_seen_at or datetime.max) else (tb, ta)
+                    if older.storyline_id is not None or younger.storyline_id is not None or (
+                            _thread_is_rumor_grade(session, older) and _thread_is_rumor_grade(session, younger)):
+                        sib = older if older.storyline_id is not None or younger.storyline_id is None else younger
+                        other = younger if sib is older else older
+                        if other.storyline_id is None:
+                            sid = _link_storyline(session, other, sib)
+                            _refresh_storyline(session, sid)
+                            linked += 1
                 session.add(ThreadPairVerdict(thread_a=a, thread_b=b, verdict=rel, similarity=sim))
             session.commit()
     if asked:
-        logger.info(f"Merge pass: {asked} pairs judged, {merged} merged")
-    return {"pairs": asked, "merged": merged}
+        logger.info(f"Merge pass: {asked} pairs judged, {merged} merged, {linked} storyline links")
+    return {"pairs": asked, "merged": merged, "storyline_links": linked}

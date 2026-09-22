@@ -38,12 +38,12 @@ _EVENT_ARBITER_SYS = (
     "The same company or topic is NOT enough — it must be the same underlying "
     "event/announcement. Reply with exactly one word: yes or no."
 )
-_ARBITER_CALLS_PER_CYCLE = 300  # cost/latency cap; excess falls back to embedding
+from services.merge_policy import INGEST_CALLS_PER_CYCLE as _ARBITER_CALLS_PER_CYCLE  # one declaration: merge_policy.py
 # How many nearest threads the arbiter may consult per article (top-1 was a
 # measured failure: the closest neighbour vetoed the right answer behind it).
 # Worst case multiplies calls by this factor; typical batches (~90 gray-zone
 # merges) stay under the cycle cap.
-_ARBITER_CANDIDATES = 3
+from services.merge_policy import INGEST_CANDIDATES as _ARBITER_CANDIDATES
 
 
 # 故事线 arbiter (author ruling 2026-09-03): the same call now answers a
@@ -176,7 +176,7 @@ def _profile_terms(tracker) -> list:
     return TargetProfile.from_tracker(tracker).terms()
 
 
-_POOL_WINDOW_DAYS = 30   # a story older than this no longer accepts members
+from services.merge_policy import POOL_WINDOW_DAYS as _POOL_WINDOW_DAYS
 
 
 def _load_thread_pool(session, StoryThread) -> dict:

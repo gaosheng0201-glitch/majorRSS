@@ -50,7 +50,7 @@ DEFAULT_THREAD_THRESHOLD = THREAD_THRESHOLD_RAW  # back-compat for callers/tests
 # arbiter should judge; a hard cosine threshold (0.18) wrongly excluded marginal
 # cross-language pairs (愿景 #6: cross-language same-event must merge). The
 # arbiter is the real decider; embedding only proposes candidates above this floor.
-THREAD_CANDIDATE_FLOOR = 0.05
+from services.merge_policy import INGEST_CANDIDATE_FLOOR as THREAD_CANDIDATE_FLOOR  # noqa: E402
 
 # Above this centered similarity a merge is near-identical — embedding is
 # confident enough to skip the LLM event-arbiter. Between the thread threshold
@@ -66,7 +66,7 @@ THREAD_CANDIDATE_FLOOR = 0.05
 # let a whole class of same-entity/different-event merges through unexamined.
 # The arbiter is one cheap one-word completion (~245 tokens); per-cycle counts are
 # logged and billed under EventArbiter so the cost share stays measurable.
-THREAD_HIGH_CONFIDENCE = 0.80
+from services.merge_policy import INGEST_HIGH_CONFIDENCE as THREAD_HIGH_CONFIDENCE  # noqa: E402
 
 # Global corpus mean for anisotropy correction, maintained by the ingest layer.
 _CORPUS_MEAN: Optional[List[float]] = None

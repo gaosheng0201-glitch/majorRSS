@@ -49,10 +49,10 @@
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
         线报三层:账号线报>故事线传闻(标签可见)>聚合器单条折叠）；目标筛选按 ThreadTarget 关系;行标签=线索涉及的全部目标;被模型判为同名撞车的在该目标下折叠。纯 RSS 模式 = 原始订阅流本身
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
-数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0022 幂等
+数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0023 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 105 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 107 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -67,7 +67,8 @@
 | 生命周期 | `services/lifecycle.py` | 唯一规则:任一 primary 盖章→CONFIRMED,≥2 出版方→CORROBORATED;运行中只升不降 |
 | 目标定义 | `services/target_profile.py` | 一个对象三个视图:terms()(相关性门) / describe()(摘要模型) / matcher()(跨目标可见性) |
 | 别名路由 | `source_resolver._resolve_keyword_routes` | 具体别名各自成 gnews 路由（`gnews_alias_N`,版本词优先,上限 8）+ 后继版本自动探测（`_successor_probes`）;其他语言版本 OR 合并 |
-| 事后合并 | `services/thread_merge.py` | 近 48h 相似度 ≥0.70 的线索对逐对问仲裁,event 即并入较早线索;判定记忆 `ThreadPairVerdict`;每轮 ≤20 对 |
+| 合并策略 | `services/merge_policy.py` | 唯一声明:入库（地板/置信线/top-K/每轮上限）+ 事后（相似/窗口/对数）+ 校准依据 |
+| 事后合并 | `services/thread_merge.py` | 阈值取自 merge_policy;event 并入较早线索,story 认亲;判定记忆 `ThreadPairVerdict` |
 | 事件仲裁 | `services/semantic_ingest.py` | top-K(3) 候选逐个问三分法；`rescued` 计数 = 旧 top-1 流程必错的合并；**预算耗尽/出错=不并**（错并不可逆,拆分可逆）；一字答案用低思考等级（`thinking_level="low"`,成本 -50%,正确率不降） |
 | 实质增量 | `services/processor_service.py` | `is_material_increment`；summarized_at 因此意为"最后实质变化" |
 | RSS 时间 | `scrapers/tier1_rss.py` | `calendar.timegm`（mktime 会按本地标准时解释 UTC struct） |
@@ -100,7 +101,7 @@
 - macOS 密钥为 Fernet + 0600 文件（真加密，非 Keychain）；lib.rs 进程树清理在 macOS 是 no-op（Win 迁移遗留）。
 - requirements.txt 不含 fastapi/uvicorn/pyinstaller（.venv 实际有，重建环境会踩）。
 - Auth：Expired profile 的授权路由仍会被尝试；后台低频活体巡检未做。
-- 提炼卡片的「摘要引用来源 vs 重复佐证来源」区分在 P6 搬迁中退化为统一成员列表（数据仍在附录里，展示层待恢复——作者已知，待排期）。
+- ~~提炼卡片的「摘要引用来源 vs 重复佐证来源」区分退化~~（2026-09-22 恢复：`cited_article_ids` + 卡片两组）。
 
 ## 4. 路线图位置
 
@@ -132,7 +133,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（105 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（107 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

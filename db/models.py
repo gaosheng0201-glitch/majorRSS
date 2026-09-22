@@ -351,6 +351,10 @@ class StoryThread(SQLModel, table=True):
     # copies of the same story. Without it every trickle of follow-ups re-burned
     # the summary and bumped the thread back to the top of the feed.
     fused_source_count: Optional[int] = Field(default=None)
+    # Members the summary was actually based on (RawArticle ids, JSON). The
+    # card shows these first, labelled, and the rest as same-event corroboration
+    # — the distinction P6 lost when the feed moved to the radar page.
+    cited_article_ids: Optional[str] = Field(default=None)
     fused_lifecycle: Optional[str] = Field(default=None)
 
 class RadarAlert(SQLModel, table=True):

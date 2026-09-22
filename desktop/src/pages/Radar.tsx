@@ -26,7 +26,7 @@ import { safeHref } from '../components/sourceDisplay';
 // leads tab: relevance-gated items exist ONLY there, and hiding them entirely
 // would turn the floor from a soft filter into an invisible one (trust loop).
 
-interface ThreadSource { title: string; url: string; }
+interface ThreadSource { title: string; url: string; cited?: boolean; }
 // 故事线（作者裁决 2026-09-03）：同一发展中的故事、不同事件的线索"认亲"。
 // 只给可见性不给可信度：出版方按整条故事线去重计数，reddit 一百帖仍是一家。
 interface StorylineInfo {
@@ -217,15 +217,28 @@ function EventRow({ th, isDark, lang, tipoff, trackerName }: { th: StoryThread; 
         )}
       </Group>
 
-      {open && th.sources.length > 0 && (
-        <Stack gap={3} mt={8} pl="sm">
-          {th.sources.map((s, i) => (
-            <Anchor key={i} href={safeHref(s.url)} target="_blank" rel="noopener noreferrer" size="xs" lineClamp={1} c="dimmed">
-              {s.title || s.url}
-            </Anchor>
-          ))}
-        </Stack>
-      )}
+      {open && th.sources.length > 0 && (() => {
+        // 摘要引用 vs 同事件佐证：卡片说的话建立在前者上，后者只证明"不止一家在说"。
+        const cited = th.sources.filter(s => s.cited);
+        const rest = th.sources.filter(s => !s.cited);
+        const row = (s: ThreadSource, i: number) => (
+          <Anchor key={i} href={safeHref(s.url)} target="_blank" rel="noopener noreferrer" size="xs" lineClamp={1} c="dimmed">
+            {s.title || s.url}
+          </Anchor>
+        );
+        return (
+          <Stack gap={3} mt={8} pl="sm">
+            {cited.length > 0 && rest.length > 0 && (
+              <Text size="10px" c="dimmed" fw={600}>{lang === 'zh' ? '摘要引用' : 'Cited by the summary'}</Text>
+            )}
+            {cited.map(row)}
+            {rest.length > 0 && cited.length > 0 && (
+              <Text size="10px" c="dimmed" fw={600} mt={4}>{lang === 'zh' ? '同事件佐证' : 'Same-event corroboration'}</Text>
+            )}
+            {rest.map((s, i) => row(s, cited.length + i))}
+          </Stack>
+        );
+      })()}
     </Box>
   );
 }

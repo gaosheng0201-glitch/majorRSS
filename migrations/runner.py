@@ -35,7 +35,8 @@ def run_migrations():
             "0019_confirmed_needs_primary_stamp",
             "0020_stamp_legacy_null_tiers",
             "0021_firehose_routes_are_aggregated",
-            "0022_targets_are_queries"
+            "0022_targets_are_queries",
+            "0023_cited_sources"
         ]
         
         for m in migrations:
@@ -553,6 +554,37 @@ def run_migrations():
                         session.add(a); n += 1
                     session.commit()
                     print(f"stamp_legacy_null_tiers: {n} rows stamped ({p} primary)")
+
+                elif m == "0023_cited_sources":
+                    # Which members a summary cited was only kept as markdown in
+                    # the summary's annex; the card listed the latest 8 members
+                    # instead (a Gemini 4 Pro card showing an Anthropic piece).
+                    # Store the ids; backfill from the annex links.
+                    from sqlalchemy import inspect, text
+                    import json as _json, re as _re
+                    from db.models import RawArticle, StoryThread
+                    from sqlmodel import select as _select
+                    inspector = inspect(engine); conn = session.connection()
+                    if "storythread" in inspector.get_table_names():
+                        cols = [c["name"] for c in inspector.get_columns("storythread")]
+                        if "cited_article_ids" not in cols:
+                            conn.execute(text("ALTER TABLE storythread ADD COLUMN cited_article_ids VARCHAR"))
+                    session.commit()
+                    n = 0
+                    for th in session.exec(_select(StoryThread).where(StoryThread.summary.is_not(None))).all():
+                        annex = (th.summary or "").split("摘要引用来源", 1)
+                        if len(annex) < 2:
+                            continue
+                        cited_block = annex[1].split("重复/佐证来源", 1)[0]
+                        urls = set(_re.findall(r"\]\((https?://[^)]+)\)", cited_block))
+                        if not urls:
+                            continue
+                        ids = session.exec(_select(RawArticle.id).where(RawArticle.thread_id == th.id,
+                                                                        RawArticle.url.in_(list(urls)))).all()
+                        if ids:
+                            th.cited_article_ids = _json.dumps(sorted(ids)); session.add(th); n += 1
+                    session.commit()
+                    print(f"cited_sources: {n} threads backfilled from annexes")
 
                 elif m == "0022_targets_are_queries":
                     # 目标即查询: build the thread↔target relation for every

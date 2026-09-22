@@ -508,3 +508,24 @@ def test_merge_pass_joins_same_event_threads_and_remembers_rejections():
         assert verdicts[(aid, bid)] == "merged" and verdicts.get((aid, cid)) == "different"
     # a rejected pair is not asked again
     assert run_merge_pass(arbiter=_EventArbiter())["pairs"] == 0
+
+
+def test_card_sources_lead_with_what_the_summary_cited():
+    import json
+    from backend.api.intelligence import _ordered_sources
+    from types import SimpleNamespace as NS
+    th = NS(cited_article_ids=json.dumps([3]))
+    members = [{"title": "latest tangential", "url": "u1", "id": 1}, {"title": "also", "url": "u2", "id": 2},
+               {"title": "the cited one", "url": "u3", "id": 3}]
+    out = _ordered_sources(th, members)
+    assert out[0]["title"] == "the cited one" and out[0]["cited"] is True and out[1]["cited"] is False
+    assert "id" not in out[0]
+
+
+def test_merge_policy_is_the_single_declaration():
+    from services import merge_policy as mp, semantic as sm
+    from services import semantic_ingest as si, thread_merge as tm
+    assert sm.THREAD_CANDIDATE_FLOOR == mp.INGEST_CANDIDATE_FLOOR
+    assert sm.THREAD_HIGH_CONFIDENCE == mp.INGEST_HIGH_CONFIDENCE
+    assert si._ARBITER_CANDIDATES == mp.INGEST_CANDIDATES
+    assert tm.MIN_SIMILARITY == mp.POSTHOC_MIN_SIMILARITY
