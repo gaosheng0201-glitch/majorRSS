@@ -539,3 +539,37 @@ def test_vocab_refresh_accepts_only_terms_the_headlines_contain():
     # an org is suggested, a trial id is applied; a rival's alias is rejected outright
     assert acc[0]["auto"] is False and acc[1]["auto"] is True
     assert [a["term"] for a in propose_terms(t, titles, provider=_P(), foreign_aliases={"axoltis"})] == ["NCT06611234"]
+
+
+def test_contested_terms_go_to_the_target_with_most_support():
+    """A rival's product seen in comparison headlines belongs to the rival."""
+    import json as _json
+    from db.database import get_session
+    from db.models import Tracker, StoryThread, RawArticle, ThreadTarget
+    from services.vocab_refresh import refresh_all
+    made = []
+    with get_session() as s:
+        for name, n in (("vr-openai", 5), ("vr-claude", 2)):
+            t = Tracker(name=name, tracker_type="KEYWORD", target="[]", radar_section="AI",
+                        source_intent="KEYWORD_DISCOVERY", fetch_policy=_json.dumps({"entities": [name]}))
+            s.add(t); s.commit(); s.refresh(t); made.append(t.id)
+            for i in range(n):
+                th = StoryThread(tracker_id=t.id, title=f"GPT-6 Astra beats rivals {i}", member_count=1)
+                s.add(th); s.commit(); s.refresh(th)
+                s.add(ThreadTarget(thread_id=th.id, tracker_id=t.id, source="route"))
+                s.add(RawArticle(tracker_id=t.id, thread_id=th.id, title=f"GPT-6 Astra beats rivals {i} - Outlet",
+                                 url=f"https://vr.example/{name}/{i}", content="x", source_tier="aggregated"))
+            s.commit()
+    class _P:
+        name = "stub"; supports_generation = True
+        def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
+            return _json.dumps({"terms": [{"term": "GPT-6 Astra", "kind": "version", "scope": "core", "reason": "r"}]}), {}
+    out = {r["tracker"]: r for r in refresh_all(provider=_P(), dry_run=True) if r["tracker"] in ("vr-openai", "vr-claude")}
+    assert [a["term"] for a in out["vr-openai"]["accepted"]] == ["GPT-6 Astra"]
+    assert out["vr-claude"]["accepted"] == []
+    with get_session() as s:
+        from sqlmodel import delete
+        s.exec(delete(ThreadTarget).where(ThreadTarget.tracker_id.in_(made)))
+        s.exec(delete(RawArticle).where(RawArticle.tracker_id.in_(made)))
+        s.exec(delete(StoryThread).where(StoryThread.tracker_id.in_(made)))
+        s.exec(delete(Tracker).where(Tracker.id.in_(made))); s.commit()

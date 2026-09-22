@@ -273,18 +273,3 @@ def _suggest(session, tracker, items: List[dict]) -> List[str]:
                                    status="pending", first_seen_at=datetime.utcnow(), updated_at=datetime.utcnow()))
         out.append(a["term"])
     return out
-
-
-def refresh_all(provider=None, dry_run: bool = False) -> List[dict]:
-    from db.database import get_session
-    from db.models import Tracker
-    from sqlmodel import select
-    with get_session() as s:
-        ids = [t.id for t in s.exec(select(Tracker).where(Tracker.is_active == True)).all()]  # noqa: E712
-    out = []
-    for tid in ids:
-        try:
-            out.append(refresh_target_vocabulary(tid, provider=provider, dry_run=dry_run))
-        except Exception as e:
-            logger.warning(f"Vocab refresh failed for tracker {tid}: {e}")
-    return out
