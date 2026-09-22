@@ -276,6 +276,15 @@ def run_maintenance():
                             f"{dom['planned']} tracker(s); added {stamp['relations_added']} thread-target relations.")
         except Exception as e:
             logger.warning(f"Visibility backfill skipped: {e}")
+        # 接地词汇刷新: the planner reads each target's recent headlines and
+        # names the terms worth watching — one call per target per day.
+        try:
+            from services.vocab_refresh import refresh_all
+            learned = [(r["tracker"], r["added"]) for r in refresh_all() if r.get("added")]
+            if learned:
+                logger.info(f"Vocab refresh learned: {learned}")
+        except Exception as e:
+            logger.warning(f"Vocab refresh skipped: {e}")
         # P4.2: which handles/publishers keep showing up in attention-earning
         # threads — deterministic, zero tokens, additive suggestions only.
         try:

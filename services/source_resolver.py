@@ -1,4 +1,5 @@
 import json
+import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import List, Optional
@@ -618,9 +619,23 @@ class SourceResolver:
             # successor). Probes are cheap conditional GETs that return nothing
             # until the name exists; when it does, the item is fetched, the term
             # recurs, and emergent_sources promotes it to a real alias.
-            for probe in _successor_probes(list(specific.values()) + [k for k in keywords]):
-                specific.setdefault(probe.lower(), probe)
-            ranked = sorted(specific.values(), key=lambda t: (not any(ch.isdigit() for ch in t), -len(t)))
+            # Rank: names actually observed first (newest version first), then
+            # unversioned tiers, then probes — a speculative "Opus 6" must never
+            # push the real "Opus 5.5" out of the slot budget.
+            def _ver(t):
+                m = re.search(r"(\d+(?:\.\d+)?)", t)
+                return float(m.group(1)) if m else -1.0
+            # "Claude Fable 5.1" is subsumed by "Fable 5.1" (same phrase minus a
+            # leading anchor word) — the shorter query retrieves a superset.
+            lower = {t.lower() for t in specific.values()}
+            def _subsumed(t):
+                w = t.split()
+                return any(" ".join(w[k:]).lower() in lower for k in range(1, len(w)))
+            real = sorted((t for t in specific.values() if not _subsumed(t)), key=lambda t: (-_ver(t), len(t)))
+            probes = [pb for pb in _successor_probes(real + list(keywords))
+                      if pb.lower() not in specific]
+            probes = sorted(dict.fromkeys(probes), key=lambda t: (-_ver(t), len(t)))
+            ranked = real + probes
             for i, term in enumerate(ranked[:_MAX_ALIAS_ROUTES]):
                 q = f'"{term}"' + (f" when:{max_days}d" if max_days > 0 else "")
                 routes.append(SourceRoute(

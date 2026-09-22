@@ -75,7 +75,9 @@ def extract_mentions(title: str, content: str, url: str) -> Set[Tuple[str, str]]
     return out
 
 
-_VERSION_TERM_RE = r"(?<![0-9A-Za-z])({alias})\s?-?\s?(\d+(?:\.\d+)?)(?:\s?(Pro|Flash|Ultra|Lite|Max|Mini|Nano|Turbo|Plus|Sol|Astra|Cyber))?(?![0-9A-Za-z])"
+# alias, an optional ONE-word product line between alias and version ("Claude
+# Opus 5.5", "Claude Fable 5.2"), the version, an optional tier suffix.
+_VERSION_TERM_RE = r"(?<![0-9A-Za-z])({alias})(?:\s([A-Z][a-z]+))?\s?-?\s?(\d+(?:\.\d+)?)(?:\s?(Pro|Flash|Ultra|Lite|Max|Mini|Nano|Turbo|Plus|Sol|Astra|Cyber))?(?![0-9A-Za-z])"
 
 
 def extract_version_terms(title: str, latin_aliases) -> Set[str]:
@@ -87,15 +89,27 @@ def extract_version_terms(title: str, latin_aliases) -> Set[str]:
     2.5" and "Gemini 3"); the target's own leads already say "Gemini 4 Pro"."""
     out: Set[str] = set()
     t = title or ""
+    anchors = []
     for alias in latin_aliases:
         a = alias.strip()
         if len(a) < 3 or re.search(r"\d", a):
             continue          # anchor on the bare product name, not on a versioned alias
+        anchors.append(a)
+    # A product line named on its own — "Opus 5.5", "Fable 5.2" — counts when
+    # the title names the target somewhere else ("Anthropic tests … Opus 5.5").
+    names_target = any(re.search(r"(?<![0-9A-Za-z])" + re.escape(a) + r"(?![0-9A-Za-z])", t, re.I) for a in anchors)
+    if names_target:
+        for a in list(anchors):
+            parts = a.split()
+            if len(parts) == 2 and parts[1][:1].isupper() and parts[1] not in anchors:
+                anchors.append(parts[1])
+    for a in anchors:
         for m in re.finditer(_VERSION_TERM_RE.format(alias=re.escape(a)), t, re.I):
-            base = f"{m.group(1)} {m.group(2)}"
+            anchor = m.group(1) + (f" {m.group(2)}" if m.group(2) else "")
+            base = f"{anchor} {m.group(3)}"
             out.add(base)
-            if m.group(3):
-                out.add(f"{base} {m.group(3)}")
+            if m.group(4):
+                out.add(f"{base} {m.group(4)}")
     return out
 
 
@@ -117,7 +131,7 @@ def _highest_alias_version(aliases, anchor: str):
     already watches Gemini 4)."""
     best = None
     for a in aliases:
-        if a.lower().startswith(anchor.lower()):
+        if _VER_NUM_RE.split(a, 1)[0].strip().lower() == anchor.lower():
             v = _version_of(a)
             if v is not None and (best is None or v > best):
                 best = v
@@ -196,11 +210,19 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
             or_(StoryThread.is_resonant == True,  # noqa: E712
                 StoryThread.lifecycle.in_(["CORROBORATED", "CONFIRMED"])),
         )).all()
-        if not threads:
+        # Version terms are learned from EVERY recent thread, not only the
+        # attention-earning ones: a coming version's leaks are exactly the
+        # single-source leads that have earned nothing yet ("Anthropic tests
+        # Opus 5.5" from one outlet, a Polymarket post, a newsletter line).
+        # Their recurrence across threads IS the signal. Accounts and
+        # publishers still need attention-earning threads to count.
+        all_recent = session.exec(select(StoryThread).where(StoryThread.last_update_at >= cutoff)).all()
+        if not all_recent:
             return {"scanned_threads": 0, "candidates": 0, "new": 0}
+        attention_ids = {th.id for th in threads}
         from services import thread_targets as tt
         lens_by_thread = {tid: {r.tracker_id for r in rows if r.llm_verdict is not False}
-                          for tid, rows in tt.rows_for(session, [th.id for th in threads]).items()}
+                          for tid, rows in tt.rows_for(session, [th.id for th in all_recent]).items()}
         from db.models import Tracker
         from services.target_profile import TargetProfile
         aliases_by_tracker: Dict[int, List[str]] = {}
@@ -208,16 +230,16 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
             prof = TargetProfile.from_tracker(t)
             aliases_by_tracker[t.id] = [e for e in ([prof.name] + prof.entities)
                                         if e and not re.search(r"[一-鿿぀-ヿ가-힯]", e)]
-        title_by_thread = {th.id: (th.title or "")[:80] for th in threads}
+        title_by_thread = {th.id: (th.title or "")[:80] for th in all_recent}
 
         counts: Dict[Tuple[int, str, str], dict] = {}
         for tid, title, content, url in session.exec(select(
                 RawArticle.thread_id, RawArticle.title, RawArticle.content, RawArticle.url)
                 .where(RawArticle.thread_id.in_(list(lens_by_thread.keys())))).all():
-            mentions = extract_mentions(title, content, url)
+            mentions = extract_mentions(title, content, url) if tid in attention_ids else set()
             for tracker_id in lens_by_thread[tid]:
                 for term in extract_version_terms(title, aliases_by_tracker.get(tracker_id, [])):
-                    anchor = term.split()[0]
+                    anchor = _VER_NUM_RE.split(term, 1)[0].strip()      # text before the version
                     floor = _highest_alias_version(aliases_by_tracker.get(tracker_id, []), anchor)
                     v = _version_of(term)
                     if floor is not None and v is not None and v < floor:

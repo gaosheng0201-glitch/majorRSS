@@ -446,7 +446,7 @@ def test_specific_aliases_get_their_own_route_even_in_a_covered_edition():
     alias = [urllib.parse.unquote(r.url_or_command) for r in routes if r.route_id.startswith("gnews_alias")]
     assert any('"Gemini 4 Pro"' in u for u in alias) and any('"Gemini 4"' in u for u in alias)
     assert not any('"Gemini"' in u for u in alias), "the base keyword is not re-queried"
-    assert alias[0].count("4") >= 1, "versioned aliases rank first"
+    assert alias[0].count("4") >= 1 or alias[0].count("5") >= 1, "newest version ranks first"
     assert len(alias) <= _MAX_ALIAS_ROUTES
     assert any("ceid=JP:ja" in r.url_or_command for r in routes), "other editions still get their OR route"
 
@@ -494,3 +494,45 @@ def test_recurring_version_terms_are_auto_added_as_aliases():
         assert all(r.status == "accepted" for r in s.exec(select(EmergentSource).where(
             EmergentSource.tracker_id == tid, EmergentSource.kind == "term")).all())
     _cleanup_emergent()
+
+
+def test_version_terms_allow_a_product_line_word_between_alias_and_version():
+    from services.emergent_sources import extract_version_terms, _highest_alias_version
+    t = extract_version_terms("Claude Opus 5.5 is suddenly at 77%. Is it launching today?", ["Claude"])
+    assert "Claude Opus 5.5" in t and "Claude 77" not in t
+    assert "Claude Fable 5.2" in extract_version_terms("Anthropic tests Fable 5.2 and Claude Fable 5.2", ["Claude", "Fable"])
+    # floors are per product line, not per first word
+    aliases = ["Claude", "Claude Fable 5.1", "Claude Haiku 4.5", "Claude 4"]
+    assert _highest_alias_version(aliases, "Claude Fable") == 5.1
+    assert _highest_alias_version(aliases, "Claude Opus") is None
+    assert _highest_alias_version(aliases, "Claude") == 4.0
+
+
+def test_product_line_word_anchors_when_the_title_names_the_target():
+    from services.emergent_sources import extract_version_terms
+    aliases = ["Claude", "Anthropic", "Claude Opus", "Claude Fable"]
+    t = extract_version_terms("Anthropic tests Fable 5.2 and Opus 5.5 ahead of the release", aliases)
+    assert {"Fable 5.2", "Opus 5.5"} <= t
+    # without the target named, a bare product word is not enough (an "Opus 5.5" could be anything)
+    assert extract_version_terms("Opus 5.5 magnum released by the orchestra", aliases) == set()
+
+
+def test_vocab_refresh_accepts_only_terms_the_headlines_contain():
+    from types import SimpleNamespace as NS
+    from services.vocab_refresh import propose_terms
+    class _P:
+        name = "stub"; supports_generation = True
+        def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
+            return json.dumps({"terms": [
+                {"term": "Axoltis", "kind": "org", "reason": "sponsor"},
+                {"term": "NCT06611234", "kind": "trial", "reason": "trial id"},
+                {"term": "Tofersen", "kind": "drug", "reason": "invented, not in headlines"},
+                {"term": "ALS", "kind": "other", "reason": "already an alias"},
+                {"term": "Phase II", "kind": "event", "reason": "only once"},
+            ]}), {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+    t = NS(id=5, name="ALS", fetch_policy=json.dumps({"entities": ["ALS", "渐冻症"]}), target="[]", normalized_intent=None)
+    titles = ["Axoltis’ Phase II ALS trial fails; company points to exploratory data",
+              "Axoltis to present NCT06611234 results at ENCALS", "NCT06611234 enrolment paused - ALS News Today"]
+    acc = propose_terms(t, titles, provider=_P())
+    assert [a["term"] for a in acc] == ["Axoltis", "NCT06611234"]
+    assert acc[0]["support"] == 2
