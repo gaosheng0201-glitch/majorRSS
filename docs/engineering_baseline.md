@@ -52,7 +52,7 @@
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0022 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 100 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 103 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -74,6 +74,7 @@
 | 目标即查询 | `services/thread_targets.py` + `ThreadTarget` | 线索/文章全局无主;关系=对称匹配+聚合发现路由+模型判定（False 只折叠）;融合按线索一遍、摘要中立;无目标关心不花钱。设计记录 docs/targets_are_queries.md |
 | 建议源校验 | `services/source_verifier.py` | 只认正面证据;FxTwitter 档案端点验 X handle（无账号、不受 C&D） |
 | 故事线 | `StoryThread.storyline_id` → `Storyline` | 认亲不合并;出版方整条去重;线报面第二层;提炼卡"传闻自 X 起" |
+| 接地词汇刷新 | `services/vocab_refresh.py` | 模型读目标线报标题提案,数据裁决（逐字/≥2 支持/非他目标别名/争议归支持最高）;版本·代号·药物·试验·活动自动成别名,人·组织·地点只建议;每目标每日一次 |
 | 涌现源/关键词 | `services/emergent_sources.py` | "已追踪"按数据判定;代码托管不抽 @;出版方门槛 6;**版本短语**（别名锚定,标题,≥3 线索,版本≥已知）→ **自动**成别名,不问用户（规划器给不出"下一代"） |
 
 ## 3. 差距地图（当前仍存在的）
@@ -130,7 +131,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（100 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（103 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

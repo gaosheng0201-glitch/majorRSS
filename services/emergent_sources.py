@@ -291,8 +291,8 @@ def scan_emergent_sources(window_days: int = 14, min_threads: int = 3) -> dict:
         for row in session.exec(select(EmergentSource).where(
                 EmergentSource.kind == "term", EmergentSource.status == "pending")).all():
             tr = session.get(Tracker, row.tracker_id)
-            if tr is None:
-                continue
+            if tr is None or _version_of(row.value) is None:
+                continue          # only version phrases self-apply; people/orgs wait for a click
             if _apply_term_alias(session, tr, row):
                 auto += 1
                 logger.info(f"Emergent term auto-added as alias: '{row.value}' → target '{tr.name}' "

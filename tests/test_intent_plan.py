@@ -524,8 +524,8 @@ def test_vocab_refresh_accepts_only_terms_the_headlines_contain():
         name = "stub"; supports_generation = True
         def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
             return json.dumps({"terms": [
-                {"term": "Axoltis", "kind": "org", "reason": "sponsor"},
-                {"term": "NCT06611234", "kind": "trial", "reason": "trial id"},
+                {"term": "Axoltis", "kind": "org", "scope": "context", "reason": "sponsor"},
+                {"term": "NCT06611234", "kind": "trial", "scope": "core", "reason": "trial id"},
                 {"term": "Tofersen", "kind": "drug", "reason": "invented, not in headlines"},
                 {"term": "ALS", "kind": "other", "reason": "already an alias"},
                 {"term": "Phase II", "kind": "event", "reason": "only once"},
@@ -536,3 +536,6 @@ def test_vocab_refresh_accepts_only_terms_the_headlines_contain():
     acc = propose_terms(t, titles, provider=_P())
     assert [a["term"] for a in acc] == ["Axoltis", "NCT06611234"]
     assert acc[0]["support"] == 2
+    # an org is suggested, a trial id is applied; a rival's alias is rejected outright
+    assert acc[0]["auto"] is False and acc[1]["auto"] is True
+    assert [a["term"] for a in propose_terms(t, titles, provider=_P(), foreign_aliases={"axoltis"})] == ["NCT06611234"]
