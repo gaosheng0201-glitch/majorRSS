@@ -455,3 +455,56 @@ def test_a_thread_that_concerns_no_target_is_not_paid_for():
         assert th.summary is None and th.gate_checked_at is not None
         assert s.get(RawArticle, aid).processed is True
         s.delete(s.get(RawArticle, aid)); s.delete(th); s.delete(s.get(Tracker, trid)); s.commit()
+
+
+def test_merge_pass_joins_same_event_threads_and_remembers_rejections():
+    import json
+    from datetime import datetime
+    from db.database import get_session
+    from db.models import Tracker, RawArticle, StoryThread, ArticleEmbedding, Storyline, ThreadTarget, ThreadPairVerdict
+    from services.thread_merge import run_merge_pass
+    from sqlmodel import select, delete
+
+    class _EventArbiter:
+        name = "stub"; supports_generation = True
+        def generate(self, prompt, system=None, schema=None, temperature=0.0, **kw):
+            a, b = prompt.split("Headline B:")
+            return ("event" if "Opus 5.5" in a and "Opus 5.5" in b else "different"), {}
+
+    with get_session() as s:
+        s.exec(delete(ThreadPairVerdict)); s.exec(delete(ArticleEmbedding)); s.exec(delete(RawArticle))
+        s.exec(delete(ThreadTarget)); s.exec(delete(StoryThread)); s.exec(delete(Storyline)); s.commit()
+        t = Tracker(name="merge-t", tracker_type="KEYWORD", target="[]", radar_section="AI",
+                    source_intent="KEYWORD_DISCOVERY", fetch_policy=json.dumps({"entities": ["Claude"]}))
+        s.add(t); s.commit(); s.refresh(t)
+        v = [1.0, 0.0, 0.0, 0.0]
+        a = StoryThread(tracker_id=t.id, title="Anthropic launches Claude Opus 5.5", centroid=json.dumps(v),
+                        member_count=2, distinct_source_count=2, lifecycle="CORROBORATED",
+                        first_seen_at=datetime(2026, 9, 22, 16, 56), last_update_at=datetime.utcnow(), summary="S")
+        b = StoryThread(tracker_id=t.id, title="Claude Opus 5.5 matches rivals at lower cost", centroid=json.dumps([0.98, 0.1, 0, 0]),
+                        member_count=1, distinct_source_count=1, lifecycle="LEAD",
+                        first_seen_at=datetime(2026, 9, 22, 16, 59), last_update_at=datetime.utcnow())
+        c = StoryThread(tracker_id=t.id, title="Fable 5.1 launches", centroid=json.dumps([0.95, 0.2, 0, 0]),
+                        member_count=1, distinct_source_count=1, lifecycle="LEAD",
+                        first_seen_at=datetime(2026, 9, 22, 10, 0), last_update_at=datetime.utcnow())
+        s.add(a); s.add(b); s.add(c); s.commit(); s.refresh(a); s.refresh(b); s.refresh(c)
+        s.add(RawArticle(tracker_id=t.id, thread_id=a.id, title="launch", url="https://o1.example/a", content="x", source_tier="aggregated", processed=True))
+        s.add(RawArticle(tracker_id=t.id, thread_id=a.id, title="launch 2", url="https://o2.example/a", content="x", source_tier="aggregated", processed=True))
+        s.add(RawArticle(tracker_id=t.id, thread_id=b.id, title="matches", url="https://o3.example/b", content="x", source_tier="aggregated", processed=True))
+        s.add(ThreadTarget(thread_id=a.id, tracker_id=t.id, source="route"))
+        s.add(ThreadTarget(thread_id=b.id, tracker_id=t.id, source="route"))
+        s.commit(); aid, bid, cid = a.id, b.id, c.id
+
+    out = run_merge_pass(arbiter=_EventArbiter())
+    assert out["merged"] == 1
+    with get_session() as s:
+        assert s.get(StoryThread, bid) is None
+        keep = s.get(StoryThread, aid)
+        assert keep.member_count == 3 and keep.distinct_source_count == 3 and keep.summary == "S"
+        moved = s.exec(select(RawArticle).where(RawArticle.url == "https://o3.example/b")).one()
+        assert moved.thread_id == aid and moved.processed is False
+        assert len(s.exec(select(ThreadTarget).where(ThreadTarget.thread_id == aid)).all()) == 1
+        verdicts = {(r.thread_a, r.thread_b): r.verdict for r in s.exec(select(ThreadPairVerdict)).all()}
+        assert verdicts[(aid, bid)] == "merged" and verdicts.get((aid, cid)) == "different"
+    # a rejected pair is not asked again
+    assert run_merge_pass(arbiter=_EventArbiter())["pairs"] == 0

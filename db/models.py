@@ -416,3 +416,15 @@ class ThreadTarget(SQLModel, table=True):
     source: str = Field(default="match", description="match | route | llm")
     llm_verdict: Optional[bool] = Field(default=None, description="summariser's involvement judgement; False folds, never deletes")
     created_at: datetime = Field(default_factory=utc_now_naive)
+
+
+class ThreadPairVerdict(SQLModel, table=True):
+    """事后合并 (services/thread_merge.py): the arbiter's answer for a pair of
+    threads, so a rejected pair is not asked again every cycle."""
+    __table_args__ = (UniqueConstraint("thread_a", "thread_b", name="uq_thread_pair"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    thread_a: int = Field(index=True)
+    thread_b: int = Field(index=True)
+    verdict: str = Field(description="event | story | different | merged")
+    similarity: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=utc_now_naive)

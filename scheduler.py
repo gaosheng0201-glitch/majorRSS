@@ -153,6 +153,10 @@ def run_semantic_job():
     try:
         from services.semantic_ingest import run_semantic_ingest, refresh_resonance
         run_semantic_ingest()
+        # 事后合并: same-event threads that intake split (top-K blind spot) are
+        # merged with the arbiter as judge — the recoverable direction, completed.
+        from services.thread_merge import run_merge_pass
+        run_merge_pass()
         refresh_resonance()  # decay stale resonance flags
     except Exception as e:
         logger.error(f"Semantic ingest failed: {e}", exc_info=e)
