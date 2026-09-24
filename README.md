@@ -80,7 +80,7 @@ pytest -q
 ## Status
 
 Actively evolving from a v2.x RSS aggregator into the radar described above.
-Design intent and the current engineering state live in [`docs/`](docs/)
+Design intent and the current engineering state live in [`docs/`](docs/) — start with `engineering_baseline.md` (what is true now), `radar_quality_roadmap.md` (decisions by date) and `debugging_playbook.md` (symptom → where to look)
 (`vision_and_blueprint.md`, `engineering_baseline.md`).
 
 ## Disclaimer
