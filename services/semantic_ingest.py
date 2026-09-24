@@ -324,6 +324,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     thread_pool = None         # global recent threads: id → (thread, centroid)
     from services import thread_targets as tt
     matchers = tt.load_matchers()
+    touched_threads = set()   # probes score these at the end of the run
     with get_session() as session:
         from db.models import RawArticle, ArticleEmbedding, StoryThread
         for article, vec in embedded:
@@ -471,6 +472,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 thread_pool[th.id] = (th, list(vec))
                 created += 1
                 tt.link(session, th.id, article_targets)
+                touched_threads.add(th.id)
                 _sib = thread_by_id.get(story_sibling) if story_sibling is not None else None
                 if _sib is not None and (
                         _sib.storyline_id is not None
@@ -489,6 +491,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 th.last_update_at = _now()
                 article.thread_id = th.id
                 tt.link(session, th.id, article_targets)
+                touched_threads.add(th.id)
                 refresh_sid = th.storyline_id
                 # Distinct-source count drives corroboration. Count unique real
                 # PUBLISHERS, not URL domains: Google News links all share
@@ -542,11 +545,26 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
             if refresh_sid:
                 _refresh_storyline(session, refresh_sid)
 
+    # 学出来的关系: confident probes add what the matcher missed and veto
+    # what it over-matched, on every thread this run touched.
+    probe_added = probe_vetoed = 0
+    if touched_threads:
+        try:
+            from services.relation_model import Probes
+            with get_session() as session:
+                from db.models import StoryThread
+                probes = Probes(session)
+                if probes.models:
+                    for th in session.exec(select(StoryThread).where(StoryThread.id.in_(list(touched_threads)))).all():
+                        a, v = probes.apply(session, th); probe_added += a; probe_vetoed += v
+                    session.commit()
+        except Exception as e:
+            logger.warning(f"Relation probes skipped: {e}")
     logger.info(f"Semantic ingest: embedded {len(embedded)}, threads +{created} ~{updated}, "
                 f"gated {gated}, embed_skipped {embed_skipped} | "
                 f"arbiter: {arb_calls} calls, {arb_splits} splits, {arb_rescued} rescued, "
                 f"{arb_failed} failed, {arb_skipped_confident} skipped(confident), "
-                f"{arb_skipped_budget} skipped(budget), {arb_story_links} story-links")
+                f"{arb_skipped_budget} skipped(budget), {arb_story_links} story-links | probes +{probe_added} -{probe_vetoed}")
     return {"embedded": len(embedded), "threads_created": created,
             "threads_updated": updated, "relevance_gated": gated,
             "embed_skipped": embed_skipped,

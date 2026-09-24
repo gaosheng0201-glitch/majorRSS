@@ -276,6 +276,12 @@ def run_maintenance():
                             f"{dom['planned']} tracker(s); added {stamp['relations_added']} thread-target relations.")
         except Exception as e:
             logger.warning(f"Visibility backfill skipped: {e}")
+        # 学出来的关系: retrain each target's probe from the day's labels.
+        try:
+            from services.relation_model import train_all
+            train_all()
+        except Exception as e:
+            logger.warning(f"Relation probe training skipped: {e}")
         # 接地词汇刷新: the planner reads each target's recent headlines and
         # names the terms worth watching — one call per target per day.
         try:

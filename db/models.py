@@ -418,7 +418,8 @@ class ThreadTarget(SQLModel, table=True):
     thread_id: int = Field(foreign_key="storythread.id", index=True)
     tracker_id: int = Field(foreign_key="tracker.id", index=True)
     source: str = Field(default="match", description="match | route | llm")
-    llm_verdict: Optional[bool] = Field(default=None, description="summariser's involvement judgement; False folds, never deletes")
+    llm_verdict: Optional[bool] = Field(default=None, description="summariser's (or probe's) involvement judgement; False folds, never deletes")
+    score: Optional[float] = Field(default=None, description="relation probe probability, when a probe is enabled")
     created_at: datetime = Field(default_factory=utc_now_naive)
 
 
@@ -432,3 +433,18 @@ class ThreadPairVerdict(SQLModel, table=True):
     verdict: str = Field(description="event | story | different | merged")
     similarity: float = Field(default=0.0)
     created_at: datetime = Field(default_factory=utc_now_naive)
+
+
+class TargetModel(SQLModel, table=True):
+    """学出来的关系: one linear probe per target (services/relation_model.py)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tracker_id: int = Field(foreign_key="tracker.id", unique=True, index=True)
+    enabled: bool = Field(default=False)
+    weights: Optional[str] = Field(default=None, sa_column=Column(Text))
+    bias: float = Field(default=0.0)
+    auc: Optional[float] = Field(default=None)
+    add_threshold: float = Field(default=1.01)
+    veto_threshold: float = Field(default=0.0)
+    n_pos: int = Field(default=0)
+    n_neg: int = Field(default=0)
+    trained_at: Optional[datetime] = None

@@ -36,7 +36,8 @@ def run_migrations():
             "0020_stamp_legacy_null_tiers",
             "0021_firehose_routes_are_aggregated",
             "0022_targets_are_queries",
-            "0023_cited_sources"
+            "0023_cited_sources",
+            "0024_relation_probe_score"
         ]
         
         for m in migrations:
@@ -554,6 +555,15 @@ def run_migrations():
                         session.add(a); n += 1
                     session.commit()
                     print(f"stamp_legacy_null_tiers: {n} rows stamped ({p} primary)")
+
+                elif m == "0024_relation_probe_score":
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine); conn = session.connection()
+                    if "threadtarget" in inspector.get_table_names():
+                        cols = [c["name"] for c in inspector.get_columns("threadtarget")]
+                        if "score" not in cols:
+                            conn.execute(text("ALTER TABLE threadtarget ADD COLUMN score FLOAT"))
+                    session.commit()
 
                 elif m == "0023_cited_sources":
                     # Which members a summary cited was only kept as markdown in

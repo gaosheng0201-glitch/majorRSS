@@ -565,3 +565,49 @@ def test_entity_spikes_are_bounded_and_deduped():
         names = {a.entity_name for a in s.exec(select(TrendAlert)).all()}
         assert names == {"Opus 5.5", "Anthropic"}
     assert evaluate_entity_spikes(synthesize=False)["alerts"] == 0     # deduped within 24h
+
+
+def test_relation_probe_trains_enables_and_applies_with_confidence():
+    """Synthetic separable world: threads about target A cluster in one
+    direction, threads about B in another. The probe must train, clear the
+    AUC bar, add a missed relation confidently and veto a false one."""
+    import json
+    import numpy as np
+    from datetime import datetime
+    from db.database import get_session
+    from db.models import Tracker, StoryThread, ThreadTarget, TargetModel, RawArticle, ArticleEmbedding, Storyline, ThreadPairVerdict
+    from services.relation_model import train_all, Probes
+    from sqlmodel import select, delete
+    rng = np.random.default_rng(1)
+    with get_session() as s:
+        for M in (ThreadPairVerdict, ArticleEmbedding, RawArticle, ThreadTarget, StoryThread, Storyline, TargetModel):
+            s.exec(delete(M))
+        s.exec(delete(Tracker)); s.commit()
+        A = Tracker(name="probe-A", tracker_type="KEYWORD", target="[]", radar_section="x", source_intent="KEYWORD_DISCOVERY", fetch_policy="{}")
+        B = Tracker(name="probe-B", tracker_type="KEYWORD", target="[]", radar_section="x", source_intent="KEYWORD_DISCOVERY", fetch_policy="{}")
+        s.add(A); s.add(B); s.commit(); s.refresh(A); s.refresh(B)
+        def vec(kind):
+            base = np.zeros(16); base[0 if kind == "A" else 1] = 1.0
+            return json.dumps((base + rng.normal(0, 0.15, 16)).tolist())
+        for i in range(40):
+            for kind, tr in (("A", A), ("B", B)):
+                th = StoryThread(title=f"{kind}{i}", centroid=vec(kind), member_count=1, first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
+                s.add(th); s.commit(); s.refresh(th)
+                s.add(ThreadTarget(thread_id=th.id, tracker_id=tr.id, source="match", llm_verdict=True))
+        s.commit()
+        # an unlabeled A-like thread with no relation, and a B-like thread wrongly matched to A
+        missed = StoryThread(title="missed-A", centroid=vec("A"), member_count=1, first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
+        wrong = StoryThread(title="wrong-A", centroid=vec("B"), member_count=1, first_seen_at=datetime.utcnow(), last_update_at=datetime.utcnow())
+        s.add(missed); s.add(wrong); s.commit(); s.refresh(missed); s.refresh(wrong)
+        s.add(ThreadTarget(thread_id=wrong.id, tracker_id=A.id, source="match")); s.commit()
+        mid, wid, aid = missed.id, wrong.id, A.id
+    res = {r["tracker_id"]: r for r in train_all()}
+    assert res[aid]["enabled"] and res[aid]["auc"] >= 0.9
+    with get_session() as s:
+        probes = Probes(s)
+        assert aid in probes.models
+        a1, v1 = probes.apply(s, s.get(StoryThread, mid)); a2, v2 = probes.apply(s, s.get(StoryThread, wid)); s.commit()
+        assert a1 == 1 and v2 == 1
+        rows = {(r.thread_id, r.tracker_id): r for r in s.exec(select(ThreadTarget)).all()}
+        assert rows[(mid, aid)].source == "model"
+        assert rows[(wid, aid)].llm_verdict is False and rows[(wid, aid)].score is not None
