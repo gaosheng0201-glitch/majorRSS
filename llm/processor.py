@@ -108,7 +108,9 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
             "compared against, benchmarked, quoted as a rival, listed among alternatives, or "
             "mentioned in passing — a launch that beats a competitor concerns only the launcher. A "
             "name collision (a person, place or unrelated product sharing the name) is not "
-            "involvement either. When unsure, leave the target out."
+            "involvement either. Several listed targets may be the SAME subject tracked in "
+            "different languages or regions — if the story concerns that subject, name all of "
+            "them. Otherwise, when unsure, leave the target out."
         )
 
     target_lang = get_target_language()
