@@ -18,7 +18,7 @@ Precision rules (an article mentioning Claude once in passing should NOT flood
 the claude filter):
   - official-domain hit  → relevant, always (the target's own channel);
   - an entity in the TITLE (word-bounded for Latin, substring for CJK) → relevant;
-  - ≥2 distinct entities in the body → relevant;
+  - ≥2 distinct entities in the body AND one of them in the lead → relevant;
   - keep_keywords deliberately NOT used — they are search nets ("leak", "API"),
     far too generic to assert aboutness.
 """
@@ -84,20 +84,27 @@ def _matches(profile: TrackerProfile, title: str, content: str, url_domain: str)
     tl = title.lower()
     if any(term in tl for term in profile.cjk_terms):
         return True
+    # Body-only relation: the target must be in the LEAD (first 600 chars) and
+    # named at least twice overall. A launch post that benchmarks against a
+    # rival names it many times in tables far down the page — that is a
+    # mention, not involvement (measured 2026-09-24: "Introducing GPT-6 Sol"
+    # related to claude and gemini through comparison paragraphs).
     body = (content or "")[:20000]
+    lead = body[:600]
     hits = 0
+    in_lead = False
     for rx in profile.latin_terms:
         if rx.search(body):
             hits += 1
-            if hits >= 2:
-                return True
+            if rx.search(lead):
+                in_lead = True
     bl = body.lower()
     for term in profile.cjk_terms:
         if term in bl:
             hits += 1
-            if hits >= 2:
-                return True
-    return False
+            if term in lead.lower():
+                in_lead = True
+    return hits >= 2 and in_lead
 
 
 def relevant_tracker_ids(title: str, content: str, url: str,

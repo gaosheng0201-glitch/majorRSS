@@ -161,8 +161,10 @@ def run_semantic_job():
     except Exception as e:
         logger.error(f"Semantic ingest failed: {e}", exc_info=e)
     try:
-        from services.alert_engine import evaluate_alerts
+        from services.alert_engine import evaluate_alerts, evaluate_entity_spikes
         evaluate_alerts()
+        # TrendScan folded in: cross-thread entity spikes, bounded (2026-09-24).
+        evaluate_entity_spikes()
     except Exception as e:
         logger.error(f"Alert evaluation failed: {e}", exc_info=e)
 
@@ -191,21 +193,6 @@ def run_processing_job():
     except Exception as e:
         logger.error(f"Error in fusion pass: {e}", exc_info=e)
 
-def run_trend_scan_job():
-    if is_pure_rss_mode():
-        logger.info("Skipping trend scan because APP_MODE=pure_rss.")
-        return
-
-    from services.processor_service import is_llm_budget_exhausted
-    if is_llm_budget_exhausted():
-        logger.info("Skipping trend scan: daily LLM token budget exhausted.")
-        return
-
-    logger.info("Running scheduled trend scan job...")
-    try:
-        scan_trends()
-    except Exception as e:
-        logger.error(f"Error scanning trends: {e}", exc_info=e)
 
 def _record_heartbeat(scheduler: BackgroundScheduler):
     jobs = []
@@ -246,8 +233,6 @@ def start_scheduler(block: bool = True):
         scheduler.add_job(run_processing_job, 'interval', minutes=5, next_run_time=now,
                           name="intelligence_fusion")
         # Trend scan costs LLM tokens; do not fire on every app launch.
-        scheduler.add_job(run_trend_scan_job, 'interval', hours=2,
-                          name="trend_scan")
         scheduler.add_job(run_subscription_job, 'interval', minutes=5, next_run_time=now,
                           name="subscription_check")
         # R7 public digest (opt-in via PUBLISH_ENABLED). Low-frequency: official

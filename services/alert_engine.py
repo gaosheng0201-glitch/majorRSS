@@ -115,6 +115,73 @@ def evaluate_alerts(window_hours: int = 48, synthesize: bool = True) -> dict:
     return {"alerts_created": created}
 
 
+ENTITY_SPIKE_MIN_THREADS = 3      # was 2 in the standalone TrendScan
+ENTITY_SPIKE_DEDUP_HOURS = 24     # was 12
+ENTITY_SPIKE_MAX_PER_RUN = 3      # was unbounded: measured 39 syntheses / 300k tokens a day
+
+
+def evaluate_entity_spikes(window_hours: int = 12, synthesize: bool = True) -> dict:
+    """The former standalone TrendScan, folded in (author, 2026-09-24): an
+    entity named by the summaries of several distinct refined threads within
+    the window is a cross-thread signal — the one kind of resonance a single
+    thread cannot show. Tighter than before: three threads not two, one alert
+    per entity per day, at most three syntheses per run. Writes TrendAlert
+    (the dashboard's existing feed) so nothing downstream changes."""
+    import json
+    from db.database import get_session
+    from db.models import StoryThread, TrendAlert
+    from sqlmodel import select
+    cutoff = _now() - timedelta(hours=window_hours)
+    dedup_cut = _now() - timedelta(hours=ENTITY_SPIKE_DEDUP_HOURS)
+    made = 0
+    with get_session() as session:
+        threads = session.exec(select(StoryThread)
+                               .where(StoryThread.validity_category.in_(["[VALID_NEWS]", "VALID_NEWS"]))
+                               .where(StoryThread.summary.is_not(None))
+                               .where(StoryThread.summarized_at >= cutoff)).all()
+        by_entity = {}
+        for th in threads:
+            try:
+                ents = json.loads(th.key_entities or "[]")
+            except Exception:
+                continue
+            for e in ents:
+                k = (e or "").strip().upper()
+                if k:
+                    by_entity.setdefault(k, {"name": e.strip(), "threads": {}})["threads"][th.id] = th
+        spikes = sorted(((d for d in by_entity.values() if len(d["threads"]) >= ENTITY_SPIKE_MIN_THREADS)),
+                        key=lambda d: -len(d["threads"]))
+        for d in spikes:
+            if made >= ENTITY_SPIKE_MAX_PER_RUN:
+                break
+            if session.exec(select(TrendAlert).where(TrendAlert.entity_name == d["name"],
+                                                     TrendAlert.created_at >= dedup_cut)).first():
+                continue
+            ths = list(d["threads"].values())
+            text = None
+            if synthesize:
+                try:
+                    from services.llm_provider import get_provider
+                    from llm.processor import _record_usage, get_target_language
+                    p = get_provider()
+                    if getattr(p, "supports_generation", False):
+                        body = "\n---\n".join(f"{t.title}\n{(t.summary or '')[:800]}" for t in ths[:6])
+                        text, usage = p.generate(
+                            body, temperature=0.2, thinking_level="low",
+                            system=(f"Several distinct stories in the last {window_hours} hours involve "
+                                    f"'{d['name']}'. In one short paragraph, in {get_target_language()}, say "
+                                    "what is happening with it across these stories — facts only, no hype."))
+                        _record_usage(p.name, "EntitySpike", usage)
+                except Exception as e:
+                    logger.warning(f"Entity-spike synthesis failed for {d['name']}: {e}")
+            session.add(TrendAlert(entity_name=d["name"], alert_summary=text or f"{d['name']}: {len(ths)} stories",
+                                   related_article_ids=",".join(str(t.id) for t in ths)))
+            session.commit()
+            made += 1
+            logger.info(f"Entity spike: '{d['name']}' across {len(ths)} threads")
+    return {"spikes": len(spikes), "alerts": made}
+
+
 def get_undelivered_alerts(limit: int = 20) -> list:
     """Alerts not yet pushed as OS notifications (for the desktop delivery poll)."""
     from db.database import get_session

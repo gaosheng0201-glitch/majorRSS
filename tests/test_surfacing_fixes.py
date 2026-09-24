@@ -529,3 +529,39 @@ def test_merge_policy_is_the_single_declaration():
     assert sm.THREAD_HIGH_CONFIDENCE == mp.INGEST_HIGH_CONFIDENCE
     assert si._ARBITER_CANDIDATES == mp.INGEST_CANDIDATES
     assert tm.MIN_SIMILARITY == mp.POSTHOC_MIN_SIMILARITY
+
+
+def test_body_mentions_relate_only_when_the_target_is_in_the_lead():
+    from services.attribution import TrackerProfile, relevant_tracker_ids
+    claude = TrackerProfile(4, ["Claude", "Anthropic"], ["anthropic.com"])
+    launch = ("Introducing GPT-6 Sol and Luna", "Today we are releasing GPT-6 Sol and Luna, our fastest models. "
+              + "x " * 400 + "On SWE-bench, GPT-6 Sol scores 81 versus Claude Opus 5.5 at 79 and Claude Fable 5.1 at 80.",
+              "https://openai.com/index/gpt-6-sol")
+    assert relevant_tracker_ids(*launch, [claude], owner_id=3) == []
+    about = ("A new enzyme system found with AI help", "Claude, Anthropic's model, proposed the candidates that a wet lab "
+             "then confirmed; Claude ranked them by novelty.", "https://nature.example/x")
+    assert relevant_tracker_ids(*about, [claude], owner_id=3) == [4]
+
+
+def test_entity_spikes_are_bounded_and_deduped():
+    import json
+    from datetime import datetime
+    from db.database import get_session
+    from db.models import StoryThread, TrendAlert, RawArticle, ArticleEmbedding, Storyline, ThreadTarget, ThreadPairVerdict
+    from services.alert_engine import evaluate_entity_spikes, ENTITY_SPIKE_MIN_THREADS
+    from sqlmodel import select, delete
+    with get_session() as s:
+        for M in (ThreadPairVerdict, ArticleEmbedding, RawArticle, ThreadTarget, StoryThread, Storyline, TrendAlert):
+            s.exec(delete(M))
+        for i in range(ENTITY_SPIKE_MIN_THREADS):
+            s.add(StoryThread(title=f"story {i}", summary="s", validity_category="[VALID_NEWS]", summarized_at=datetime.utcnow(),
+                              key_entities=json.dumps(["Opus 5.5", "Anthropic"]), member_count=1))
+        s.add(StoryThread(title="lonely", summary="s", validity_category="[VALID_NEWS]", summarized_at=datetime.utcnow(),
+                          key_entities=json.dumps(["Zzyzx"]), member_count=1))
+        s.commit()
+    out = evaluate_entity_spikes(synthesize=False)
+    assert out["spikes"] == 2 and out["alerts"] == 2
+    with get_session() as s:
+        names = {a.entity_name for a in s.exec(select(TrendAlert)).all()}
+        assert names == {"Opus 5.5", "Anthropic"}
+    assert evaluate_entity_spikes(synthesize=False)["alerts"] == 0     # deduped within 24h

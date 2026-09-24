@@ -104,9 +104,11 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
             f"SEPARATELY, these tracked targets may be concerned:\n{listing}\n"
             "In `concerned_targets` list the NAMES (exactly as given) of those that genuinely take "
             "part in the event — as actor, product, the thing acted upon, or the tool that produced "
-            "the result — WHATEVER the domain (science, law, sports…). A mere name collision (a "
-            "person, place or unrelated product sharing the name) is not involvement. When genuinely "
-            "unsure, include the target."
+            "the result — WHATEVER the domain (science, law, sports…). NOT involvement: being "
+            "compared against, benchmarked, quoted as a rival, listed among alternatives, or "
+            "mentioned in passing — a launch that beats a competitor concerns only the launcher. A "
+            "name collision (a person, place or unrelated product sharing the name) is not "
+            "involvement either. When unsure, leave the target out."
         )
 
     target_lang = get_target_language()
