@@ -88,6 +88,10 @@ SELECT COUNT(*) FROM rawarticle WHERE url LIKE '%arxiv.org%' AND source_tier IN 
 
 `scripts/bench_arbiter.py`（任意 provider,标注对,并线正确率/故事线召回/token/延迟）;当前 gemini-3.8-flash + `thinking_level="low"`（9 对×2:17/18,177 token/次）。
 
+## 7.5 "Mac 发烫 / sidecar 占满一个核"
+
+`ps -o %cpu,rss,time -p $(pgrep -f backend-sidecar)` → `sample <pid> 5`（原生栈里 `scan_once_unicode`/`PyFloat_FromString` = 在解析向量 JSON,`cosine` 纯 Python 循环不会出现在原生栈但会占满 `_PyEval`）;日志 `~/.majorss/logs/majorss.log` 里 `semantic_clustering` 的 Running→executed 间隔 ≥5 分钟或出现 `maximum number of running instances` = 这一轮跑满了整个间隔,等于一直在跑。9/25 实测:3.3 万条嵌入 × 3072 维,每轮 ~5 分钟(全量解析嵌入求均值 ×2、每篇对 1.16 万线索纯 Python 余弦、合并轮 160 万对),常驻 100% CPU / 6 GB。现在:语料均值是增量累加(累加和持久化在 `<数据目录>/cache/corpus_mean.npz`,探针均值在训练时存为 `probe_mean.npy`,均可随时删除、下次自动重建)、线索质心按内容哈希缓存、近邻与全对用 numpy 矩阵,无新文章时合并轮直接跳过;热轮 ~1 s。定时任务跑在 macOS `utility` QoS(日维护 `background`,只用能效核),用户触发的任务保持默认;任务线程 CPU 超过间隔 20% 会记 `Job X used Ns CPU … (budget 20%)` 警告——看到它就是回归了。9/27 打包版实测:空转轮 1–2 s,有 9 篇新文章的一轮 69 s 墙钟(几乎全是 25 次仲裁调用的网络等待),维护后 5 分钟均值 8.8% CPU、空闲时 0%,RSS ~450–650 MB。正常的短时尖峰只有两类:启动后第一次有新文章时加载 30 天线索池(~6 s),以及每日维护(启动 15 分钟后首跑,~4.5 min,background QoS)。
+
 ## 8. 教训（别再踩）
 
 - 对实库跑长事务脚本会与应用抢锁（9/9 丢了 95 条 token 记账）→ 逐条提交
@@ -95,3 +99,4 @@ SELECT COUNT(*) FROM rawarticle WHERE url LIKE '%arxiv.org%' AND source_tier IN 
 - 同主题的多语言目标会被严格分类器当成不同实体 → 提示词明写"语言变体一视同仁"
 - 文件里残留旧函数定义会静默覆盖新版（`refresh_all` 9/22）→ 改完 grep 一次 `^def 名字`
 - 日志行被 `cut` 截断后再解读会误判（把 13908 看成 1390）
+- 随库增长的每轮全量扫描（全表读 + 纯 Python 向量运算）会悄悄变成常驻负载 → 每轮只处理增量,向量运算走 numpy

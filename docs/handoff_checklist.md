@@ -5,6 +5,8 @@
 > 这份文档用于：作者亲自体验几天测试后，再决定继续哪部分。开新会话时从这里接上即可。
 > 7-21 之后的全部改造（P0–P2 路线图执行、B1–B6 供给侧、P4 前置管线修复、呈现层三修、P6 雷达收口与时间诚实）见 CHANGELOG.md 与 `docs/radar_quality_roadmap.md`；工程现状见 `docs/engineering_baseline.md`。测试 58 项。
 >
+> **2026-09-27 状态增补**：后台功耗治理——语义任务每轮从 ~5 分钟（常驻 100% CPU）降到 ~1 s，调度任务改低 QoS + CPU 预算告警，测试 115 项。新约束「托盘常驻 = 静默的资源预算」见 engineering_baseline §1；发烫排查见 debugging_playbook §7.5。向量改二进制存储待裁决（baseline §3.2）。
+>
 > **2026-09-24 状态增补**：测试 110 项;迁移 0001–0024。8/26 以来的大块：目标即查询（线索无主、`threadtarget` 关系表）、消防栓层级与盖章不变量、别名路由/后继探测/涌现关键词/接地词汇刷新（目标词表自动生长）、事后合并（`merge_policy.py` 唯一阈值声明）、引用 vs 佐证恢复、TrendScan 并入 alert_engine、学出来的关系（每目标探针）。**排查从 [debugging_playbook.md](debugging_playbook.md) 起**。仍等作者：xAI key 或小号（X 通道）、P8/P9 设计合同审阅、P5 暂放。
 >
 > **2026-08-13 状态增补**：agentic/浏览器管线已修复（打包版可用，dev 机需 `playwright install chromium` 一次）；交互式授权登录已验证到弹窗（B 节第一项半通），cookie 段等作者小号；雷达页已是唯一阅读面（AI 模式 提炼|线报 双 tab + 目标筛选，纯 RSS 模式 = 原始订阅流）。挂起等作者：浏览器打包粒度、P5 方案、授权实测。

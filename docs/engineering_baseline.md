@@ -22,6 +22,7 @@
 - **本地优先**：任务默认在用户电脑上运行。OnlyFourBot 等共享网络是价值验证之后的事。
 - **决策在规划期，运行时只执行**（2026-07-29 架构校正后明文化）：实体画像/语言地理/平台路由是规划器（P4.0）的产出；运行时的启发式只是无规划输出时的确定性兜底。
 - **入口捕获，消费期只施加权重**（source_tiering §2）：provenance（层级、账号来源）在入库时盖章，绝不在消费期从 URL 重新推导。
+- **托盘常驻 = 静默的资源预算**（2026-09-27 明文化）：本机只做"新增量 × 向量比对"这类毫秒级工作，重活在云端模型。因此：①每轮成本只随**新增**内容增长，绝不随库大小增长（全表读/全量解析/纯 Python 向量循环都是违例）；②没有新内容的一轮什么都不做；③调度任务跑在 macOS 低 QoS（`utility`，日维护 `background`），用户触发的任务保持默认；④任务线程 CPU 超过间隔 20% 即告警（`Job X used Ns CPU`）。9/22–9/27 违反①导致 sidecar 常驻 100% CPU / 6 GB（见 debugging_playbook §7.5）。
 
 ## 2. 当前架构（as-is，2026-09-24）
 
@@ -30,6 +31,7 @@
                           macOS 原生窗饰/交通灯（tauri.macos.conf.json）；Win/Linux 自绘
 后端    backend/main.py   FastAPI + uvicorn；lifespan 启动调度器守护线程；启动预载 .env/config
 调度    scheduler.py      APScheduler 7 任务（poller/抓取/语义[含合并遍+实体尖峰]/融合/订阅diff/维护/心跳）
+                          每个任务经 _job() 包装:设 macOS 线程 QoS + CPU 预算告警（20% 间隔）
 规划    portfolio_planner.plan_intent  一句话 → IntentPlan（分道/多语言别名/官方域名/集合/建议源）
         建议源 = 模型发现（P4.1 新手问题）+ 话题→登记库映射（_REGISTRY_LEXICON,两条路径都走）
         经 source_verifier 存在性校验（FxTwitter 验 handle、RSS/页面/subreddit 探活）后才可选
@@ -44,6 +46,9 @@
         top-K + LLM 三分仲裁(event/story/different) → StoryThread（全局无主）→ ThreadTarget 关系（目标即查询）
         story → 认亲 Storyline（只链接不合并;出版方按整条去重——聚合不制造佐证;只给可见性）
         生命周期 LEAD→CORROBORATED→CONFIRMED + 共振；账号线报走人物雷达豁免
+        向量运算:semantic.CentroidIndex（去均值+归一化 float32 矩阵,近邻=一次 mat-vec,全对=一次 mat-mat）;
+        语料均值=增量累加和,线索质心按内容哈希缓存,均值状态持久化在 <数据目录>/cache/（可删,自动重建）;
+        合并遍输入未变且上轮已判完则整轮跳过。稳态一轮 ~1 s（改前 ~5 分钟）
 融合    processor_service 按线索走一遍（P1.1 门控挣得制;无目标关心不花钱）；摘要中立,涉及目标为独立结构化输出；重摘要须实质增量
         （is_material_increment：出版方相对增长≥25% 或晋级——同一规则管排序诚实与重烧成本）
 呈现    雷达页 = 唯一阅读面（P6）：AI 模式 提炼|线报 双 tab（卡片即摘要；线报按盖章分层，
@@ -52,7 +57,7 @@
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0024 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 110 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 115 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -93,6 +98,7 @@
 - **仲裁语义**：same-event 仍严格（拆分率 91% 部分是诚实的）；"同一故事线"已作为第三答案落地为认亲而非合并（2026-09-03），过度合并风险因此不存在；仍可能同故事线被判 different（漏认亲,只影响可见性）。
 - **容量余量薄**：稳态进入≈消化≈16 条/分钟，无余量；再加探测目标 pending 将单调增长。是容量上限不是泄漏。
 - **优先级倒挂**：`max_sources_per_run` 封顶时 keyword 源(priority=1)压过精选源(priority=5)。
+- **向量以 JSON 文本存储**（`articleembedding.vector` / `storythread.centroid`,每条 3072 维 ≈69 KB,占 3.8 GB 库的绝大部分）:稳态已不再解析它们（增量+缓存）,但全量解析仍发生在三处——缓存失效/首次启动（语料均值 ~25 s,之后持久化）、每次启动首轮的 30 天线索池（~6 s）、每日探针训练（~11 s,background QoS）。改为 float32 BLOB 可把这些降到 1 s 内、库降到 ~1.3 GB,但需迁移且旧版本不可读新格式——待裁决。
 - **慢滴积累跨过 25% 增量阈值**时最后一滴获"进展"标记——按裁决语义诚实，真故事线级进展识别归仲裁语义工作。
 
 ### 3.3 功能与工程（可穿插）
@@ -136,7 +142,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
 
-# 测试（110 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（115 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 

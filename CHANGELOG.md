@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **公开分发站上线（onlyforbots.com）**：`site/` 拆为两类读者两页——介绍页 `/`（面向机器/开发者，含接入说明）+ 信息页 `/radar`（人类阅读的去噪线索流）+ `/llms.txt`（机器可读站点说明，只列现有 endpoint、规划中项归 planned）；渲染逻辑与视觉 token 隔离（`site/assets/`），只消费 `docs/publish_contract.md`（PublishedDigest v0.1）契约。部署到 Cloudflare Pages（Git 集成，push `main` 自动部署；apex/www 绑定 + HTTPS）。`docs/publish_contract.md`（契约 + 三阶段共享层演进）、`docs/official_feed_automation.md`（官方源自动化：无头实例、NAS Docker vs GitHub Actions、生成/分发端拆分）。
 
 #### Changed
+- **后台功耗治理（2026-09-27，作者反馈"后台运行 Mac 发烫"）**：实测 sidecar 常驻 100% CPU / 6 GB RSS，运行 35.8 h 累计 1374 CPU 分钟。先测量定位：`semantic_clustering` 一轮 ~5 分钟而间隔 5 分钟，首尾相接永不停歇——每轮成本随**库大小**而非新增量增长（3.37 万条 × 3072 维嵌入）：全量解析 2.3 GB 嵌入 JSON + 纯 Python 求语料均值（入库、合并各一遍，28 s×2）；每篇新文章对 1.16 万线索纯 Python 余弦（2.2 s/篇）；9/22 加入的合并遍对 48 h 内 1796 条线索两两比较（160 万对，~230 s，压垮间隔的那一根）；9/24 探针每轮全量解析 2.3 万质心（8 s）。功能行为不变：
+  - `semantic.CentroidIndex`：去均值+归一化 float32 矩阵，近邻一次 mat-vec（11 ms/篇）、全对一次 mat-mat（0.3 s）；与纯 Python 参考实现在真实库上结果一致（测试钉住）。`semantic.parse_vector` 以 C 解析 JSON 向量。
+  - 语料均值改为增量累加和（只解析新增行；行数/锚行变化自动全量重算），持久化到 `<数据目录>/cache/corpus_mean.npz`；探针均值在每日训练时计算并存为 `probe_mean.npy`（打分与训练同一空间）；线索质心按内容哈希缓存。缓存文件均可删除，下次自动重建。
+  - 待嵌入文章改 SQL 查询（原为每轮读全部文章正文）；目标画像向量跨轮缓存（原每轮 ~20 次付费嵌入调用）；全表向量扫描改流式（首轮峰值内存 3.56 GB → 0.36 GB）。
+  - 合并遍：输入（嵌入/线索/判定）未变且上一轮已判完所有对时整轮跳过——结果可证为空。
+  - 调度任务设 macOS 线程 QoS（`utility`；日维护 `background` 只用能效核；用户触发任务保持默认），`_job()` 包装记录任务线程 CPU，超间隔 20% 告警。
+  - 实测（打包版替换后）：语义任务 22 s（冷首轮）→ 1–2 s/轮；稳态 RSS ~650 MB；日维护 5.9 → 4.5 min。numpy 显式进 requirements。测试 110 → 115。排查见 `docs/debugging_playbook.md` §7.5，约束见 `docs/engineering_baseline.md` §1。
 - **桌面端启动速度重构（22s → 3.7s 冷启动，作者反馈"不可接受"后）**：先测量定位——重库导入合计仅 0.59s，**冷启动几乎全是 PyInstaller `--onefile` 每次把 ~85MB 解压到临时目录的 I/O**（直接连跑 onefile sidecar：冷 ~13s、热 ~4s）。
   - **`--onefile` → `--onedir`**（`build_backend.py`）：解释器+依赖以解包形态随 app 打包（Tauri `bundle.resources` 的 `backend-bundle/`，替代 `externalBin`），启动不再解压。`lib.rs` 从 `resource_dir()/backend-bundle/backend-sidecar` 启动。实测打包后冷启动 **3.7s**。
   - **后端托盘常驻**（`lib.rs`）：关窗口本就隐藏到托盘；补上 Cmd+Q/退出也默认隐藏保活后端（`ReallyExitState`），仅托盘"退出应用"真退出。雷达持续在后台转，再开窗口连已运行后端 → 瞬间。
