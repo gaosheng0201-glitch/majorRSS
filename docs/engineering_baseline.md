@@ -140,7 +140,7 @@ cd desktop && npx tauri dev
 
 # 打包安装（beforeBuildCommand 会先跑 build_backend.py 重建 sidecar）
 cd desktop && npm run tauri:build
-# 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（dmg 步骤已知会失败，无碍）
+# 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（macOS 只打 .app；要 dmg 用 npx tauri build --bundles app,dmg）
 
 # 测试（115 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q

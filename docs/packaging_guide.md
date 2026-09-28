@@ -232,12 +232,12 @@ npx tauri build
 
 ### 现在就能做（免费，无需任何账号）
 
-1. **构建可用的 .app / .dmg**
+1. **构建可用的 .app**
    ```bash
    cd desktop && npm run tauri:build
-   # 产物：desktop/src-tauri/target/release/bundle/{macos/*.app, dmg/*.dmg}
+   # 产物：desktop/src-tauri/target/release/bundle/macos/MajorRSS.app
    ```
-   `bundle.targets` 已设为 `"all"`——在 macOS 上产出 .app + .dmg，在 Windows 上产出 nsis。图标 icon.icns 已就位。产物**未签名**，在你自己的机器上直接能跑。
+   `tauri.conf.json` 的 `bundle.targets` 是 `"all"`（Windows 产出 nsis），`tauri.macos.conf.json` 在 macOS 上覆盖为 `["app"]`（2026-09-27）：dmg 步骤（`bundle_dmg.sh`）在本机一直失败，每次还会留下一个 ~300 MB 的 `rw.*.dmg` 临时镜像并保持挂载（清理前积累了 54 个 / 13 GB）。需要 dmg 时单次加参数：`npx tauri build --bundles app,dmg`。图标 icon.icns 已就位。产物**未签名**，在你自己的机器上直接能跑。
 
 2. **分发未签名版给别人**（会遇到 Gatekeeper 警告，但能打开）
    - 对方右键点 App → **打开**（而不是双击），首次会有"未识别开发者"确认，之后正常。
