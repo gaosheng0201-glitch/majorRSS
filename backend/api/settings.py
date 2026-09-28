@@ -66,6 +66,7 @@ class LLMConfigUpdate(BaseModel):
     model: Optional[str] = ""          # generation model (blank = provider default)
     embed_model: Optional[str] = ""    # embedding model (blank = provider default)
     api_key: Optional[str] = ""        # for openai_compatible; blank keeps existing / none
+    daily_token_budget: Optional[int] = None  # LLM_DAILY_TOKEN_BUDGET; 0 = off, None = unchanged
 
 @router.get("/llm-config")
 def get_llm_config():
@@ -77,6 +78,8 @@ def get_llm_config():
         "base_url": os.environ.get("LLM_BASE_URL", ""),
         "model": os.environ.get("LLM_MODEL", ""),
         "embed_model": os.environ.get("LLM_EMBED_MODEL", ""),
+        # services/llm_budget.py: one brake for all background spend (0 = off)
+        "daily_token_budget": int(os.environ.get("LLM_DAILY_TOKEN_BUDGET", "0") or 0),
         "defaults": {
             "gemini": {"model": "gemini-3.8-flash", "embed_model": "gemini-embedding-2"},
             "openai_compatible": {"model": "gpt-4o-mini", "embed_model": "text-embedding-3-small"},
@@ -93,6 +96,8 @@ def save_llm_config(req: LLMConfigUpdate):
     update_env_variable("LLM_EMBED_MODEL", (req.embed_model or "").strip())
     if req.api_key:
         update_env_variable("LLM_API_KEY", req.api_key.strip())
+    if req.daily_token_budget is not None:
+        update_env_variable("LLM_DAILY_TOKEN_BUDGET", str(max(0, int(req.daily_token_budget))))
     return {"status": "ok", "message": "Model configuration saved"}
 
 class SystemLanguageUpdate(BaseModel):

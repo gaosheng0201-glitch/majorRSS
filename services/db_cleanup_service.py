@@ -288,9 +288,19 @@ def run_maintenance():
     # exactly one language, which silently breaks 语言三原则① (one topic, coverage
     # in every language it is reported in). Idempotent — only trackers with no
     # entities, one cheap planner call each.
-    try:
-        from services.portfolio_planner import backfill_tracker_entities
-        res = backfill_tracker_entities()
+    # Model-backed steps (planner backfills, vocabulary refresh) answer to the
+    # daily token budget (services/llm_budget.py); probe training and the
+    # emergent-source scan make no model calls and always run.
+    from services import llm_budget
+    spend_ok = not llm_budget.exhausted("maintenance model calls")
+    if spend_ok:
+        try:
+            from services.portfolio_planner import backfill_tracker_entities
+            res = backfill_tracker_entities()
+            if res.get("planned"):
+                logger.info(f"Multilingual alias backfill: {res}")
+        except Exception as e:
+            logger.error(f"Entity backfill failed: {e}", exc_info=e)
         # Per-target official domains for pre-intent-flow trackers, then refresh
         # cross-target visibility so the new knowledge reaches recent rows.
         try:
@@ -303,14 +313,15 @@ def run_maintenance():
                             f"{dom['planned']} tracker(s); added {stamp['relations_added']} thread-target relations.")
         except Exception as e:
             logger.warning(f"Visibility backfill skipped: {e}")
-        # 学出来的关系: retrain each target's probe from the day's labels.
-        try:
-            from services.relation_model import train_all
-            train_all()
-        except Exception as e:
-            logger.warning(f"Relation probe training skipped: {e}")
-        # 接地词汇刷新: the planner reads each target's recent headlines and
-        # names the terms worth watching — one call per target per day.
+    # 学出来的关系: retrain each target's probe from the day's labels.
+    try:
+        from services.relation_model import train_all
+        train_all()
+    except Exception as e:
+        logger.warning(f"Relation probe training skipped: {e}")
+    # 接地词汇刷新: the planner reads each target's recent headlines and
+    # names the terms worth watching — one call per target per day.
+    if spend_ok:
         try:
             from services.vocab_refresh import refresh_all
             learned = [(r["tracker"], r["added"]) for r in refresh_all() if r.get("added")]
@@ -318,17 +329,13 @@ def run_maintenance():
                 logger.info(f"Vocab refresh learned: {learned}")
         except Exception as e:
             logger.warning(f"Vocab refresh skipped: {e}")
-        # P4.2: which handles/publishers keep showing up in attention-earning
-        # threads — deterministic, zero tokens, additive suggestions only.
-        try:
-            from services.emergent_sources import scan_emergent_sources
-            scan_emergent_sources()
-        except Exception as e:
-            logger.warning(f"Emergent source scan skipped: {e}")
-        if res.get("planned"):
-            logger.info(f"Multilingual alias backfill: {res}")
+    # P4.2: which handles/publishers keep showing up in attention-earning
+    # threads — deterministic, zero tokens, additive suggestions only.
+    try:
+        from services.emergent_sources import scan_emergent_sources
+        scan_emergent_sources()
     except Exception as e:
-        logger.error(f"Entity backfill failed: {e}", exc_info=e)
+        logger.warning(f"Emergent source scan skipped: {e}")
     logger.info(f"DB maintenance done: {user_deleted} user rows, {telemetry_deleted} telemetry rows removed.")
 
 def test_pg_connection(host, port, user, password, dbname):

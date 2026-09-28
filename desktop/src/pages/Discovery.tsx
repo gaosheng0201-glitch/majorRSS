@@ -203,6 +203,8 @@ export default function Discovery() {
   // Developer Accordion Overrides
   const [devRouteStrategy, setDevRouteStrategy] = useState('default');
   const [devMaxItems, setDevMaxItems] = useState<number>(20);
+  // Per-target daily cap on summary spend (fetch_policy.daily_token_budget, 0 = off)
+  const [dailyTokenBudget, setDailyTokenBudget] = useState<number>(0);
 
   // Live Route Preview
   const [testing, setTesting] = useState(false);
@@ -323,6 +325,7 @@ export default function Discovery() {
         const p = JSON.parse(d.fetch_policy);
         setDevRouteStrategy(p.keyword_strategy || 'default');
         setDevMaxItems(p.max_items_per_route || 20);
+        setDailyTokenBudget(Number(p.daily_token_budget) || 0);
         setFreshnessDays(p.max_days || 7);
         if (p.keyword_strategy === 'trusted_news_only') {
           setIntensity('strict');
@@ -351,6 +354,7 @@ export default function Discovery() {
     setPromptOverride('');
     setDevRouteStrategy('default');
     setDevMaxItems(20);
+    setDailyTokenBudget(0);
     setFreshnessDays(7);
     setKeepKeywords('');
     setIgnoreKeywords('');
@@ -386,7 +390,8 @@ export default function Discovery() {
       fallback_enabled: true,
       use_default_osint: true,
       keep_keywords: keepList,
-      ignore_keywords: ignoreList
+      ignore_keywords: ignoreList,
+      daily_token_budget: Number(dailyTokenBudget) || 0
     };
 
     if (intensity === 'strict') {
@@ -959,6 +964,16 @@ export default function Discovery() {
                           max={100}
                           value={devMaxItems}
                           onChange={(v) => setDevMaxItems(Number(v) || 20)}
+                          styles={modalInputStyles}
+                        />
+                        <NumberInput
+                          label="每日摘要 token 上限 (Daily token cap, 0 = 不限)"
+                          description="只计这个目标的 AI 摘要花费；到上限后，当天剩下的摘要顺延到 UTC 0 点。全局上限在系统设置 → 模型配置。"
+                          min={0}
+                          step={10000}
+                          thousandSeparator=","
+                          value={dailyTokenBudget}
+                          onChange={(v) => setDailyTokenBudget(Math.max(0, Number(v) || 0))}
                           styles={modalInputStyles}
                         />
                         {/* 新鲜度移到第 1 步的一等设置项，不再放在开发者设置里 */}

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   Text, Group, Stack, Button, TextInput, Paper, ScrollArea, Divider, Select,
-  SimpleGrid, useMantineColorScheme, Checkbox, Badge
+  SimpleGrid, useMantineColorScheme, Checkbox, Badge, NumberInput
 } from '@mantine/core';
 import { Terminal, Settings as SettingsIcon, Save, AlertTriangle, ShieldAlert, Database, Activity } from 'lucide-react';
 import client from '../api/client';
@@ -65,6 +65,7 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
   const [llmModel, setLlmModel] = useState('');
   const [llmEmbedModel, setLlmEmbedModel] = useState('');
   const [llmDefaults, setLlmDefaults] = useState<Record<string, { model: string; embed_model: string }>>({});
+  const [dailyBudget, setDailyBudget] = useState<number>(0);
   const [savingLlm, setSavingLlm] = useState(false);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerState | null>(null);
@@ -148,6 +149,7 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
       setLlmBaseUrl(res.data.base_url || '');
       setLlmModel(res.data.model || '');
       setLlmEmbedModel(res.data.embed_model || '');
+      setDailyBudget(Number(res.data.daily_token_budget) || 0);
       setLlmDefaults(res.data.defaults || {});
     } catch (err) {
       console.error("Failed to fetch LLM config:", err);
@@ -159,6 +161,7 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
     try {
       await client.post('/settings/llm-config', {
         provider: llmProvider, base_url: llmBaseUrl, model: llmModel, embed_model: llmEmbedModel,
+        daily_token_budget: dailyBudget,
       });
       alert('模型配置已保存，下次 AI 操作生效');
     } catch (err) {
@@ -581,6 +584,16 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
             placeholder={llmDefaults[llmProvider]?.embed_model || '默认'}
             value={llmEmbedModel}
             onChange={(e) => setLlmEmbedModel(e.target.value)}
+            styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
+          />
+          <NumberInput
+            label="每日 token 上限 (Daily token budget, 0 = 不限)"
+            description="后台自动花费（摘要、嵌入、事件判断、告警、每日维护）达到后暂停到 UTC 0 点；你主动点的操作（规划、简报、溯源）不受限。单个目标的上限在目标的开发者设置里。"
+            min={0}
+            step={100000}
+            thousandSeparator=","
+            value={dailyBudget}
+            onChange={(v) => setDailyBudget(Math.max(0, Number(v) || 0))}
             styles={{ input: { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f3f5', color: isDark ? 'white' : 'black', maxWidth: 500 } }}
           />
           <Button color="indigo" loading={savingLlm} leftSection={<Save size={14} />} onClick={handleSaveLlm} style={{ alignSelf: 'flex-start' }}>

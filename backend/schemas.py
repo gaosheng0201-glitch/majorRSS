@@ -5,9 +5,12 @@ from datetime import datetime
 # --- Trackers ---
 class TrackerCreate(BaseModel):
     name: str
-    tracker_type: str = Field(..., description="URL, KEYWORD, ACCOUNT")
+    # Legacy (engineering_baseline §3.3): routing reads source_intent +
+    # fetch_policy only. tracker_type/tier are stored for display and old
+    # clients; omitted, the server derives tracker_type from source_intent.
+    tracker_type: Optional[str] = Field(default=None, description="[legacy] URL, KEYWORD, ACCOUNT, HYBRID")
     target: str = Field(..., description="Target URL, Keyword string, or Account name")
-    tier: int = Field(default=1, description="1: RSS, 2: MD, 3: Agentic")
+    tier: int = Field(default=1, description="[legacy, unused by routing] 1: RSS, 2: MD, 3: Agentic")
     radar_section: str = Field(..., description="Custom section name")
     fetch_interval_minutes: int = Field(default=30)
     prompt_override: Optional[str] = None

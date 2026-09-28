@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -132,10 +133,35 @@ def materialize_page_monitors(tracker: Tracker, session: Session) -> int:
     return created
 
 
+# The inverse of migration 0002's tracker_type → source_intent backfill: the
+# legacy column is NOT NULL, routing never reads it (engineering_baseline §3.3).
+_LEGACY_TYPE = {"RSS_FEED": "URL", "KEYWORD_DISCOVERY": "KEYWORD",
+                "ACCOUNT_TRACKING": "ACCOUNT", "HYBRID": "HYBRID"}
+
+
+def _merge_policy(stored: str, incoming: str) -> str:
+    """A PUT carries the keys its form edits; the stored policy also holds keys
+    no form shows — the intent plan, source scope, entities the vocabulary
+    refresh learned, accepted emergent sources, suggested sources. Replacing
+    the policy wholesale silently erased them on every edit; merging keeps
+    them, and a key the form sends (an emptied list included) still wins."""
+    if incoming is None:
+        return stored
+    try:
+        old = json.loads(stored or "{}")
+        new = json.loads(incoming or "{}")
+    except Exception:
+        return incoming
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return incoming
+    return json.dumps({**old, **new})
+
+
 @router.post("/", response_model=TrackerResponse)
 def create_tracker(tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
     from services.intent_normalizer import generate_tracker_normalized_intent
     data = tracker_in.model_dump()
+    data["tracker_type"] = data.get("tracker_type") or _LEGACY_TYPE.get(data["source_intent"], "HYBRID")
     # R4: a Watch Target is planned once at creation — attach curated sources.
     data["fetch_policy"] = _ensure_source_scope(
         data.get("name", ""), data.get("target", ""), data.get("fetch_policy"))
@@ -287,14 +313,20 @@ def update_tracker(tracker_id: int, tracker_in: TrackerCreate, session: Session 
         raise HTTPException(status_code=404, detail="Tracker not found")
     
     from services.intent_normalizer import generate_tracker_normalized_intent
-    data = tracker_in.model_dump()
+    # Only what the client sent: an omitted field (e.g. auth_profile_id from the
+    # Discovery form, which never shows it) must not be reset to its default.
+    data = tracker_in.model_dump(exclude_unset=True)
+    if "fetch_policy" in data:
+        data["fetch_policy"] = _merge_policy(tracker.fetch_policy, data["fetch_policy"])
+    if not data.get("tracker_type"):
+        data.pop("tracker_type", None)
     data["normalized_intent"] = generate_tracker_normalized_intent(
-        name=data["name"],
-        source_intent=data["source_intent"],
-        target=data["target"],
-        fetch_policy=data["fetch_policy"]
+        name=data.get("name", tracker.name),
+        source_intent=data.get("source_intent", tracker.source_intent),
+        target=data.get("target", tracker.target),
+        fetch_policy=data.get("fetch_policy", tracker.fetch_policy)
     )
-    
+
     # Update fields
     for key, val in data.items():
         setattr(tracker, key, val)

@@ -340,6 +340,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
         return {"embedded": 0, "threads_created": 0, "threads_updated": 0}
 
     model_name = getattr(embedder, "name", "unknown")
+    # Daily budget (services/llm_budget.py): embedding is spend too. The no-key
+    # fallback embedder costs nothing and is never paused.
+    from services import llm_budget
+    if model_name != "fallback" and llm_budget.exhausted("embedding (intake)"):
+        return {"embedded": 0, "threads_created": 0, "threads_updated": 0, "budget": "exhausted"}
 
     # Embed the batch. embed() returns None for any item that permanently failed
     # (P0.3: one un-embeddable article or an exhausted-retry rate-limit must NOT
@@ -521,7 +526,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 elif arbiter is None:
                     # No arbiter configured: keep the embedding decision.
                     tid = best_tid
-                elif arb_budget <= 0:
+                elif arb_budget <= 0 or llm_budget.exhausted("event arbiter"):
                     # Budget gone: a gray-zone merge without a judge is the
                     # unrecoverable mistake (it poisons a summary and resurfaces
                     # an old thread as "progress" — measured 2026-09-09: a quota

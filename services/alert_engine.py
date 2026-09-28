@@ -44,7 +44,8 @@ def _synthesize(thread, articles) -> tuple:
     try:
         from services.llm_provider import get_provider
         provider = get_provider()
-        if provider.supports_generation:
+        from services import llm_budget
+        if provider.supports_generation and not llm_budget.exhausted("alert synthesis"):
             from llm.processor import get_target_language, _record_usage
             lang = get_target_language()
             body = "\n\n".join(f"[{i+1}] {a.title}\n{(a.content or '')[:800]}" for i, a in enumerate(articles[:8]))
@@ -164,13 +165,15 @@ def evaluate_entity_spikes(window_hours: int = 12, synthesize: bool = True) -> d
                     from services.llm_provider import get_provider
                     from llm.processor import _record_usage, get_target_language
                     p = get_provider()
-                    if getattr(p, "supports_generation", False):
+                    from services import llm_budget
+                    if getattr(p, "supports_generation", False) and not llm_budget.exhausted("entity spikes"):
                         body = "\n---\n".join(f"{t.title}\n{(t.summary or '')[:800]}" for t in ths[:6])
                         text, usage = p.generate(
                             body, temperature=0.2, thinking_level="low",
                             system=(f"Several distinct stories in the last {window_hours} hours involve "
                                     f"'{d['name']}'. In one short paragraph, in {get_target_language()}, say "
-                                    "what is happening with it across these stories — facts only, no hype."))
+                                    "what is happening with it across these stories. State only what the "
+                                    "stories say — no facts, numbers or context from your own knowledge, no hype."))
                         _record_usage(p.name, "EntitySpike", usage)
                 except Exception as e:
                     logger.warning(f"Entity-spike synthesis failed for {d['name']}: {e}")

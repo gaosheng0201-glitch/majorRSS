@@ -233,28 +233,15 @@ def _thread_worth_summary(thread, members, targets):
 
 def get_todays_token_usage() -> int:
     """Total tokens spent today (UTC), across all models and actions."""
-    from datetime import datetime, timezone
-    from sqlmodel import select, func
-    from db.database import get_session
-    from db.models import TokenUsage
-    day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
-    with get_session() as session:
-        total = session.exec(
-            select(func.coalesce(func.sum(TokenUsage.total_tokens), 0)).where(TokenUsage.created_at >= day_start)
-        ).one()
-    return int(total or 0)
+    from services import llm_budget
+    return llm_budget.todays_usage()
 
 def is_llm_budget_exhausted() -> bool:
     """LLM_DAILY_TOKEN_BUDGET > 0 enables a hard daily spend ceiling (BYOK
-    users pay per token; a runaway noisy source must not drain their quota)."""
-    budget = int(os.environ.get("LLM_DAILY_TOKEN_BUDGET", "0"))
-    if budget <= 0:
-        return False
-    used = get_todays_token_usage()
-    if used >= budget:
-        logger.warning(f"Daily LLM token budget exhausted: {used}/{budget}. Skipping LLM processing until tomorrow (UTC).")
-        return True
-    return False
+    users pay per token; a runaway noisy source must not drain their quota).
+    One brake for all background spend — services/llm_budget.py."""
+    from services import llm_budget
+    return llm_budget.exhausted("fusion")
 
 def process_pending_threads():
     """目标即查询: fusion walks THREADS, once, not trackers. A thread is a global
@@ -511,6 +498,14 @@ def _fuse_thread(thread_id: int):
             selected.append(u)
             entries.append(entry)
             total_chars += len(entry)
+
+        # Per-target daily cap (fetch_policy.daily_token_budget): fusion is billed
+        # to `tracker`, so it answers to that target's cap. Nothing is marked —
+        # the thread stays pending and is summarised once the cap resets.
+        from services import llm_budget
+        if llm_budget.target_exhausted(tracker):
+            logger.info(f"Thread {thread_id}: '{tracker.name}' is at its daily token cap; summary deferred.")
+            return
 
         db.set_pipeline_status(tracker.name, "AI Fusion",
                                f"Summarizing event thread ({len(members)} sources)...")

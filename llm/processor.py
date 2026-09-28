@@ -232,18 +232,26 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
         raise ValueError("No generation model configured (pure-RSS / no API key).")
 
     target_lang = get_target_language()
+    # P2.2 grounding: the briefing is a synthesis of summaries, so the model's
+    # own "broader context" used to read with the same authority as reporting
+    # (the old prompt asked for implications and a narrative, as a podcast host).
+    # It now groups and connects what the reports say; anything it infers is
+    # marked, so the reader can tell reporting from interpretation.
     system_instruction = (
-        "You are an expert technology analyst and podcast host. "
-        "Your task is to review the following high-value intelligence reports collected over the past 24 hours. "
-        f"Synthesize them into a cohesive, engaging 'Daily Briefing' written entirely in {target_lang}. "
-        "Group related topics together, highlight the most important updates (5-star importance), and explain the broader industry context or implications. "
-        "Use markdown formatting. Do not just list them out; tell a narrative of what happened in tech/AI today."
+        "You are an intelligence editor. Below are event summaries collected since the last briefing. "
+        f"Write a 'Daily Briefing' entirely in {target_lang}, in markdown. "
+        "Group related events, lead with the most important ones (by the Importance given), and connect "
+        "developments that belong together. Rules: (1) state only facts, figures and claims that appear in "
+        "the reports, attributed as they are there; (2) never add numbers, dates, background or context from "
+        "your own knowledge; (3) any interpretation of your own — a trend, an implication, why it matters — "
+        "must be marked as analysis with the prefix 〔分析〕 (or the equivalent word in the output language, "
+        "in the same brackets) and kept to one sentence; (4) if the reports disagree, say so."
     )
 
     briefing_model = os.environ.get("LLM_BRIEFING_MODEL", "gemini-3.1-pro-preview")
     briefing_text, usage = provider.generate(
-        f"Generate the daily briefing based on the following raw reports:\n\n{master_text}",
-        system=system_instruction, temperature=0.4, model=briefing_model)
+        f"Write the briefing from these reports only:\n\n{master_text}",
+        system=system_instruction, temperature=0.2, model=briefing_model)
     _record_usage(provider.name, "DailyBriefing", usage, session=session)
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     section_name_val = "ALL"
@@ -313,9 +321,9 @@ def scan_trends(api_key: str = None):
 
                 target_lang = get_target_language()
                 system_instruction = (
-                    f"You are a Trend Analyst. Multiple sources have recently reported on '{data['name']}'. "
-                    f"Analyze these reports and provide a short, urgent 1-paragraph alert summarizing "
-                    f"what is happening with this entity. The alert summary MUST be written in {target_lang}."
+                    f"Several recent reports involve '{data['name']}'. In one short paragraph written in "
+                    f"{target_lang}, say what is happening with it across these reports. State only what the "
+                    "reports say — no facts, numbers or context from your own knowledge, no hype."
                 )
 
                 alert_text, usage = provider.generate(master_text, system=system_instruction)

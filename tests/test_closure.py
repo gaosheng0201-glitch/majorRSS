@@ -205,3 +205,134 @@ def test_feed_raw_article_id_is_the_threads_lead_article():
         feed = get_intelligence_feed(limit=5, session=s)
         card = next(c for c in feed if c.id == th.id)
         assert card.raw_article_id == min(ids)
+
+
+# ---- P1.2+: one daily brake for all background spend; a per-target cap on fusion
+
+def _spend(tokens, action="FactCheck"):
+    from db.models import TokenUsage
+    with get_session() as s:
+        s.add(TokenUsage(model_name="m", action_type=action, prompt_tokens=tokens,
+                         completion_tokens=0, total_tokens=tokens))
+        s.commit()
+
+
+def test_global_budget_pauses_background_spend(monkeypatch):
+    from services import llm_budget
+    from services import semantic_ingest as si
+    from services import thread_merge as tm
+    from services import alert_engine as ae
+    llm_budget.reset_cache()
+    monkeypatch.setenv("LLM_DAILY_TOKEN_BUDGET", str(llm_budget.todays_usage() + 100))
+    assert not llm_budget.exhausted("t")
+    _spend(500)
+    llm_budget.reset_cache()
+    try:
+        assert llm_budget.exhausted("t")
+        with get_session() as s:
+            t = _tracker(s, "budget-t")
+            from db.models import RawArticle
+            s.add(RawArticle(tracker_id=t.id, title="b", url="https://budget.example/x", content="x")); s.commit()
+
+        class Emb:
+            name = "real"
+            called = False
+            def embed(self, texts):
+                Emb.called = True
+                return [[1.0, 0.0] for _ in texts]
+        assert si.run_semantic_ingest(limit=500, embedder=Emb()).get("budget") == "exhausted"
+        assert not Emb.called
+
+        class Arb:
+            name = "stub"; supports_generation = True
+            def generate(self, *a, **k):
+                raise AssertionError("merge pass must not call the model over budget")
+        assert tm.run_merge_pass(arbiter=Arb())["reason"] == "budget"
+
+        class P:
+            name = "stub"; supports_generation = True
+            def generate(self, *a, **k):
+                raise AssertionError("alert synthesis must fall back over budget")
+        monkeypatch.setattr("services.llm_provider.get_provider", lambda: P())
+        from types import SimpleNamespace as NS
+        title, body = ae._synthesize(NS(title="T", distinct_source_count=2),
+                                     [NS(title="a", url="https://a.example", content="x")])
+        assert "Sources" in body
+    finally:
+        llm_budget.reset_cache()
+
+
+def test_target_cap_defers_that_targets_summaries_only(monkeypatch):
+    from db.models import RawArticle, StoryThread
+    from services import llm_budget
+    from services import processor_service as ps
+    from services import thread_targets as tt
+
+    monkeypatch.setattr(ps, "process_article",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("capped target reached the model")))
+    llm_budget.reset_cache()
+    with get_session() as s:
+        t = _tracker(s, "capped-t")
+        t.fetch_policy = json.dumps({"entities": ["capped-t"], "daily_token_budget": 1000}); s.add(t); s.commit()
+        th = StoryThread(tracker_id=t.id, title="Capped target event 5521", lifecycle="CONFIRMED",
+                         member_count=2, distinct_source_count=2)
+        s.add(th); s.commit(); s.refresh(th)
+        for i in range(2):
+            s.add(RawArticle(tracker_id=t.id, thread_id=th.id, title=f"c{i}", url=f"https://cap{i}.example/x",
+                             content="x", source_tier="primary"))
+        s.commit()
+        tt.link(s, th.id, {t.id: "route"}); s.commit()
+        tid, name = th.id, t.name
+    _spend(1500, f"FactCheck: {name}")
+    try:
+        ps._fuse_thread(tid)
+        with get_session() as s:
+            assert s.get(StoryThread, tid).summary is None
+            members = s.exec(__import__("sqlmodel").select(RawArticle).where(RawArticle.thread_id == tid)).all()
+            assert not any(m.processed for m in members)      # still pending, not dropped
+    finally:
+        llm_budget.reset_cache()
+
+
+# ---- editing a target merges its policy instead of erasing what no form shows
+
+def test_update_tracker_merges_policy_and_keeps_unsent_fields():
+    from backend.api.trackers import create_tracker, update_tracker
+    from backend.schemas import TrackerCreate
+
+    with get_session() as s:
+        created = create_tracker(TrackerCreate(
+            name="merge-edit-t", target=json.dumps({"topic": "x", "signals": [{"type": "keyword", "value": "x"}]}),
+            radar_section="AI", source_intent="HYBRID",
+            fetch_policy=json.dumps({"entities": ["x"], "source_scope": ["ai"], "intent_plan": {"k": 1}})), session=s)
+        assert created.tracker_type == "HYBRID"            # derived, not required
+        created.auth_profile_id = 7; s.add(created); s.commit()
+        updated = update_tracker(created.id, TrackerCreate(
+            name="merge-edit-t", tracker_type="HYBRID", target=created.target, radar_section="AI",
+            source_intent="HYBRID", fetch_policy=json.dumps({"max_days": 3, "keep_keywords": []})), session=s)
+        policy = json.loads(updated.fetch_policy)
+        assert policy["intent_plan"] == {"k": 1} and policy["source_scope"] == ["ai"]
+        assert policy["max_days"] == 3 and policy["keep_keywords"] == []
+        assert updated.auth_profile_id == 7
+
+
+# ---- P2.2: the briefing reports what the summaries say; inference is marked
+
+def test_briefing_prompt_is_grounded(monkeypatch):
+    from db.models import StoryThread
+    import llm.processor as lp
+
+    seen = {}
+
+    class P:
+        name = "stub"; supports_generation = True
+        def generate(self, prompt, system=None, temperature=None, **kw):
+            seen.update(system=system, temperature=temperature)
+            return "briefing", {}
+    monkeypatch.setattr(lp, "get_provider", lambda: P())
+    with get_session() as s:
+        s.add(StoryThread(title="g", summary="[TITLE: g]\n\nbody", validity_category="[VALID_NEWS]",
+                          radar_section="AI", summarized_at=_now())); s.commit()
+    lp.generate_daily_briefing()
+    assert "〔分析〕" in seen["system"] and "own knowledge" in seen["system"]
+    assert "podcast" not in seen["system"] and seen["temperature"] <= 0.2

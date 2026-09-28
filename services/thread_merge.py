@@ -122,6 +122,9 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
             arbiter = None
     if arbiter is None:
         return {"pairs": 0, "merged": 0, "reason": "no arbiter"}
+    from services import llm_budget
+    if llm_budget.exhausted("merge pass"):
+        return {"pairs": 0, "merged": 0, "reason": "budget"}
     merged = asked = linked = 0
     complete = True        # every pair found was judged (none capped, none failed)
     with get_session() as session:
