@@ -9,3 +9,4 @@ pydantic
 feedparser
 pytest
 requests
+numpy

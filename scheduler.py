@@ -194,6 +194,55 @@ def run_processing_job():
         logger.error(f"Error in fusion pass: {e}", exc_info=e)
 
 
+# macOS thread QoS (sys/qos.h). A tray app's scheduled work is exactly what
+# Apple's "utility" class is for: it runs at full speed when the machine is
+# idle, yields to whatever the user is doing, and prefers efficiency cores —
+# less heat for the same result. Daily maintenance goes lower still
+# ("background": efficiency cores only). User-requested tasks keep the default
+# class. Pool threads are shared, so every job sets its own class on entry.
+QOS_USER_INITIATED, QOS_DEFAULT, QOS_UTILITY, QOS_BACKGROUND = 0x19, 0x15, 0x11, 0x09
+_libsystem = None
+
+
+def _set_thread_qos(qos_class: int) -> None:
+    global _libsystem
+    if sys.platform != "darwin":
+        return
+    try:
+        if _libsystem is None:
+            import ctypes
+            lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            lib.pthread_set_qos_class_self_np.argtypes = [ctypes.c_uint, ctypes.c_int]
+            lib.pthread_set_qos_class_self_np.restype = ctypes.c_int
+            _libsystem = lib
+        _libsystem.pthread_set_qos_class_self_np(qos_class, 0)
+    except Exception:
+        pass            # QoS is an energy hint; never let it break a job
+
+
+# A background job's CPU should stay well under its interval; one that doesn't
+# is the regression that pinned a core for days (docs/debugging_playbook.md
+# §7.5). CPU time of the job thread, not wall time: scraping and fusion spend
+# minutes waiting on the network, which costs no power.
+JOB_CPU_BUDGET_SHARE = 0.2
+
+
+def _job(fn, name: str, qos_class: int, interval_s: int = 0):
+    def run():
+        _set_thread_qos(qos_class)
+        w0, c0 = time.monotonic(), time.thread_time()
+        try:
+            return fn()
+        finally:
+            cpu, wall = time.thread_time() - c0, time.monotonic() - w0
+            if interval_s and cpu > JOB_CPU_BUDGET_SHARE * interval_s:
+                logger.warning(f"Job {name} used {cpu:.0f}s CPU ({wall:.0f}s wall) = {cpu / interval_s:.0%} "
+                               f"of its {interval_s // 60}-min interval (budget {JOB_CPU_BUDGET_SHARE:.0%}); "
+                               f"see docs/debugging_playbook.md §7.5")
+    run.__name__ = getattr(fn, "__name__", name)
+    return run
+
+
 def _record_heartbeat(scheduler: BackgroundScheduler):
     jobs = []
     for job in scheduler.get_jobs():
@@ -222,30 +271,30 @@ def start_scheduler(block: bool = True):
         scheduler = BackgroundScheduler()
         # next_run_time=now → jobs fire once at startup instead of waiting a
         # full interval; desktop sessions are often shorter than 30 minutes.
-        scheduler.add_job(process_task_requests, 'interval', seconds=30, next_run_time=now,
+        scheduler.add_job(_job(process_task_requests, "task_poller", QOS_DEFAULT), 'interval', seconds=30, next_run_time=now,
                           name="task_poller")
-        scheduler.add_job(run_scraping_job, 'interval', minutes=5, next_run_time=now,
+        scheduler.add_job(_job(run_scraping_job, "tracker_scraping", QOS_UTILITY, 300), 'interval', minutes=5, next_run_time=now,
                           name="tracker_scraping")
         # Semantic clustering runs before fusion so the LLM sees thread-organized,
         # de-duplicated content (works in pure-RSS mode too).
-        scheduler.add_job(run_semantic_job, 'interval', minutes=5, next_run_time=now,
+        scheduler.add_job(_job(run_semantic_job, "semantic_clustering", QOS_UTILITY, 300), 'interval', minutes=5, next_run_time=now,
                           name="semantic_clustering")
-        scheduler.add_job(run_processing_job, 'interval', minutes=5, next_run_time=now,
+        scheduler.add_job(_job(run_processing_job, "intelligence_fusion", QOS_UTILITY, 300), 'interval', minutes=5, next_run_time=now,
                           name="intelligence_fusion")
         # Trend scan costs LLM tokens; do not fire on every app launch.
-        scheduler.add_job(run_subscription_job, 'interval', minutes=5, next_run_time=now,
+        scheduler.add_job(_job(run_subscription_job, "subscription_check", QOS_UTILITY, 300), 'interval', minutes=5, next_run_time=now,
                           name="subscription_check")
         # R7 public digest (opt-in via PUBLISH_ENABLED). Low-frequency: official
         # feeds are daily/weekly-grade. Delayed first run so it publishes after
         # the startup scrape+cluster has something to publish.
-        scheduler.add_job(run_publish_job, 'interval', hours=6,
+        scheduler.add_job(_job(run_publish_job, "publish_digest", QOS_UTILITY), 'interval', hours=6,
                           next_run_time=now + timedelta(minutes=10),
                           name="publish_digest")
         # Daily retention for user data (per settings) and telemetry tables
         # (PipelineRun/Event, PageSnapshot) which otherwise grow unbounded.
         # First run is delayed so it never competes with the startup scrape.
         from services.db_cleanup_service import run_maintenance
-        scheduler.add_job(run_maintenance, 'interval', hours=24,
+        scheduler.add_job(_job(run_maintenance, "db_maintenance", QOS_BACKGROUND), 'interval', hours=24,
                           next_run_time=now + timedelta(minutes=15),
                           name="db_maintenance")
         # First heartbeat at now+5s (not now): the startup snapshot below races

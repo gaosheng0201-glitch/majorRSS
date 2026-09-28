@@ -35,26 +35,18 @@ _LIFE_RANK = {"LEAD": 0, "CORROBORATED": 1, "CONFIRMED": 2}
 
 
 def _pairs(session, cutoff) -> List[Tuple[int, int, float]]:
-    from db.models import StoryThread, ThreadPairVerdict
-    threads = [t for t in session.exec(select(StoryThread).where(StoryThread.last_update_at >= cutoff)).all()
-               if t.centroid]
-    vecs = {}
-    for t in threads:
-        try:
-            vecs[t.id] = sm._center(json.loads(t.centroid))
-        except Exception:
-            pass
+    from db.models import ThreadPairVerdict
+    from services.semantic_ingest import load_centroids
+    rows = load_centroids(session, cutoff)
+    if not rows:
+        return []
+    # all-pairs as one matrix product: the pure-Python double loop was ~1.6M
+    # cosines over 3072 dims once a busy day left ~1.8k recent threads (~4 min)
+    dim = max({len(v) for _, v in rows}, key=lambda d: sum(1 for _, v in rows if len(v) == d))
+    index = sm.CentroidIndex(rows, dim=dim)
     judged = {(r.thread_a, r.thread_b) for r in session.exec(select(ThreadPairVerdict)).all()}
-    out = []
-    ids = sorted(vecs)
-    for i, a in enumerate(ids):
-        for b in ids[i + 1:]:
-            if (a, b) in judged:
-                continue
-            s = sm.cosine(vecs[a], vecs[b])
-            if s >= MIN_SIMILARITY:
-                out.append((a, b, s))
-    out.sort(key=lambda x: -x[2])
+    out = [p for p in index.pairs_above(MIN_SIMILARITY) if (p[0], p[1]) not in judged]
+    out.sort(key=lambda x: (-x[2], x[0], x[1]))
     return out[:MAX_PAIRS_PER_RUN]
 
 
@@ -100,10 +92,27 @@ def _merge(session, keep, drop) -> None:
     session.delete(drop)
 
 
+# Idle skip. A pass whose inputs are unchanged since a pass that judged every
+# pair it found can only find nothing: similarities depend on the centroids and
+# the corpus mean (both move only with new embeddings, merges or deletions);
+# the window only ever drops threads; verdicts are written only here. So with
+# no new articles the pass does no work at all.
+_last_pass: dict = {}
+
+
+def _inputs_key(session):
+    from sqlalchemy import func
+    from db.models import ArticleEmbedding, StoryThread, ThreadPairVerdict
+    return (session.exec(select(func.count(ArticleEmbedding.id), func.max(ArticleEmbedding.id))).one(),
+            session.exec(select(func.count(StoryThread.id), func.max(StoryThread.id),
+                                func.max(StoryThread.last_update_at))).one(),
+            session.exec(select(func.count(ThreadPairVerdict.id))).one())
+
+
 def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
     from db.database import get_session
-    from db.models import StoryThread, ThreadPairVerdict, ArticleEmbedding
-    from services.semantic_ingest import _llm_relation
+    from db.models import StoryThread, ThreadPairVerdict
+    from services.semantic_ingest import _llm_relation, refresh_corpus_mean
     if arbiter is None:
         try:
             from services.llm_provider import get_provider
@@ -114,25 +123,24 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
     if arbiter is None:
         return {"pairs": 0, "merged": 0, "reason": "no arbiter"}
     merged = asked = linked = 0
+    complete = True        # every pair found was judged (none capped, none failed)
     with get_session() as session:
-        # centred space, same correction as ingest
-        stored = []
-        for row in session.exec(select(ArticleEmbedding.vector)).all():
-            try:
-                stored.append(json.loads(row if isinstance(row, str) else row[0]))
-            except Exception:
-                pass
-        if stored:
-            dim = len(stored[0]); same = [v for v in stored if len(v) == dim]
-            sm.set_corpus_mean([sum(v[i] for v in same) / len(same) for i in range(dim)])
+        key = _inputs_key(session)
+        if _last_pass.get("complete") and _last_pass.get("key") == key:
+            return {"pairs": 0, "merged": 0, "storyline_links": 0, "skipped": "unchanged"}
+        # centred space, same correction as ingest (running sum, shared with it)
+        refresh_corpus_mean(session)
         cutoff = datetime.utcnow() - timedelta(hours=window_hours)
-        for a, b, sim in _pairs(session, cutoff):
+        pairs = _pairs(session, cutoff)
+        complete = len(pairs) < MAX_PAIRS_PER_RUN
+        for a, b, sim in pairs:
             ta, tb = session.get(StoryThread, a), session.get(StoryThread, b)
             if ta is None or tb is None:
                 continue
             rel = _llm_relation(arbiter, ta.title or "", tb.title or "")
             asked += 1
             if rel is None:
+                complete = False
                 continue                      # judge unavailable: ask again next time
             if rel == "event":
                 keep, drop = (ta, tb) if (ta.first_seen_at or datetime.max) <= (tb.first_seen_at or datetime.max) else (tb, ta)
@@ -157,6 +165,7 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
                             linked += 1
                 session.add(ThreadPairVerdict(thread_a=a, thread_b=b, verdict=rel, similarity=sim))
             session.commit()
+        _last_pass.update(key=_inputs_key(session), complete=complete)
     if asked:
         logger.info(f"Merge pass: {asked} pairs judged, {merged} merged, {linked} storyline links")
     return {"pairs": asked, "merged": merged, "storyline_links": linked}

@@ -9,3 +9,4 @@ pydantic==2.13.4
 feedparser==6.0.12
 pytest
 requests==2.33.1
+numpy==2.5.0

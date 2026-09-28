@@ -61,22 +61,61 @@ def _sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
 
-def _corpus_mean(session) -> Optional[np.ndarray]:
-    vecs = []
-    for (c,) in session.exec(text("SELECT centroid FROM storythread WHERE centroid IS NOT NULL")).all():
+_MEAN_CACHE: Dict[str, np.ndarray] = {}
+
+
+def _corpus_mean(session, refresh: bool = False) -> Optional[np.ndarray]:
+    """Mean of all thread centroids — the probe's feature origin. Parsing every
+    centroid (23k × 3072 floats) took ~8 s and ran on every ingest cycle, so it
+    is computed when the probes are retrained (train_all, daily) and persisted
+    beside the DB; the probes then score in the space they were fit in, and a
+    launch reads 12 KB instead of re-parsing every centroid."""
+    import os
+    from services.semantic_ingest import cache_dir
+    cdir = cache_dir()
+    f = os.path.join(cdir, "probe_mean.npy") if cdir else None
+    if not refresh:
+        if "mean" in _MEAN_CACHE:
+            return _MEAN_CACHE["mean"]
+        if f and os.path.exists(f):
+            try:
+                _MEAN_CACHE["mean"] = np.load(f).astype(np.float32)
+                return _MEAN_CACHE["mean"]
+            except Exception:
+                pass            # unreadable: recompute below
+    from services.semantic import parse_vector
+    sums: Dict[int, np.ndarray] = {}
+    counts: Dict[int, int] = {}
+    for (c,) in session.exec(text("SELECT centroid FROM storythread WHERE centroid IS NOT NULL")
+                             .execution_options(yield_per=500)):
         try:
-            vecs.append(np.array(json.loads(c), dtype=np.float32))
+            v = parse_vector(c)
         except Exception:
-            pass
-    if not vecs:
+            continue
+        d = len(v)
+        if d not in sums:
+            sums[d], counts[d] = np.zeros(d, dtype=np.float64), 0
+        sums[d] += v
+        counts[d] += 1
+    if not counts:
+        _MEAN_CACHE.pop("mean", None)
         return None
-    dim = max(set(len(v) for v in vecs), key=lambda d: sum(1 for v in vecs if len(v) == d))
-    return np.mean(np.stack([v for v in vecs if len(v) == dim]), axis=0)
+    dim = max(counts, key=lambda d: counts[d])
+    _MEAN_CACHE["mean"] = (sums[dim] / counts[dim]).astype(np.float32)
+    if f:
+        try:
+            os.makedirs(cdir, exist_ok=True)
+            np.save(f + ".tmp.npy", _MEAN_CACHE["mean"])
+            os.replace(f + ".tmp.npy", f)
+        except Exception as e:
+            logger.warning(f"Probe mean not saved ({e}); next launch recomputes it.")
+    return _MEAN_CACHE["mean"]
 
 
 def featurize(centroid_json: str, mean: np.ndarray) -> Optional[np.ndarray]:
+    from services.semantic import parse_vector
     try:
-        v = np.array(json.loads(centroid_json), dtype=np.float32)
+        v = parse_vector(centroid_json)
     except Exception:
         return None
     if mean is None or len(v) != len(mean):
@@ -158,7 +197,7 @@ def train_all() -> List[dict]:
     out = []
     with get_session() as session:
         ids = [t.id for t in session.exec(select(Tracker).where(Tracker.is_active == True)).all()]  # noqa: E712
-        mean = _corpus_mean(session)
+        mean = _corpus_mean(session, refresh=True)
         if mean is None:
             return out
         for tid in ids:

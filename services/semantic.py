@@ -16,6 +16,8 @@ together → one thread).
 import math
 from typing import List, Optional, Tuple
 
+import numpy as np
+
 # Tuning knobs (cosine similarity, 0..1 for normalized vectors).
 DEFAULT_RELEVANCE_THRESHOLD = 0.35   # raw-space (bag-of-words fallback embedder)
 # With a real embedder the relevance check MUST run in the mean-centered space,
@@ -74,7 +76,8 @@ _CORPUS_MEAN: Optional[List[float]] = None
 
 def set_corpus_mean(mean: Optional[List[float]]) -> None:
     """Set (or clear with None) the corpus mean subtracted before thread-cosine.
-    The ingest layer recomputes it each cycle over all stored embeddings."""
+    The ingest layer keeps it as a running sum over all stored embeddings
+    (semantic_ingest.refresh_corpus_mean)."""
     global _CORPUS_MEAN
     _CORPUS_MEAN = list(mean) if mean else None
 
@@ -198,6 +201,92 @@ def assign_thread_candidates(vec: List[float],
             scored.append((tid, s))
     scored.sort(key=lambda t: t[1], reverse=True)
     return scored[:k]
+
+
+def parse_vector(s: str) -> np.ndarray:
+    """A stored JSON list[float] as float32, parsed in C. json.loads builds one
+    Python float object per component — at 3072 dims over tens of thousands of
+    rows that was most of a cycle's CPU and gigabytes of RSS (2026-09-25)."""
+    s = s.strip()
+    if len(s) < 2 or s[0] != "[" or s[-1] != "]":
+        raise ValueError("not a JSON vector")
+    body = s[1:-1]
+    if ",," in body.replace(" ", ""):   # fromstring would read an empty field as -1
+        raise ValueError("malformed JSON vector")
+    v = np.fromstring(body, dtype=np.float32, sep=",")  # raises on non-numeric text
+    if len(v) != s.count(",") + 1:
+        raise ValueError("malformed JSON vector")
+    return v
+
+
+class CentroidIndex:
+    """Thread centroids as one centred, unit-normalised float32 matrix, so a
+    nearest-thread query is one mat-vec and all-pairs is one mat-mat — the same
+    space and the same answers as assign_thread_candidates / cosine(_center()),
+    which cost a pure-Python loop per thread (2.2 s per article against an
+    11.6k-thread pool; 1.6M pairs ≈ 4 min in the merge pass). Rows whose dim
+    differs from the index are left out (cosine() scores them 0 anyway)."""
+
+    def __init__(self, items, dim: int, spare: int = 0):
+        m = _CORPUS_MEAN
+        self.dim = dim
+        self._mean = np.asarray(m, dtype=np.float32) if m and len(m) == dim else None
+        rows = [(tid, v) for tid, v in items if len(v) == dim]
+        self.ids = [tid for tid, _ in rows]
+        self._pos = {tid: n for n, tid in enumerate(self.ids)}
+        self._M = np.zeros((len(rows) + spare, dim), dtype=np.float32)
+        self._n = len(rows)
+        if rows:
+            X = np.stack([v for _, v in rows]).astype(np.float32, copy=False)
+            if self._mean is not None:
+                X = X - self._mean
+            norms = np.linalg.norm(X, axis=1, keepdims=True)
+            self._M[:self._n] = np.divide(X, norms, out=np.zeros_like(X), where=norms > 0)
+
+    def __len__(self):
+        return self._n
+
+    def _unit(self, vec) -> np.ndarray:
+        x = np.asarray(vec, dtype=np.float32)
+        if self._mean is not None:
+            x = x - self._mean
+        n = float(np.linalg.norm(x))
+        return x / n if n > 0 else np.zeros_like(x)
+
+    def upsert(self, tid: int, vec) -> None:
+        if len(vec) != self.dim:
+            return
+        row = self._pos.get(tid)
+        if row is None:
+            if self._n == len(self._M):
+                self._M = np.vstack([self._M, np.zeros((max(16, self._n // 4), self.dim), dtype=np.float32)])
+            row = self._n
+            self._n += 1
+            self.ids.append(tid)
+            self._pos[tid] = row
+        self._M[row] = self._unit(vec)
+
+    def candidates(self, vec, floor: float, k: int = 3) -> List[Tuple[int, float]]:
+        """assign_thread_candidates over the index: top-k above floor, best first."""
+        if self._n == 0 or len(vec) != self.dim:
+            return []
+        s = self._M[:self._n] @ self._unit(vec)
+        idx = np.nonzero(s >= floor)[0]
+        top = idx[np.argsort(-s[idx], kind="stable")[:k]]
+        return [(self.ids[i], float(s[i])) for i in top]
+
+    def pairs_above(self, threshold: float) -> List[Tuple[int, int, float]]:
+        """Every (lower id, higher id, cosine) with cosine ≥ threshold."""
+        if self._n < 2:
+            return []
+        M = self._M[:self._n]
+        S = M @ M.T
+        ia, ib = np.nonzero(np.triu(S >= threshold, 1))
+        out = []
+        for i, j in zip(ia.tolist(), ib.tolist()):
+            a, b = self.ids[i], self.ids[j]
+            out.append((min(a, b), max(a, b), float(S[i, j])))
+        return out
 
 
 def update_centroid(centroid: Optional[List[float]], count: int, new_vec: List[float]) -> List[float]:

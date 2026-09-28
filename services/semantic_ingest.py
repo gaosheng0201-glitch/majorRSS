@@ -11,6 +11,7 @@ import json
 import urllib.parse
 from datetime import datetime, timezone
 
+import numpy as np
 from sqlmodel import select
 
 from services.log_service import get_logger
@@ -178,21 +179,151 @@ def _profile_terms(tracker) -> list:
 
 from services.merge_policy import POOL_WINDOW_DAYS as _POOL_WINDOW_DAYS
 
+# Process-lifetime caches. Every cycle used to re-parse every stored vector
+# (2.3 GB of embedding JSON + the whole thread pool) and ran back-to-back with
+# the next 5-minute cycle — a core pinned at 100% and 6 GB RSS (2026-09-25).
+# Both caches are validated against the table, so a stale entry is re-read,
+# never trusted.
+_centroid_cache: dict = {}   # thread id → (hash of stored JSON, float32 vector)
+_mean_state: dict = {}       # running corpus sum over ArticleEmbedding
+_profile_cache: dict = {}    # (embedder, terms) → profile vectors
 
-def _load_thread_pool(session, StoryThread) -> dict:
-    """Global candidate pool: every thread touched in the last window, with its
-    centroid parsed once. Bounded by time, not by target."""
-    from datetime import timedelta
-    cutoff = _now() - timedelta(days=_POOL_WINDOW_DAYS)
-    pool = {}
-    for th in session.exec(select(StoryThread).where(StoryThread.last_update_at >= cutoff)).all():
-        if not th.centroid:
-            continue
+
+def cache_dir():
+    """<data dir>/cache next to a file-backed SQLite DB, else None. Holds small
+    derived state (running sums) so a launch does not re-derive it from gigabytes
+    of stored vectors; every file is validated against the table before use and
+    is safe to delete."""
+    import os
+    from db.database import database_url
+    if not database_url.startswith("sqlite:///"):
+        return None
+    path = database_url[len("sqlite:///"):].split("?")[0]
+    if not path or path.startswith(":memory:") or path.startswith("file::memory:"):
+        return None
+    return os.path.join(os.path.dirname(os.path.abspath(path)), "cache")
+
+
+def _stable_hash(s: str) -> int:
+    # str hash() is salted per process; a persisted anchor needs a stable one
+    import zlib
+    return zlib.crc32(s.encode())
+
+
+def _mean_state_file():
+    import os
+    d = cache_dir()
+    return os.path.join(d, "corpus_mean.npz") if d else None
+
+
+def _load_mean_state() -> None:
+    f = _mean_state_file()
+    if not f:
+        return
+    try:
+        with np.load(f) as z:
+            meta = json.loads(str(z["meta"]))
+            _mean_state.update(last_id=int(meta["last_id"]), anchor=meta["anchor"], seen=int(meta["seen"]),
+                               dim=meta["dim"], n=int(meta["n"]),
+                               sum=np.array(z["sum"], dtype=np.float64) if meta["dim"] is not None else None)
+    except Exception:
+        _mean_state.clear()     # missing or unreadable: a full pass rebuilds it
+
+
+def _save_mean_state() -> None:
+    import os
+    f = _mean_state_file()
+    if not f:
+        return
+    st = _mean_state
+    try:
+        os.makedirs(os.path.dirname(f), exist_ok=True)
+        tmp = f + ".tmp.npz"
+        meta = {k: st[k] for k in ("last_id", "anchor", "seen", "dim", "n")}
+        np.savez(tmp, meta=np.array(json.dumps(meta)),
+                 sum=st["sum"] if st["sum"] is not None else np.zeros(0))
+        os.replace(tmp, f)
+    except Exception as e:
+        logger.warning(f"Corpus mean state not saved ({e}); next launch recomputes it.")
+
+
+def load_centroids(session, cutoff, prune: bool = False) -> list:
+    """[(thread id, float32 centroid)] for threads updated since `cutoff`. Only
+    centroids whose stored JSON changed since the last call are parsed; `prune`
+    (the widest window, i.e. the intake pool) drops ids no longer in it."""
+    from db.models import StoryThread
+    rows = session.exec(select(StoryThread.id, StoryThread.centroid)
+                        .where(StoryThread.last_update_at >= cutoff)
+                        .where(StoryThread.centroid.is_not(None))
+                        .execution_options(yield_per=500))
+    out = []
+    for tid, cj in rows:
+        h = hash(cj)
+        hit = _centroid_cache.get(tid)
+        if hit is None or hit[0] != h:
+            try:
+                hit = (h, sm.parse_vector(cj))
+            except Exception:
+                continue
+            _centroid_cache[tid] = hit
+        out.append((tid, hit[1]))
+    if prune:
+        keep = {tid for tid, _ in out}
+        for tid in [t for t in _centroid_cache if t not in keep]:
+            del _centroid_cache[tid]
+    return out
+
+
+def refresh_corpus_mean(session, extra=()) -> None:
+    """Set the corpus mean over every stored embedding (+ `extra`, this batch's
+    not-yet-stored vectors). A running sum: only rows added since the last call
+    are parsed; a changed row count or a different last row (rows deleted, a
+    rebuilt table) falls back to a full pass. Dim: the oldest row's, as before.
+    The sum is persisted, so a launch resumes it instead of re-reading ~2.3 GB."""
+    from sqlalchemy import func
+    from db.models import ArticleEmbedding
+    st = _mean_state
+    if not st:
+        _load_mean_state()
+    total = session.exec(select(func.count(ArticleEmbedding.id))).one()
+    valid = False
+    if st and st["seen"] + session.exec(select(func.count(ArticleEmbedding.id))
+                                        .where(ArticleEmbedding.id > st["last_id"])).one() == total:
+        anchor = session.exec(select(ArticleEmbedding.vector).where(ArticleEmbedding.id == st["last_id"])).first()
+        valid = st["last_id"] == 0 or (anchor is not None and _stable_hash(anchor) == st["anchor"])
+    if not valid:
+        st.clear()
+        st.update(last_id=0, anchor=None, seen=0, dim=None, sum=None, n=0)
+    # streamed: a full pass reads every row (~2.3 GB of JSON)
+    consumed = not valid
+    for rid, vj in session.exec(select(ArticleEmbedding.id, ArticleEmbedding.vector)
+                                .where(ArticleEmbedding.id > st["last_id"])
+                                .order_by(ArticleEmbedding.id)
+                                .execution_options(yield_per=500)):
+        st["last_id"], st["anchor"] = rid, _stable_hash(vj)
+        st["seen"] += 1
+        consumed = True
         try:
-            pool[th.id] = (th, json.loads(th.centroid))
+            v = sm.parse_vector(vj)
         except Exception:
-            pass
-    return pool
+            continue
+        if st["dim"] is None:
+            st["dim"], st["sum"] = len(v), np.zeros(len(v), dtype=np.float64)
+        if len(v) == st["dim"]:
+            st["sum"] += v
+            st["n"] += 1
+    if consumed:
+        _save_mean_state()
+    s, n = st["sum"], st["n"]
+    extra = [np.asarray(v, dtype=np.float64) for v in extra]
+    if st["dim"] is None and extra:
+        s, n = np.zeros(len(extra[0])), 0
+    if s is not None:
+        dim = len(s)
+        same = [v for v in extra if len(v) == dim]
+        if same:
+            s, n = s + np.sum(same, axis=0), n + len(same)
+    sm.set_corpus_mean((s / n).tolist() if n else None)
 
 
 def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
@@ -212,10 +343,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
         embedder = get_embedder()
 
     with get_session() as session:
-        # Articles with no embedding yet.
-        embedded_ids = set(session.exec(select(ArticleEmbedding.article_id)).all())
-        articles = session.exec(select(RawArticle).order_by(RawArticle.id)).all()
-        pending = [a for a in articles if a.id not in embedded_ids][:limit]
+        # Articles with no embedding yet (in SQL: loading every article's body
+        # to pick out a handful of pending ones was a full-table read per cycle).
+        pending = session.exec(select(RawArticle)
+                               .where(RawArticle.id.not_in(select(ArticleEmbedding.article_id)))
+                               .order_by(RawArticle.id).limit(limit)).all()
 
     if not pending:
         return {"embedded": 0, "threads_created": 0, "threads_updated": 0}
@@ -253,8 +385,16 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
         with get_session() as s:
             tr = s.get(Tracker, tracker_id)
         terms = _profile_terms(tr) if tr else []
-        # embed() may return None per failed term (P0.3); drop them.
-        vecs = [v for v in embedder.embed(terms) if v is not None] if terms else []
+        # Across cycles too, keyed by the terms themselves: re-embedding every
+        # target's profile each cycle was ~20 paid embedding calls per 5 min
+        # for a profile that changes when the user edits it.
+        key = (model_name, tuple(terms))
+        vecs = _profile_cache.get(key)
+        if vecs is None:
+            # embed() may return None per failed term (P0.3); drop them.
+            vecs = [v for v in embedder.embed(terms) if v is not None] if terms else []
+            if len(vecs) == len(terms):   # a partial result is retried next cycle
+                _profile_cache[key] = vecs
         profile_cache[tracker_id] = vecs
         return vecs
 
@@ -265,26 +405,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     # centering doesn't apply and the raw threshold stays in effect.
     if gating_enabled:
         with get_session() as s:
-            stored = []
-            # SQLModel session.exec(select(single_column)) yields SCALARS (the
-            # column value), not 1-tuples — so `for (vjson,) in ...` blew up with
-            # "too many values to unpack" and aborted the whole semantic run once
-            # ArticleEmbedding had rows (masked earlier while embedding was stalled
-            # and this line was never reached). Handle scalar or Row defensively.
-            for row in s.exec(select(ArticleEmbedding.vector)).all():
-                vjson = row if isinstance(row, str) else row[0]
-                try:
-                    stored.append(json.loads(vjson))
-                except Exception:
-                    pass
-        allvecs = stored + [list(v) for v in vectors]
-        if allvecs:
-            dim = len(allvecs[0])
-            same = [v for v in allvecs if len(v) == dim]
-            mean = [sum(v[i] for v in same) / len(same) for i in range(dim)]
-            sm.set_corpus_mean(mean)
-        else:
-            sm.set_corpus_mean(None)
+            refresh_corpus_mean(s, extra=vectors)
     else:
         sm.set_corpus_mean(None)
 
@@ -321,7 +442,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     arb_skipped_confident = 0  # merges accepted on embedding confidence alone
     arb_skipped_budget = 0     # gray-zone merges that ran out of budget
     arb_story_links = 0        # new threads linked as kin of a same-story thread
-    thread_pool = None         # global recent threads: id → (thread, centroid)
+    thread_index = None        # global recent threads' centroids (sm.CentroidIndex)
     from services import thread_targets as tt
     matchers = tt.load_matchers()
     touched_threads = set()   # probes score these at the end of the run
@@ -377,10 +498,10 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
             # 3.7 Flash twice; the author's Claude-under-grok cases). The pool
             # is loaded once per run and kept current in memory as threads are
             # created and joined below.
-            if thread_pool is None:
-                thread_pool = _load_thread_pool(session, StoryThread)
-            centroids = [(tid, c) for tid, (_th, c) in thread_pool.items()]
-            thread_by_id = {tid: th for tid, (th, _c) in thread_pool.items()}
+            if thread_index is None:
+                from datetime import timedelta
+                pool = load_centroids(session, _now() - timedelta(days=_POOL_WINDOW_DAYS), prune=True)
+                thread_index = sm.CentroidIndex(pool, dim=len(vec), spare=len(embedded))
 
             # Candidates = the k nearest threads above the low floor (positive-ish
             # in the centered space), best first. Top-1-only was a measured
@@ -390,9 +511,8 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
             # is never consulted. 80% of arbiter calls ended in splits and 88% of
             # all threads were singletons. The arbiter now walks the list until a
             # "yes"; the judgement standard itself is unchanged.
-            cands = sm.assign_thread_candidates(vec, centroids,
-                                                floor=sm.THREAD_CANDIDATE_FLOOR,
-                                                k=_ARBITER_CANDIDATES)
+            cands = thread_index.candidates(vec, floor=sm.THREAD_CANDIDATE_FLOOR,
+                                            k=_ARBITER_CANDIDATES)
             tid = None
             story_sibling = None   # first candidate judged 'same story, different event'
             refresh_sid = None
@@ -424,7 +544,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                             break
                         arb_budget -= 1
                         arb_calls += 1
-                        rel = _llm_relation(arbiter, (thread_by_id[ctid].title or ""),
+                        rel = _llm_relation(arbiter, (session.get(StoryThread, ctid).title or ""),
                                             article.title or "")
                         same = (rel == "event") if rel is not None else None
                         if rel == "story" and story_sibling is None:
@@ -469,11 +589,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 session.commit()
                 session.refresh(th)
                 article.thread_id = th.id
-                thread_pool[th.id] = (th, list(vec))
+                thread_index.upsert(th.id, vec)
                 created += 1
                 tt.link(session, th.id, article_targets)
                 touched_threads.add(th.id)
-                _sib = thread_by_id.get(story_sibling) if story_sibling is not None else None
+                _sib = session.get(StoryThread, story_sibling) if story_sibling is not None else None
                 if _sib is not None and (
                         _sib.storyline_id is not None
                         or ((article.source_tier or "aggregated") == "aggregated"
@@ -483,10 +603,10 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                     logger.info(f"Storyline link: '{(article.title or '')[:40]}' ~ thread "
                                 f"{story_sibling} (storyline {refresh_sid})")
             else:
-                th = thread_by_id[tid]
+                th = session.get(StoryThread, tid)
                 new_centroid = sm.update_centroid(json.loads(th.centroid), th.member_count, vec)
                 th.centroid = json.dumps(new_centroid)
-                thread_pool[th.id] = (th, new_centroid)
+                thread_index.upsert(th.id, new_centroid)
                 th.member_count += 1
                 th.last_update_at = _now()
                 article.thread_id = th.id
