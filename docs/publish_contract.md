@@ -157,7 +157,7 @@ LEAD（单源社交/论坛）                → observed
 同一份 JSON 驱动两个出口：
 
 - **HTML 分发页面**：`site/`（线索流，内容优先）。
-- **generated RSS**：每 topic 一条 feed + 全站 feed；item = thread 的最新增量，guid = `thread.id + last_update_at`。替代现有 [export_rss.py](../export_rss.py)（其 IntelReport 直出形态属于旧管线，R7 时淘汰）。
+- **generated RSS**：每 topic 一条 feed + 全站 feed；item = thread 的最新增量，guid = `thread.id + last_update_at`。已由 `services/publish_service.write_site_digest` 实现；旧的 `export_rss.py`（IntelReport 直出）已于 2026-09-28 删除。
 
 ## 8. 与共享层的关系：三阶段演进路径
 

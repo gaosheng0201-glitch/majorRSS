@@ -176,7 +176,10 @@ class SourceNormalizer:
                 title=item.title,
                 url=canonical_url,
                 content=cleaned_content,
-                published_at=item.published_at.replace(tzinfo=None) if item.published_at else None,
+                # naive UTC column: convert an offset before dropping it
+                published_at=(item.published_at.astimezone(timezone.utc).replace(tzinfo=None)
+                              if item.published_at and item.published_at.tzinfo
+                              else item.published_at),
                 processed=False,
                 source_tier=source_tier,
                 # Carried straight from the route: whether the user NAMED this

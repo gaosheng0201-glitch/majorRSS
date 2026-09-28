@@ -3,7 +3,7 @@ import json
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone, timedelta
 from db.database import get_session
-from db.models import IntelReport, DailyBriefing, TokenUsage, StoryThread
+from db.models import DailyBriefing, TokenUsage, StoryThread
 from sqlmodel import select
 from typing import Optional
 from services.log_service import get_logger
@@ -57,9 +57,8 @@ class FactCheckResult(BaseModel):
     relevant_source_indices: list[int] = Field(default=[], description="List of Source indices (e.g. [1, 3]) that were actually relevant to the news and used for the summary. Exclude indices of noise or irrelevant sources.")
     event_timestamp: Optional[str] = Field(default=None, description="The ISO8601 string (e.g. 2026-05-11T12:00:00Z) of when the event happened or the article was published, based on the text. If absolutely unknown or hidden, return null.")
     concerned_targets: Optional[list[str]] = Field(default=None, description="Names (exactly as listed in the system instructions) of the tracked targets that genuinely take part in this event. Empty list if none does. Null only if no targets were listed.")
-    duplicate_of_report_id: Optional[int] = Field(default=None, description="If the core event in this batch is already reported in the provided list of 'Recent Summaries', set this to the ID of that duplicate report. Otherwise, return null.")
 
-def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, recent_context: str = None, candidate_targets: list = None) -> FactCheckResult:
+def process_article(content: str, radar_section: str, prompt_override: str = None, api_key: str = None, tracker_name: str = None, candidate_targets: list = None, previous_summary: str = None) -> FactCheckResult:
     """
     Passes the scraped content through the configured provider (BYOK Gemini,
     OpenAI-compatible / local model) to fact-check, categorize, and summarize.
@@ -113,27 +112,32 @@ def process_article(content: str, radar_section: str, prompt_override: str = Non
             "them. Otherwise, when unsure, leave the target out."
         )
 
+    # P2.2 grounding: a summary reports what the sources say. Background the
+    # model "knows" reads with the same authority as the reporting and the
+    # reader cannot tell them apart.
+    system_instruction += (
+        "\n\nGROUNDING: state only facts, figures and claims that appear in the sources "
+        "provided; attribute claims to who made them. Do not add background, numbers or "
+        "context from your own knowledge."
+    )
+
     target_lang = get_target_language()
     system_instruction += f"\n\nCRITICAL: You MUST write both the 'title' and 'llm_summary' in {target_lang} regardless of the input language."
 
-    if recent_context:
-        system_instruction += (
-            "\n\nIMPORTANT DEDUPLICATION INSTRUCTION: You are provided with a list of 'RECENTLY REPORTED INTELLIGENCE REPORTS' (Recent Summaries) with their IDs. "
-            "Your absolute priority is to avoid creating redundant reports. "
-            "If the new content ONLY reports the same event/update that is already summarized in the recent list, "
-            "you MUST classify the validity_category as '[NOISE]' or '[SPAM]', set `duplicate_of_report_id` to the ID of the matching report, "
-            "and list the indices of the redundant sources under `relevant_source_indices`. "
-            "If the new content contains BOTH duplicate news and new, valuable news, summarize ONLY the new news in `llm_summary`, "
-            "and exclude the duplicate indices from `relevant_source_indices` while returning `duplicate_of_report_id` as null."
-        )
-        
     prompt_contents = f"Analyze the following content:\n\n{content}"
-    if recent_context:
+    if previous_summary:
+        # §G #7 true increment: the thread already has a summary; these sources
+        # are what arrived since. Update it rather than rewrite from scratch.
+        system_instruction += (
+            "\n\nUPDATE MODE: this event already has a summary (PREVIOUS SUMMARY). The sources "
+            "below are NEW reports that arrived since. Return an updated title and llm_summary "
+            "that keep what the previous summary established and add what the new sources "
+            "report. If a new source contradicts the previous summary, say so explicitly rather "
+            "than silently replacing it. `relevant_source_indices` refers to the new sources only."
+        )
         prompt_contents = (
-            f"--- RECENTLY REPORTED INTELLIGENCE REPORTS ---\n"
-            f"{recent_context}\n\n"
-            f"--- NEW CONTENT TO ANALYZE ---\n"
-            f"{content}"
+            f"--- PREVIOUS SUMMARY ---\n{previous_summary}\n\n"
+            f"--- NEW SOURCES ---\n{content}"
         )
 
     import time
@@ -185,6 +189,8 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
     else:
         # Default fallback to 24 hours ago
         start_time = now_utc - timedelta(days=1)
+    # Columns are naive UTC (db/models.utc_now_naive); compare like with like.
+    start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
         
     # P2.1: the briefing synthesizes from event THREADS (one summary per event),
     # not IntelReport batches.
@@ -257,11 +263,11 @@ def generate_daily_briefing(target_sections: list[str] = None, api_key: str = No
 
 def scan_trends(api_key: str = None):
     """
-    Scans recent IntelReports for entity spikes and generates alerts.
+    Scans recent event threads for entity spikes and generates alerts.
     """
     from db.models import TrendAlert
     session = get_session()
-    recent_time = datetime.now(timezone.utc) - timedelta(hours=12)
+    recent_time = (datetime.now(timezone.utc) - timedelta(hours=12)).replace(tzinfo=None)
     
     # P2.1: scan recent event THREADS for entity spikes.
     reports = session.exec(

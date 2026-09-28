@@ -150,6 +150,14 @@ def run_semantic_job():
     # threads. Runs in BOTH modes: the fallback embedder needs no key, so
     # clustering/dedup/alerting work even in pure-RSS mode (synthesis degrades
     # to citation-only when no generation model).
+    # Holds the thread-write lock throughout: fusion must not snapshot a thread
+    # that ingest or the merge pass is changing (services/pipeline_lock.py).
+    from services.pipeline_lock import THREAD_WRITE_LOCK
+    with THREAD_WRITE_LOCK:
+        _run_semantic_job()
+
+
+def _run_semantic_job():
     try:
         from services.semantic_ingest import run_semantic_ingest, refresh_resonance
         run_semantic_ingest()

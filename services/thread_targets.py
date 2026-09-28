@@ -126,11 +126,11 @@ def rebuild(session, thread_ids: Iterable[int], matchers=None) -> int:
 def rebuild_recent(days: int = 30) -> dict:
     """Maintenance: after profiles change (new official domains, new targets),
     let the new knowledge reach recent threads. Deterministic, additive."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from db.database import get_session
     from db.models import StoryThread
     with get_session() as session:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         ids = session.exec(select(StoryThread.id).where(StoryThread.last_update_at >= cutoff)).all()
         added = rebuild(session, ids)
         session.commit()

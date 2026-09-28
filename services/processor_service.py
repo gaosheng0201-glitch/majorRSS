@@ -296,7 +296,10 @@ def process_pending_threads():
                                    "Daily LLM token budget exhausted; deferring processing to tomorrow.")
             break
         try:
-            _fuse_thread(thread_id)
+            # Per thread, so ingest interleaves between threads (pipeline_lock.py).
+            from services.pipeline_lock import THREAD_WRITE_LOCK
+            with THREAD_WRITE_LOCK:
+                _fuse_thread(thread_id)
         except Exception as e:
             logger.error(f"Fusion failed for thread {thread_id}: {e}", exc_info=e)
         # Protect API RPM between per-thread summaries.
@@ -321,6 +324,19 @@ def _thread_targets(session, thread_id: int, include_rejected: bool = False) -> 
         if t is not None:
             out.append(t)
     return out
+
+
+def _previous_summary(summary: str):
+    """The model-written part of a stored summary — title and body, without the
+    provenance block appended after '---' (callers exclude extractive summaries:
+    a quote is not a synthesis to update)."""
+    if not summary or not summary.startswith("[TITLE:"):
+        return None
+    head = summary.split("\n\n---\n", 1)[0]
+    title, _, body = head.partition("]\n\n")
+    title = title[len("[TITLE:"):].strip()
+    body = body.strip()
+    return f"{title}\n\n{body}" if title and body else None
 
 
 def _mark_seen(session, thread, members):
@@ -464,13 +480,24 @@ def _fuse_thread(thread_id: int):
             logger.info(f"Thread {thread_id} extractive (single source, nothing to synthesize) — no LLM.")
             return
 
-        # What to SEND to the LLM: newest members (latest developments), capped for
-        # cost (#7), PLUS the original lead (oldest) so re-fusion never summarizes
-        # off follow-up chatter alone (#6). Provenance/counts use ALL members (#2).
-        to_send = list(members[:FUSION_MAX_MEMBERS])
-        lead = members[-1]
-        if lead not in to_send:
-            to_send.append(lead)
+        # What to SEND to the LLM. First fusion: newest members (latest
+        # developments), capped for cost, PLUS the original lead (oldest) so a
+        # summary is never written off follow-up chatter alone (#6).
+        # Re-fusion (§G #7, true increment): the previous summary already holds
+        # the lead and everything fused before — send it with ONLY the members
+        # that arrived since, instead of re-sending up to 13 full texts to
+        # rewrite what is already written. Provenance/counts use ALL members (#2).
+        extractive = (thread.source_url or "").startswith("Extractive")
+        previous = _previous_summary(thread.summary) if thread.summary and not extractive else None
+        fresh = [u for u in members if not u.processed]
+        if previous and fresh:
+            to_send = fresh[:FUSION_MAX_MEMBERS]
+        else:
+            previous = None
+            to_send = list(members[:FUSION_MAX_MEMBERS])
+            lead = members[-1]
+            if lead not in to_send:
+                to_send.append(lead)
 
         selected, entries, total_chars = [], [], 0
         for u in to_send:
@@ -499,6 +526,7 @@ def _fuse_thread(thread_id: int):
             prompt_override=overrides[0] if len(targets) == 1 and overrides else None,
             tracker_name=tracker.name,
             candidate_targets=[(t.name, TargetProfile.from_tracker(t).describe()) for t in candidates],
+            previous_summary=previous,
         )
         named = getattr(result, "concerned_targets", None)
         if named is not None:
@@ -516,6 +544,14 @@ def _fuse_thread(thread_id: int):
         if not valid_sources:
             valid_sources = list(selected)
         valid_ids = {u.id for u in valid_sources}
+        if previous:
+            # An update builds on the previous summary, so what that one cited
+            # is still cited; the new sources add to it.
+            try:
+                valid_ids |= set(json.loads(thread.cited_article_ids or "[]"))
+            except Exception:
+                pass
+            valid_sources = [u for u in members if u.id in valid_ids]
         thread.cited_article_ids = json.dumps(sorted(valid_ids))
         # Corroboration = every OTHER member of the event, INCLUDING members past
         # the char/count cap — so nothing is silently dropped from provenance (#2).
@@ -565,4 +601,5 @@ def _fuse_thread(thread_id: int):
                 session.add(u)
         session.commit()
         logger.info(f"Fused thread {thread_id}: {thread.validity_category} score {thread.importance_score} "
-                    f"({len(selected)} sent / {len(members)} members)")
+                    f"({len(selected)} sent / {len(members)} members"
+                    f"{', update of previous summary' if previous else ''})")

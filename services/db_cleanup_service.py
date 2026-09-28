@@ -64,6 +64,7 @@ def get_db_status():
         daily_briefings = session.exec(select(func.count(DailyBriefing.id))).one()
         trend_alerts = session.exec(select(func.count(TrendAlert.id))).one()
         token_usages = session.exec(select(func.count(TokenUsage.id))).one()
+        pipeline_health = _pipeline_health(session)
         
     retention_days = int(os.environ.get("DB_CLEANUP_RETENTION_DAYS", "0"))
     max_size_mb = int(os.environ.get("DB_CLEANUP_MAX_SIZE_MB", "0"))
@@ -95,8 +96,34 @@ def get_db_status():
         "retention_days": retention_days,
         "max_size_mb": max_size_mb,
         "is_over_size_limit": is_over_size_limit,
-        "expired_articles_count": expired_articles_count
+        "expired_articles_count": expired_articles_count,
+        "pipeline_health": pipeline_health,
     }
+
+
+def _pipeline_health(session) -> dict:
+    """§G #8: an article reaches the radar only through a thread. Both counts
+    should be 0; anything else means intake stopped short (the relevance gate's
+    deliberate exclusions are not counted — they stay in the Raw Feed by design).
+    - unthreaded_recent: embedded, not gated, yet in no thread (1 h – 7 d old);
+    - unembedded_stale: never embedded although older than 1 h (embed failing,
+      or intake stalled behind parked items)."""
+    from db.models import ArticleEmbedding
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    hour_ago, week_ago = now - timedelta(hours=1), now - timedelta(days=7)
+    embedded = select(ArticleEmbedding.article_id)
+    try:
+        unthreaded = session.exec(select(func.count(RawArticle.id)).where(
+            RawArticle.thread_id.is_(None), RawArticle.relevance_gated == False,  # noqa: E712
+            RawArticle.created_at < hour_ago, RawArticle.created_at >= week_ago,
+            RawArticle.id.in_(embedded))).one()
+        unembedded = session.exec(select(func.count(RawArticle.id)).where(
+            RawArticle.created_at < hour_ago, RawArticle.created_at >= week_ago,
+            RawArticle.id.not_in(embedded))).one()
+    except Exception as e:
+        logger.warning(f"Pipeline health query failed: {e}")
+        return {"unthreaded_recent": 0, "unembedded_stale": 0}
+    return {"unthreaded_recent": int(unthreaded), "unembedded_stale": int(unembedded)}
 
 def run_db_cleanup():
     """

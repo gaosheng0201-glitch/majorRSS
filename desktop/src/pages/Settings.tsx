@@ -46,6 +46,7 @@ export interface DbStatus {
   max_size_mb: number;
   is_over_size_limit: boolean;
   expired_articles_count: number;
+  pipeline_health?: { unthreaded_recent: number; unembedded_stale: number };
 }
 
 export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { appMode: 'ai_fusion' | 'pure_rss'; setAppMode: (m: 'ai_fusion' | 'pure_rss') => void; setOnboardingOpen: (o: boolean) => void; }) {
@@ -622,6 +623,14 @@ export default function Settings({ appMode, setAppMode, setOnboardingOpen }: { a
                   </Button>
                 </Stack>
               </Paper>
+            )}
+
+            {dbStatus.pipeline_health && (dbStatus.pipeline_health.unthreaded_recent > 0 || dbStatus.pipeline_health.unembedded_stale > 0) && (
+              <Text size="xs" c="orange">
+                {t('set_db_pipeline_warn')
+                  .replace('{u}', String(dbStatus.pipeline_health.unthreaded_recent))
+                  .replace('{e}', String(dbStatus.pipeline_health.unembedded_stale))}
+              </Text>
             )}
 
             {/* Storage Board */}

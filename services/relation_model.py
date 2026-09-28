@@ -23,7 +23,7 @@ Contract:
   - a human correction (P3.1) is the highest-grade label and will outrank all.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -166,7 +166,7 @@ def train_target(session, tracker_id: int, all_target_ids: List[int], mean: np.n
     P = [x for x in P if x is not None]; N = [x for x in N if x is not None]
     row = session.exec(select(TargetModel).where(TargetModel.tracker_id == tracker_id)).first() or TargetModel(tracker_id=tracker_id)
     if len(P) < MIN_POS or len(N) < MIN_NEG:
-        row.enabled = False; row.n_pos, row.n_neg = len(P), len(N); row.trained_at = datetime.utcnow()
+        row.enabled = False; row.n_pos, row.n_neg = len(P), len(N); row.trained_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(row); return {"tracker_id": tracker_id, "enabled": False, "reason": "too few labels", "n_pos": len(P), "n_neg": len(N)}
     X = np.stack(P + N); y = np.array([1] * len(P) + [0] * len(N), dtype=np.float32)
     rng = np.random.default_rng(0); idx = rng.permutation(len(y)); folds = np.array_split(idx, 5)
@@ -185,7 +185,7 @@ def train_target(session, tracker_id: int, all_target_ids: List[int], mean: np.n
     w, b = _train_lr(X, y)
     row.weights = json.dumps([round(float(x), 6) for x in w]); row.bias = float(b)
     row.auc = auc; row.add_threshold = min(max(add_t, ADD_FLOOR), 0.99); row.veto_threshold = max(min(veto_t, VETO_CEIL), 0.0)
-    row.n_pos, row.n_neg = len(P), len(N); row.enabled = bool(auc >= MIN_AUC); row.trained_at = datetime.utcnow()
+    row.n_pos, row.n_neg = len(P), len(N); row.enabled = bool(auc >= MIN_AUC); row.trained_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(row)
     return {"tracker_id": tracker_id, "enabled": row.enabled, "auc": round(auc, 3), "n_pos": len(P), "n_neg": len(N),
             "add_t": round(row.add_threshold, 2), "veto_t": round(row.veto_threshold, 2)}

@@ -107,25 +107,9 @@ class DBRepository:
                     session.delete(old_log)
                 session.commit()
                 
-    def get_unprocessed_articles(self, tracker_id: int, limit: int = 50):
-        # relevance_gated items stay in the Raw Feed but are excluded from LLM
-        # fusion (token economy) — see the semantic_ingest relevance gate.
-        with get_session() as session:
-            return session.exec(select(RawArticle).where(
-                RawArticle.tracker_id == tracker_id,
-                RawArticle.processed == False,
-                RawArticle.relevance_gated == False,
-            ).order_by(RawArticle.created_at.desc()).limit(limit)).all()
-
-    def get_trackers_with_unprocessed_articles(self):
-        with get_session() as session:
-            return session.exec(select(RawArticle.tracker_id).where(
-                RawArticle.processed == False,
-                RawArticle.relevance_gated == False,
-            ).distinct()).all()
-            
     # NOTE (P2.1): the IntelReport write path (save_intel_report /
-    # get_recent_reports / append_sources_to_report) was removed — fusion writes
+    # get_recent_reports / append_sources_to_report) and the per-tracker
+    # unprocessed-article queries (superseded by the thread pass) were removed — fusion writes
     # StoryThread.summary now and nothing called these (verified by grep). The
     # IntelReport TABLE stays dormant for rollback; see docs/radar_quality_roadmap §G.
 

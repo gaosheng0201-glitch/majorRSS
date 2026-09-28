@@ -26,7 +26,7 @@ def _now():
 def get_radar_stats(since_hours: int = 168) -> dict:
     """Time-saved / noise-reduction KPIs over a window (default 7 days)."""
     from db.database import get_session
-    from db.models import RawArticle, ArticleEmbedding, StoryThread, RadarAlert, IntelReport
+    from db.models import RawArticle, ArticleEmbedding, StoryThread, RadarAlert
 
     since = _now() - timedelta(hours=since_hours)
     with get_session() as s:
@@ -69,9 +69,9 @@ def get_catchup(since_iso: Optional[str] = None, since_hours: int = 24) -> dict:
 
     if since_iso:
         try:
-            since = datetime.fromisoformat(since_iso.replace("Z", ""))
-            if since.tzinfo is not None:
-                since = since.replace(tzinfo=None)
+            since = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
+            if since.tzinfo is not None:   # an offset is converted, not dropped
+                since = since.astimezone(timezone.utc).replace(tzinfo=None)
         except Exception:
             since = _now() - timedelta(hours=since_hours)
     else:

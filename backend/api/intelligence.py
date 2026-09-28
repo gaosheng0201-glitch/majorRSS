@@ -3,7 +3,7 @@ from sqlmodel import Session, select, func
 from typing import List
 import json
 from db.database import get_session, get_api_session
-from db.models import Tracker, RawArticle, IntelReport, TrendAlert, Subscription, TaskRequest
+from db.models import Tracker, RawArticle, TrendAlert, Subscription, TaskRequest
 from backend.schemas import DashboardStats, IntelReportResponse, TrendAlertResponse, TrendAlertSource, RawArticleResponse
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
@@ -80,6 +80,13 @@ def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_api_se
         .limit(limit)
     ).all()
 
+    # raw_article_id = the thread's lead (earliest) member — it was the thread
+    # id, a different table's key under a RawArticle field name (§G #13).
+    leads = dict(session.exec(
+        select(RawArticle.thread_id, func.min(RawArticle.id))
+        .where(RawArticle.thread_id.in_([th.id for th in threads]))
+        .group_by(RawArticle.thread_id)).all()) if threads else {}
+
     feed = []
     for th in threads:
         tracker_name = "Unknown"
@@ -100,7 +107,7 @@ def get_intelligence_feed(limit: int = 30, session: Session = Depends(get_api_se
         clean_summary, clean_title = clean_summary_and_title(th.summary, th.title or "Untitled")
         feed.append(IntelReportResponse(
             id=th.id,
-            raw_article_id=th.id,   # thread-based: no single lead article
+            raw_article_id=leads.get(th.id, 0),
             source_url=th.source_url or "",
             title=clean_title,
             validity_category=th.validity_category,

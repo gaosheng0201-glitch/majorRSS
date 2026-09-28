@@ -17,7 +17,7 @@ again. Bounded per cycle; no candidate limit hides a neighbour here because
 the question is asked pair by pair.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
 from sqlmodel import select
@@ -130,7 +130,7 @@ def run_merge_pass(arbiter=None, window_hours: int = WINDOW_HOURS) -> dict:
             return {"pairs": 0, "merged": 0, "storyline_links": 0, "skipped": "unchanged"}
         # centred space, same correction as ingest (running sum, shared with it)
         refresh_corpus_mean(session)
-        cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=window_hours)
         pairs = _pairs(session, cutoff)
         complete = len(pairs) < MAX_PAIRS_PER_RUN
         for a, b, sim in pairs:

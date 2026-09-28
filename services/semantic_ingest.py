@@ -34,11 +34,7 @@ _MAX_TEXT_CHARS = 2000  # embedding input cap per article
 # news event rather than merely the same entity — this is what separates
 # "Gemini 3.6 released" from "Gemini horoscope today", which collapse together in
 # embedding space no matter the threshold (愿景: 事件线索, not entity buckets).
-_EVENT_ARBITER_SYS = (
-    "You judge whether two news headlines report the SAME specific news event. "
-    "The same company or topic is NOT enough — it must be the same underlying "
-    "event/announcement. Reply with exactly one word: yes or no."
-)
+# The question itself is _llm_relation below (event / story / different).
 from services.merge_policy import INGEST_CALLS_PER_CYCLE as _ARBITER_CALLS_PER_CYCLE  # one declaration: merge_policy.py
 # How many nearest threads the arbiter may consult per article (top-1 was a
 # measured failure: the closest neighbour vetoed the right answer behind it).
@@ -144,24 +140,6 @@ def _refresh_storyline(session, sid: int):
     session.commit()
 
 
-def _llm_same_event(provider, title_a, title_b):
-    """LLM arbitration: same news event? True/False, or None if the call failed
-    (caller then keeps the embedding decision). Cheap — a one-word completion."""
-    try:
-        text, usage = provider.generate(
-            f"Headline A: {title_a}\nHeadline B: {title_b}",
-            system=_EVENT_ARBITER_SYS, temperature=0.0)
-        try:
-            from llm.processor import _record_usage
-            _record_usage(getattr(provider, "name", "unknown"), "EventArbiter", usage)
-        except Exception:
-            pass
-        return text.strip().lower().startswith("y")
-    except Exception as e:
-        logger.warning(f"Event arbiter failed ({e}); gray-zone candidates will NOT be merged this time.")
-        return None
-
-
 def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -187,6 +165,13 @@ from services.merge_policy import POOL_WINDOW_DAYS as _POOL_WINDOW_DAYS
 _centroid_cache: dict = {}   # thread id → (hash of stored JSON, float32 vector)
 _mean_state: dict = {}       # running corpus sum over ArticleEmbedding
 _profile_cache: dict = {}    # (embedder, terms) → profile vectors
+_embed_failures: dict = {}   # article id → consecutive embed failures this process
+
+# §G #8: pending is "oldest un-embedded first, 100 per cycle", so 100 articles
+# that can never embed (a permanent per-item error) would stall intake for good
+# and be re-billed every cycle. After this many consecutive failures an article
+# is parked until the next launch — retried then, never lost.
+EMBED_MAX_ATTEMPTS = 3
 
 
 def cache_dir():
@@ -345,9 +330,11 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     with get_session() as session:
         # Articles with no embedding yet (in SQL: loading every article's body
         # to pick out a handful of pending ones was a full-table read per cycle).
-        pending = session.exec(select(RawArticle)
-                               .where(RawArticle.id.not_in(select(ArticleEmbedding.article_id)))
-                               .order_by(RawArticle.id).limit(limit)).all()
+        parked = [aid for aid, n in _embed_failures.items() if n >= EMBED_MAX_ATTEMPTS]
+        q = select(RawArticle).where(RawArticle.id.not_in(select(ArticleEmbedding.article_id)))
+        if parked:
+            q = q.where(RawArticle.id.not_in(parked))
+        pending = session.exec(q.order_by(RawArticle.id).limit(limit)).all()
 
     if not pending:
         return {"embedded": 0, "threads_created": 0, "threads_updated": 0}
@@ -361,6 +348,14 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     raw_vectors = embedder.embed([_embed_text(a) for a in pending])
     embedded = [(a, v) for a, v in zip(pending, raw_vectors) if v is not None]
     embed_skipped = len(pending) - len(embedded)
+    for a, v in zip(pending, raw_vectors):
+        if v is not None:
+            _embed_failures.pop(a.id, None)
+        else:
+            _embed_failures[a.id] = _embed_failures.get(a.id, 0) + 1
+            if _embed_failures[a.id] == EMBED_MAX_ATTEMPTS:
+                logger.warning(f"Article {a.id} failed to embed {EMBED_MAX_ATTEMPTS}x in a row; "
+                               f"parked until next launch so it cannot stall intake.")
     if embed_skipped:
         logger.warning(f"Semantic ingest: {embed_skipped}/{len(pending)} articles "
                        f"failed to embed this cycle; will retry next cycle.")
@@ -409,7 +404,7 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
     else:
         sm.set_corpus_mean(None)
 
-    # LLM event arbiter (see _llm_same_event): only when a generation model is
+    # LLM event arbiter (see _llm_relation): only when a generation model is
     # configured; no-key users fall back to embedding-only clustering.
     _arbiter_override = arbiter
     arbiter = None
