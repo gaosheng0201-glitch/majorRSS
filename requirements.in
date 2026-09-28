@@ -10,3 +10,9 @@ feedparser
 pytest
 requests
 numpy
+fastapi
+uvicorn
+lxml
+cryptography
+SQLAlchemy
+pyinstaller

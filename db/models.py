@@ -205,7 +205,7 @@ class TaskRequest(SQLModel, table=True):
     target_type: Optional[str] = Field(default=None, description="e.g. TRACKER, SECTION")
     target_id: Optional[str] = Field(default=None, description="Tracker ID, or Section Name, or null")
     payload: Optional[str] = Field(default=None, description="JSON string of additional arguments")
-    status: str = Field(default="PENDING", description="PENDING, RUNNING, COMPLETED, FAILED")
+    status: str = Field(default="PENDING", description="PENDING, RUNNING, COMPLETED, FAILED, SKIPPED; job types USER_* are user runs (services/task_runner.py)")
     retry_count: int = Field(default=0, description="Number of times this task was retried")
     max_retries: int = Field(default=3, description="Maximum retry limit")
     created_at: datetime = Field(default_factory=utc_now_naive)
@@ -238,7 +238,7 @@ class PipelineEvent(SQLModel, table=True):
     adapter: Optional[str] = None
     input_data: Optional[str] = None # Masked/desensitized target snippet
     output_summary: Optional[str] = None # Text snippet/length/hash summary (max 100 chars)
-    status: str = Field(default="SUCCESS") # SUCCESS, FAILED
+    status: str = Field(default="SUCCESS") # SUCCESS, FAILED, SKIPPED
     duration_ms: int = Field(default=0)
     error: Optional[str] = None
 

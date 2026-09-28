@@ -199,8 +199,16 @@ def test_diff_route(req: AdHocDiffTestRequest):
             error_message=str(e)
         )
 
-@router.post("/test-diff-route-trace", response_model=PipelineRunResponse)
+@router.post("/test-diff-route-trace")
 def test_diff_route_trace(req: AdHocDiffTestRequest):
+    """Trial run of a page monitor. Runs in the background
+    (services/task_runner.py): returns {task_id}; GET /tasks/{id} yields a
+    PipelineRunResponse as `result`."""
+    from services.task_runner import submit
+    return {"task_id": submit("MONITOR_TRIAL", lambda: _diff_route_trace(req), "SUBSCRIPTION", "")}
+
+
+def _diff_route_trace(req: AdHocDiffTestRequest):
     import time
     import hashlib
     import json
@@ -372,41 +380,24 @@ def test_diff_route_trace(req: AdHocDiffTestRequest):
     run_resp.events = events
     return run_resp
 
-@router.post("/{sub_id}/run-trace", response_model=PipelineRunResponse)
+@router.post("/{sub_id}/run-trace")
 def run_monitor_trace(sub_id: int, session: Session = Depends(get_api_session)):
-    from db.models import PipelineRun, PipelineEvent
-    from backend.schemas import PipelineRunResponse
+    """Check this monitor now and return that run's trace. Runs in the
+    background: returns {task_id}; GET /tasks/{id} yields the
+    PipelineRunResponse as `result`."""
     sub = session.get(Subscription, sub_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
-        
     from worker_subscription import process_subscription
+    from backend.api.trackers import trace_of_run
+    from services.task_runner import submit
     from datetime import datetime, timezone
-    try:
-        now = datetime.now(timezone.utc)
-        process_subscription(session, sub, now)
-        
-        # Get the latest run for this subscription
-        run = session.exec(
-            select(PipelineRun)
-            .where(PipelineRun.subscription_id == sub_id)
-            .order_by(PipelineRun.started_at.desc())
-        ).first()
-        
-        if not run:
-            raise HTTPException(status_code=500, detail="Pipeline run failed to create trace")
-            
-        events = session.exec(
-            select(PipelineEvent)
-            .where(PipelineEvent.run_id == run.id)
-            .order_by(PipelineEvent.step_index.asc())
-        ).all()
-        
-        run_dict = run.model_dump()
-        run_dict["events"] = events
-        return PipelineRunResponse(**run_dict)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    def work():
+        with get_session() as s:
+            run_id = process_subscription(s, s.get(Subscription, sub_id), datetime.now(timezone.utc))
+            return trace_of_run(s, run_id)
+    return {"task_id": submit("RUN_TRACE", work, "SUBSCRIPTION", sub_id)}
 
 @router.get("/{sub_id}/traces", response_model=List[PipelineRunResponse])
 def get_monitor_traces(sub_id: int, limit: int = 20, session: Session = Depends(get_api_session)):

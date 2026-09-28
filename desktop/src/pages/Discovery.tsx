@@ -9,7 +9,7 @@ import {
   Plus, Play, Trash2, Power, MoreVertical, Edit, AlertCircle,
   CheckCircle2, Activity, Clock, FileText, Download, RefreshCw, Star
 } from 'lucide-react';
-import client from '../api/client';
+import client, { runTask } from '../api/client';
 import { useLanguage } from '../i18n/translations';
 
 interface Tracker {
@@ -254,8 +254,9 @@ export default function Discovery() {
 
   const handleRun = async (id: number) => {
     try {
-      await client.post(`/trackers/${id}/run`);
-      alert("Discovery scan triggered successfully");
+      const res = await client.post(`/trackers/${id}/run`);
+      const ids: number[] = res.data?.task_ids || [];
+      alert(`Discovery scan triggered successfully${ids.length ? ` (task #${ids.join(', #')})` : ''}`);
     } catch (err) {
       alert("Failed to run discovery scan");
     }
@@ -420,13 +421,12 @@ export default function Discovery() {
     setTestResult(null);
     
     try {
-      // 试运行会逐个源联网抓取，正常就要 20~40s；全局 15s 超时太短会误报"失败"。
-      // 给这个慢操作单独放宽到 60s。
-      const res = await client.post('/trackers/test-resolve-intent', {
+      // 试运行在后台任务里逐个源联网抓取（常要 20~40s）；这里轮询结果。
+      const res = await runTask('/trackers/test-resolve-intent', {
         target: getTargetPayload(),
         source_intent: 'HYBRID',
         fetch_policy: getFetchPolicy()
-      }, { timeout: 60000 });
+      });
       setTestResult(res.data);
     } catch (err: any) {
       const isTimeout = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
@@ -538,8 +538,8 @@ export default function Discovery() {
     if (!selectedTracker) return;
     setRunningTrace(true);
     try {
-      // 完整抓取诊断更慢（可达一两分钟），单独放宽超时。
-      const res = await client.post<PipelineRun>(`/trackers/${selectedTracker.id}/run-trace`, {}, { timeout: 180000 });
+      // 完整抓取诊断更慢（可达一两分钟）：后台任务执行，这里轮询结果。
+      const res = await runTask<PipelineRun>(`/trackers/${selectedTracker.id}/run-trace`);
       // Refresh trace runs list
       const freshRuns = await client.get<PipelineRun[]>(`/trackers/${selectedTracker.id}/traces`);
       setTraceRuns(freshRuns.data);

@@ -290,6 +290,7 @@ def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_api_s
     )
     session.add(scrape_task)
 
+    process_task = None
     if not is_pure_rss_mode():
         # Create TaskRequest for Process
         process_task = TaskRequest(
@@ -301,10 +302,12 @@ def trigger_tracker_scrape(tracker_id: int, session: Session = Depends(get_api_s
         session.add(process_task)
 
     session.commit()
-    
+    # Queued jobs are observable: GET /tasks/{id} (backend/api/tasks.py).
+    task_ids = [scrape_task.id] + ([process_task.id] if process_task else [])
     if is_pure_rss_mode():
-        return {"message": "Scrape task queued successfully. AI processing skipped in pure RSS mode."}
-    return {"message": "Scrape and AI process tasks queued successfully"}
+        return {"message": "Scrape task queued successfully. AI processing skipped in pure RSS mode.",
+                "task_ids": task_ids}
+    return {"message": "Scrape and AI process tasks queued successfully", "task_ids": task_ids}
 
 @router.put("/{tracker_id}", response_model=TrackerResponse)
 def update_tracker(tracker_id: int, tracker_in: TrackerCreate, session: Session = Depends(get_api_session)):
@@ -368,53 +371,52 @@ def test_existing_tracker_route(tracker_id: int, session: Session = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/test-resolve-intent", response_model=RouteTestResponse)
-def test_resolve_intent(req: AdHocRouteTestRequest, session: Session = Depends(get_api_session)):
+@router.post("/test-resolve-intent")
+def test_resolve_intent(req: AdHocRouteTestRequest):
+    """Trial run of an intent before it is saved. Runs in the background
+    (services/task_runner.py): returns {task_id}; GET /tasks/{id} yields a
+    RouteTestResponse as `result`."""
     from services.scraper_service import run_route_test
-    try:
-        return run_route_test(
-            target=req.target,
-            source_intent=req.source_intent,
-            fetch_policy=req.fetch_policy,
-            auth_profile_id=req.auth_profile_id,
-            session=session
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    from services.task_runner import submit
 
-@router.post("/{tracker_id}/run-trace", response_model=PipelineRunResponse)
-def run_tracker_trace(tracker_id: int, session: Session = Depends(get_api_session)):
+    def work():
+        with get_session() as s:
+            return run_route_test(target=req.target, source_intent=req.source_intent,
+                                  fetch_policy=req.fetch_policy, auth_profile_id=req.auth_profile_id,
+                                  session=s)
+    return {"task_id": submit("TRIAL_RUN", work, "TRACKER", "")}
+
+
+def trace_of_run(session, run_id: int) -> PipelineRunResponse:
     from db.models import PipelineRun, PipelineEvent
+    run = session.get(PipelineRun, run_id) if run_id else None
+    if not run:
+        raise HTTPException(status_code=500, detail="Pipeline run failed to create trace")
+    events = session.exec(
+        select(PipelineEvent)
+        .where(PipelineEvent.run_id == run.id)
+        .order_by(PipelineEvent.step_index.asc())
+    ).all()
+    run_dict = run.model_dump()
+    run_dict["events"] = events
+    return PipelineRunResponse(**run_dict)
+
+
+@router.post("/{tracker_id}/run-trace")
+def run_tracker_trace(tracker_id: int, session: Session = Depends(get_api_session)):
+    """Scrape now and return that run's trace. Runs in the background: returns
+    {task_id}; GET /tasks/{id} yields the PipelineRunResponse as `result`."""
     tracker = session.get(Tracker, tracker_id)
     if not tracker:
         raise HTTPException(status_code=404, detail="Tracker not found")
-        
     from services.scraper_service import scrape_single_tracker
-    try:
-        # Run scraper synchronously
-        scrape_single_tracker(tracker_id)
-        
-        # Get the latest run for this tracker
-        run = session.exec(
-            select(PipelineRun)
-            .where(PipelineRun.tracker_id == tracker_id)
-            .order_by(PipelineRun.started_at.desc())
-        ).first()
-        
-        if not run:
-            raise HTTPException(status_code=500, detail="Pipeline run failed to create trace")
-            
-        events = session.exec(
-            select(PipelineEvent)
-            .where(PipelineEvent.run_id == run.id)
-            .order_by(PipelineEvent.step_index.asc())
-        ).all()
-        
-        run_dict = run.model_dump()
-        run_dict["events"] = events
-        return PipelineRunResponse(**run_dict)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    from services.task_runner import submit
+
+    def work():
+        run_id = scrape_single_tracker(tracker_id)
+        with get_session() as s:
+            return trace_of_run(s, run_id)
+    return {"task_id": submit("RUN_TRACE", work, "TRACKER", tracker_id)}
 
 @router.get("/{tracker_id}/traces", response_model=List[PipelineRunResponse])
 def get_tracker_traces(tracker_id: int, limit: int = 20, session: Session = Depends(get_api_session)):

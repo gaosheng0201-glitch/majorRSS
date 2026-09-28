@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import DOMPurify from 'dompurify';
+import { sanitizeHtml } from '../components/sanitize';
 import {
   Text, Paper, SimpleGrid, Group, Stack, Badge,
   Button, RingProgress, Loader, ScrollArea, UnstyledButton, Modal, Anchor,
@@ -353,7 +353,7 @@ export default function Dashboard({ appMode }: { appMode: 'ai_fusion' | 'pure_rs
                 size="sm" 
                 c="dimmed" 
                 style={{ lineHeight: 1.6 }}
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(selectedAlert.alert_summary)) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(parseMarkdown(selectedAlert.alert_summary)) }}
               />
             </Paper>
             

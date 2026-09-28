@@ -336,3 +336,94 @@ def test_briefing_prompt_is_grounded(monkeypatch):
     lp.generate_daily_briefing()
     assert "〔分析〕" in seen["system"] and "own knowledge" in seen["system"]
     assert "podcast" not in seen["system"] and seen["temperature"] <= 0.2
+
+
+# ---- user runs are background tasks with an id to poll
+
+def test_task_runner_records_result_and_failure():
+    from services import task_runner as tr
+
+    def wait(tid):
+        for _ in range(100):
+            t = tr.get(tid)
+            if t["status"] != "RUNNING":
+                return t
+            threading.Event().wait(0.05)
+        raise AssertionError("task did not finish")
+
+    ok = wait(tr.submit("TEST", lambda: {"answer": 42, "at": _now()}))
+    assert ok["status"] == "COMPLETED" and ok["result"]["answer"] == 42 and ok["job_type"] == "USER_TEST"
+
+    def boom():
+        raise ValueError("no route resolved")
+    bad = wait(tr.submit("TEST", boom))
+    assert bad["status"] == "FAILED" and "no route resolved" in bad["error"]
+
+
+def test_poller_marks_pure_rss_skips_as_skipped_and_restart_interrupts_user_runs(monkeypatch):
+    import scheduler
+    from db.models import TaskRequest
+    from services import task_runner as tr
+
+    monkeypatch.setattr(scheduler, "is_pure_rss_mode", lambda: True)
+    with get_session() as s:
+        skip = TaskRequest(job_type="PROCESS", target_type="TRACKER", target_id="1", status="PENDING")
+        odd = TaskRequest(job_type="NO_SUCH_JOB", target_type="X", target_id="1", status="PENDING")
+        cut = TaskRequest(job_type="USER_RUN_TRACE", target_type="TRACKER", target_id="1", status="RUNNING",
+                          started_at=tr.PROCESS_STARTED - timedelta(minutes=1))
+        s.add(skip); s.add(odd); s.add(cut); s.commit()
+        ids = (skip.id, odd.id, cut.id)
+    scheduler.process_task_requests()
+    with get_session() as s:
+        a, b, c = (s.get(TaskRequest, i) for i in ids)
+        assert a.status == "SKIPPED" and a.finished_at is not None      # not "COMPLETED"
+        assert b.status == "FAILED" and "Unknown job type" in b.error
+        assert c.status == "FAILED" and "restarted" in c.error
+
+
+# ---- an Expired profile is not walked into the login wall
+
+def test_expired_profile_routes_are_skipped_or_anonymous():
+    from db.models import AuthProfile
+    from services.source_resolver import SourceResolver, SourceRoute
+
+    with get_session() as s:
+        p = AuthProfile(platform="twitter", display_name="expired-p", storage_ref="x", status="Expired")
+        s.add(p); s.commit(); s.refresh(p)
+        pid = p.id
+    try:
+        r = SourceResolver(fetch_policy=None, auth_profile_id=pid)
+        routes = [SourceRoute(route_id="agentic_twitter_0", adapter="AgenticAdapter", platform="twitter",
+                              url_or_command="https://x.com/someone", purpose="discovery",
+                              requires_auth=False, priority=3),
+                  SourceRoute(route_id="agentic_snapshot_0", adapter="AgenticAdapter", platform="web",
+                              url_or_command="https://vendor.example/news", purpose="snapshot",
+                              requires_auth=False, priority=1)]
+        r._enrich_routes_with_auth(routes)
+        assert routes[0].auth_status == "expired" and routes[0].auth_profile_id is None
+        assert routes[1].auth_status == "expired_anonymous" and routes[1].auth_profile_id is None
+    finally:
+        with get_session() as s:
+            s.delete(s.get(AuthProfile, pid)); s.commit()
+
+
+# ---- the per-run source cap keeps what the user opted into
+
+def test_source_cap_counts_sources_and_prefers_opted_in_ones():
+    from services.provenance import Tier
+    from services.source_resolver import SourceResolver, SourceRoute
+
+    def route(rid, tier, prio):
+        return SourceRoute(route_id=rid, adapter="RssAdapter", platform="web", purpose="discovery",
+                           requires_auth=False, url_or_command=f"https://{rid}.example",
+                           priority=prio, tier=tier)
+    routes = ([route(f"gnews_{i}", Tier.AGGREGATED, 1) for i in range(3)]
+              + [route(f"hn_{i}", Tier.AGGREGATED, 1) for i in range(3)]
+              + [route("rss_feed_0", Tier.CURATED, 1), route("rss_alternate_0", Tier.CURATED, 2),
+                 route("preset_openai_news", Tier.CURATED, 5), route("sugg_rss_0", Tier.CURATED, 4)])
+    r = SourceResolver(fetch_policy=json.dumps({"max_sources_per_run": 4}))
+    kept = [x.route_id for x in r._apply_budget(routes)]
+    # the three opted-in sources survive (the feed with its fallback), then one firehose
+    assert {"rss_feed_0", "rss_alternate_0", "preset_openai_news", "sugg_rss_0"} <= set(kept)
+    assert sum(1 for k in kept if k.startswith(("gnews_", "hn_"))) == 1
+    assert kept == [x.route_id for x in routes if x.route_id in kept]    # order kept

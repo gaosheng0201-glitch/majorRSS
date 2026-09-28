@@ -9,7 +9,7 @@
 // would turn the relevance floor from a soft filter into an invisible one,
 // which the trust loop forbids.
 import { useEffect, useState } from 'react';
-import DOMPurify from 'dompurify';
+import { sanitizeHtml } from './sanitize';
 import {
   Text, Paper, Group, Stack, Badge, Loader, Card, ScrollArea, Collapse,
   UnstyledButton, Anchor, useMantineColorScheme,
@@ -136,7 +136,7 @@ export function RawArticleCard({ article }: { article: RawArticleResponse }) {
               >
                 <ScrollArea.Autosize mah={400} offsetScrollbars>
                   <div
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(article.content) }}
                     style={{
                       lineHeight: 1.6,
                       fontSize: 'var(--mantine-font-size-sm)',

@@ -9,7 +9,7 @@ import {
   Plus, Play, Trash2, Power, MoreVertical, Edit, Eye, Rss,
   Activity, Clock, FileText, Download, RefreshCw, AlertCircle, Sparkles
 } from 'lucide-react';
-import client from '../api/client';
+import client, { runTask } from '../api/client';
 import { useLanguage } from '../i18n/translations';
 
 interface Tracker {
@@ -239,8 +239,9 @@ export default function Subscriptions() {
 
   const handleRunTracker = async (id: number) => {
     try {
-      await client.post(`/trackers/${id}/run`);
-      alert("Scraping task started in background");
+      const res = await client.post(`/trackers/${id}/run`);
+      const ids: number[] = res.data?.task_ids || [];
+      alert(`Scraping task started in background${ids.length ? ` (task #${ids.join(', #')})` : ''}`);
     } catch (err) {
       alert("Failed to execute scraping task");
     }
@@ -264,7 +265,7 @@ export default function Subscriptions() {
 
   const handleRunMonitor = async (id: number) => {
     try {
-      await client.post(`/monitors/${id}/run-trace`);
+      await runTask(`/monitors/${id}/run-trace`);
       alert("Diff check completed!");
       fetchData();
     } catch (err) {
@@ -395,11 +396,11 @@ export default function Subscriptions() {
       });
 
       if (subType === 'diff') {
-        // 试运行会同步联网抓取，正常就要 20~40s；全局 15s 超时太短会误报"失败"。
-        const res = await client.post('/monitors/test-diff-route-trace', {
+        // 试运行在后台任务里联网抓取（常要 20~40s）；这里轮询结果，不占着请求。
+        const res = await runTask('/monitors/test-diff-route-trace', {
           target_url: target,
           diff_policy: policy
-        }, { timeout: 60000 });
+        });
         setTestResult(res.data);
       } else {
         // Trackers resolution
@@ -409,11 +410,11 @@ export default function Subscriptions() {
           max_days: Number(maxDays),
           fallback_enabled: true
         });
-        const res = await client.post('/trackers/test-resolve-intent', {
+        const res = await runTask('/trackers/test-resolve-intent', {
           target: target.includes('\n') ? JSON.stringify(target.split('\n').map(x => x.trim()).filter(Boolean)) : JSON.stringify([target.trim()]),
           source_intent: subType === 'rss' ? 'RSS_FEED' : 'ACCOUNT_TRACKING',
           fetch_policy: trPolicy
-        }, { timeout: 60000 });
+        });
         setTestResult(res.data);
       }
     } catch (err: any) {
@@ -564,7 +565,7 @@ export default function Subscriptions() {
     setRunningTrace(true);
     try {
       const endpoint = tracingItem.type === 'tracker' ? `/trackers/${tracingItem.id}/run-trace` : `/monitors/${tracingItem.id}/run-trace`;
-      const res = await client.post<PipelineRun>(endpoint);
+      const res = await runTask<PipelineRun>(endpoint);
       
       const freshEndpoint = tracingItem.type === 'tracker' ? `/trackers/${tracingItem.id}/traces` : `/monitors/${tracingItem.id}/traces`;
       const freshRuns = await client.get<PipelineRun[]>(freshEndpoint);

@@ -37,9 +37,20 @@ def recover_stale_tasks():
     stale_limit_minutes = int(os.environ.get("TASK_STALE_MINUTES", "30"))
     now = datetime.now(timezone.utc)
     
+    from services.task_runner import USER_PREFIX, PROCESS_STARTED
+
     with get_session() as session:
         running_tasks = session.exec(select(TaskRequest).where(TaskRequest.status == "RUNNING")).all()
         for task in running_tasks:
+            # A user run lives in this process's task pool (services/task_runner.py):
+            # one still RUNNING from before this launch was cut off — never retried.
+            if (task.job_type or "").startswith(USER_PREFIX):
+                if task.started_at and task.started_at < PROCESS_STARTED:
+                    task.status = "FAILED"
+                    task.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    task.error = "Interrupted: the app restarted while this run was in progress."
+                    session.add(task)
+                continue
             started_at = task.started_at
             if started_at:
                 if started_at.tzinfo is None:
@@ -78,18 +89,20 @@ def process_task_requests():
         try:
             if task.job_type == "SCRAPE" and task.target_type == "TRACKER":
                 scrape_single_tracker(int(task.target_id))
+            elif task.job_type in ("PROCESS", "TREND_SCAN") and is_pure_rss_mode():
+                # Queued before a switch to pure-RSS mode: not run — and not
+                # reported as COMPLETED, which the task log used to claim.
+                logger.info(f"Skipping {task.job_type} task {task.id} because APP_MODE=pure_rss.")
+                db.update_task_status(task.id, "SKIPPED", error="Skipped: pure RSS mode (no AI processing).")
+                continue
             elif task.job_type == "PROCESS" and task.target_type == "TRACKER":
-                if is_pure_rss_mode():
-                    logger.info(f"Skipping PROCESS task {task.id} because APP_MODE=pure_rss.")
-                else:
-                    process_tracker_fusion(int(task.target_id))
+                process_tracker_fusion(int(task.target_id))
             elif task.job_type == "TREND_SCAN":
-                if is_pure_rss_mode():
-                    logger.info(f"Skipping TREND_SCAN task {task.id} because APP_MODE=pure_rss.")
-                else:
-                    scan_trends()
-            # other types can be added here
-            
+                scan_trends()
+            else:
+                db.update_task_status(task.id, "FAILED", error=f"Unknown job type {task.job_type!r}.")
+                continue
+
             db.update_task_status(task.id, "COMPLETED")
         except Exception as e:
             logger.error(f"Task {task.id} failed: {e}", exc_info=e)

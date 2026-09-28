@@ -302,6 +302,7 @@ def process_subscription(session, sub: Subscription, now: datetime):
         tracer.finish(final_status, total_routes=1, total_items=1 if success else 0,
                       accepted_items=accepted_items, error_summary=error_summary,
                       cost_browser=cost_browser, cost_llm=cost_llm)
+    return tracer.run.id
 
 def run_subscription_job():
     logger.info("Running scheduled subscription monitor job...")

@@ -267,7 +267,7 @@ export default function Sources() {
   const compileSignals = (): SignalItem[] => {
     const list: SignalItem[] = [];
     trackers
-      .filter(t => t.source_intent === 'HYBRID' || t.tracker_type === 'HYBRID')
+      .filter(t => t.source_intent === 'HYBRID')
       .forEach(t => {
         let signalsArray: any[] = [];
         let intensity = "Balanced";
@@ -283,10 +283,11 @@ export default function Sources() {
             signalsArray = parsedTarget.signals || [];
           }
         } catch {
-          // Fallback if target is not a JSON
-          if (t.tracker_type === 'KEYWORD') {
+          // Fallback if target is not a JSON (source_intent is the model;
+          // tracker_type is a legacy display column)
+          if (t.source_intent === 'KEYWORD_DISCOVERY') {
             signalsArray = [{ type: 'keyword', value: t.target }];
-          } else if (t.tracker_type === 'ACCOUNT') {
+          } else if (t.source_intent === 'ACCOUNT_TRACKING') {
             signalsArray = [{ type: 'account', value: t.target }];
           } else {
             signalsArray = [{ type: 'website', value: t.target }];

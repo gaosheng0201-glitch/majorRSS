@@ -138,8 +138,10 @@ fn shutdown_backend_sidecar(app: &AppHandle) {
     if let Some(child) = lock.take() {
       let pid = child.pid();
       println!("[Tauri] Stopping backend sidecar pid {}.", pid);
-      let _ = child.kill();
+      // Tree first: on unix a killed parent's children are re-parented to
+      // launchd and can no longer be found through it.
       kill_process_tree(pid);
+      let _ = child.kill();
     }
   }
 
@@ -154,8 +156,63 @@ fn kill_process_tree(pid: u32) {
     .status();
 }
 
+/// The sidecar and everything under it (Playwright drivers, Chromium and its
+/// helpers). This was a no-op outside Windows (a migration leftover): only the
+/// sidecar got SIGKILL, and the browsers were left to notice on their own.
 #[cfg(not(windows))]
-fn kill_process_tree(_pid: u32) {}
+fn descendants(pid: u32) -> Vec<u32> {
+  let mut out = Vec::new();
+  let mut frontier = vec![pid];
+  while let Some(p) = frontier.pop() {
+    if let Ok(o) = Command::new("pgrep").args(["-P", &p.to_string()]).output() {
+      for line in String::from_utf8_lossy(&o.stdout).lines() {
+        if let Ok(c) = line.trim().parse::<u32>() {
+          if !out.contains(&c) {
+            out.push(c);
+            frontier.push(c);
+          }
+        }
+      }
+    }
+  }
+  out
+}
+
+#[cfg(not(windows))]
+fn signal(pids: &[u32], sig: &str) {
+  if pids.is_empty() {
+    return;
+  }
+  let mut args = vec![sig.to_string()];
+  args.extend(pids.iter().map(|p| p.to_string()));
+  let _ = Command::new("kill").args(&args).status();
+}
+
+#[cfg(not(windows))]
+fn alive(pid: u32) -> bool {
+  Command::new("kill")
+    .args(["-0", &pid.to_string()])
+    .status()
+    .map(|s| s.success())
+    .unwrap_or(false)
+}
+
+/// SIGTERM the whole tree (Playwright closes its browsers on it), give it up
+/// to 2 s, then SIGKILL whatever is left.
+#[cfg(not(windows))]
+fn kill_process_tree(pid: u32) {
+  let mut tree = descendants(pid);
+  tree.push(pid);
+  signal(&tree, "-TERM");
+  for _ in 0..20 {
+    if !tree.iter().any(|p| alive(*p)) {
+      return;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+  }
+  let left: Vec<u32> = tree.into_iter().filter(|p| alive(*p)).collect();
+  signal(&left, "-KILL");
+}
 
 #[cfg(windows)]
 fn kill_backend_sidecar_by_name() {
@@ -164,8 +221,14 @@ fn kill_backend_sidecar_by_name() {
     .status();
 }
 
+/// A sidecar left from an earlier run (its app crashed) — matched by its path
+/// inside the bundle, the unix counterpart of `taskkill /IM`.
 #[cfg(not(windows))]
-fn kill_backend_sidecar_by_name() {}
+fn kill_backend_sidecar_by_name() {
+  let _ = Command::new("pkill")
+    .args(["-f", "backend-bundle/backend-sidecar"])
+    .status();
+}
 
 fn notify_hidden_to_tray(app: &AppHandle) {
   let state = app.state::<TrayNoticeState>();

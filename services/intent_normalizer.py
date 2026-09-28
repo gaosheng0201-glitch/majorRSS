@@ -13,8 +13,10 @@ def generate_tracker_normalized_intent(name: str, source_intent: str, target: st
         except:
             pass
 
+    intent_type = {"HYBRID": "topic_discovery", "RSS_FEED": "single_feed_subscription",
+                   "KEYWORD_DISCOVERY": "keyword_discovery"}.get(source_intent, "single_account_subscription")
     intent_map = {
-        "intent_type": "topic_discovery" if source_intent == "HYBRID" else "single_feed_subscription" if source_intent == "RSS_FEED" else "single_account_subscription",
+        "intent_type": intent_type,
         "topic": name,
         "signals": [],
         "policy_profile": policy_profile

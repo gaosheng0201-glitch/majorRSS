@@ -24,34 +24,9 @@ from services.log_service import get_logger
 db = DBRepository()
 logger = get_logger("scraper")
 
-import re as _re
-_ACCT_TIER_RE = _re.compile(r"^(?:nitter|rsshub|agentic)_(twitter|bilibili|weibo)_(\d+)$")
-# Preset account tiers: nitter|rsshub|agentic_preset_<presetId> — same logical
-# source, so they must share a group (fetch stops at the first that delivers).
-# Without this each tier would be its own group and every cycle would hit all
-# three, including the expensive authorized browser one.
-_PRESET_TIER_RE = _re.compile(r"^(?:nitter|rsshub|agentic)_(preset_\w+)$")
-
-
-def _route_group(route_id: str) -> str:
-    """Group id for a route. Fallback tiers of ONE logical source share a group
-    (fetch stops at the first that works); independent sources get their own
-    group (all fetched). Derived from the resolver's route_id naming:
-      rss_feed_N / agentic_snapshot_N / rss_alternate_N  → one URL   → 'url_N'
-      nitter|rsshub|agentic_<plat>_N                     → one acct  → '<plat>_N'
-      nitter|rsshub|agentic_preset_<id>                  → one preset acct
-      gnews_N / hn_N / reddit_N / preset_* / rsshub_generic_N → independent."""
-    rid = route_id or ""
-    for prefix in ("rss_feed_", "agentic_snapshot_", "rss_alternate_"):
-        if rid.startswith(prefix):
-            return "url_" + rid.rsplit("_", 1)[-1]
-    m = _ACCT_TIER_RE.match(rid)
-    if m:
-        return f"{m.group(1)}_{m.group(2)}"
-    m = _PRESET_TIER_RE.match(rid)
-    if m:
-        return m.group(1)
-    return rid  # independent source → its own group
+# One logical source = one route group; defined beside the resolver that names
+# the routes (and caps them by group — SourceResolver._apply_budget).
+from services.source_resolver import _route_group  # noqa: E402
 
 
 def print_safe(message: str):
@@ -90,6 +65,10 @@ def _mark_auth_expired(session, auth_profile_id: Optional[int], url: str):
             logger.warning(f"Marked {len(profiles)} auth profile(s) as Expired after login wall at {desensitize_url(url)}")
     except Exception as e:
         logger.warning(f"Failed to update auth profile status: {e}")
+
+class _SkipRoute(Exception):
+    """A trial-run route deliberately not fetched (its result is already set)."""
+
 
 def run_route_test(
     target: str,
@@ -134,12 +113,21 @@ def run_route_test(
         error_msg = None
         items = []
         
+        if route.auth_status == "expired":
+            # same rule as the scheduled scrape: no walk into the login wall
+            items, http_status, error_type = [], 401, "AUTH_EXPIRED"
+            error_msg = "Auth profile expired — re-authorize the account to test this route."
         try:
-            items = adapter.fetch(route, auth_profile_id=route.auth_profile_id if route.auth_profile_id is not None else auth_profile_id)
+            if route.auth_status == "expired":
+                raise _SkipRoute()
+            fallback = None if route.auth_status in ("expired", "expired_anonymous") else auth_profile_id
+            items = adapter.fetch(route, auth_profile_id=route.auth_profile_id if route.auth_profile_id is not None else fallback)
             max_items = resolver.policy.get("max_items_per_route", 20)
             if items:
                 items = items[:max_items]
             ok = True
+        except _SkipRoute:
+            pass
         except CookieExpiredException as ce:
             http_status = 401
             error_type = "AUTH_EXPIRED"
@@ -229,7 +217,7 @@ def scrape_single_tracker(tracker_id: int):
             return
         tracker_name = tracker.name
 
-        db.set_pipeline_status(tracker.name, "Scraping", f"Tracker ({tracker.tracker_type}) is fetching data...")
+        db.set_pipeline_status(tracker.name, "Scraping", f"Tracker ({tracker.source_intent}) is fetching data...")
 
         # 1. Resolve routes
         resolver = SourceResolver(fetch_policy=tracker.fetch_policy, auth_profile_id=tracker.auth_profile_id)
@@ -341,6 +329,15 @@ def scrape_single_tracker(tracker_id: int):
                 tracer.event("FETCH", status="SKIPPED", route_id=route.route_id, adapter=adapter_name,
                              input_data=desensitize_url(route.url_or_command),
                              error=f"host_politeness:{host_skip}")
+                continue
+
+            # An Expired profile is not walked into the login wall every cycle
+            # (source_resolver._enrich_routes_with_auth): skip until re-authorized.
+            if route.auth_status == "expired":
+                logger.info(f"Skipping route {route.route_id}: its auth profile is expired")
+                tracer.event("FETCH", status="SKIPPED", route_id=route.route_id, adapter=adapter_name,
+                             input_data=desensitize_url(route.url_or_command),
+                             error="auth:expired (re-authorize the account to resume)")
                 continue
 
             # Account guard: an authorized route spends the account's fragile,
@@ -497,6 +494,9 @@ def scrape_single_tracker(tracker_id: int):
                       cost_browser=cost_browser, cost_llm=cost_llm)
 
         db.set_pipeline_status(tracker.name, "Completed", f"Scrape complete ({final_status}). Saved {saved_total} new items, skipped {dup_total} duplicates, filtered {filt_total} items.")
+        # The run this call recorded — "run and trace" reads it back by id, not
+        # as "the newest run of the target" (a scheduled scrape could be that).
+        return tracer.run.id
     except Exception as e:
         # Nothing above may crash invisibly: record the failure on the run (if
         # one was created) and in the activity log, then re-raise so callers

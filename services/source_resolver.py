@@ -6,6 +6,35 @@ from typing import List, Optional
 
 from services.provenance import Tier
 
+_ACCT_TIER_RE = re.compile(r"^(?:nitter|rsshub|agentic)_(twitter|bilibili|weibo)_(\d+)$")
+# Preset account tiers: nitter|rsshub|agentic_preset_<presetId> — same logical
+# source, so they must share a group (fetch stops at the first that delivers).
+# Without this each tier would be its own group and every cycle would hit all
+# three, including the expensive authorized browser one.
+_PRESET_TIER_RE = re.compile(r"^(?:nitter|rsshub|agentic)_(preset_\w+)$")
+
+
+def _route_group(route_id: str) -> str:
+    """Group id for a route. Fallback tiers of ONE logical source share a group
+    (fetch stops at the first that works); independent sources get their own
+    group (all fetched). Derived from the resolver's route_id naming:
+      rss_feed_N / agentic_snapshot_N / rss_alternate_N  → one URL   → 'url_N'
+      nitter|rsshub|agentic_<plat>_N                     → one acct  → '<plat>_N'
+      nitter|rsshub|agentic_preset_<id>                  → one preset acct
+      gnews_N / hn_N / reddit_N / preset_* / rsshub_generic_N → independent."""
+    rid = route_id or ""
+    for prefix in ("rss_feed_", "agentic_snapshot_", "rss_alternate_"):
+        if rid.startswith(prefix):
+            return "url_" + rid.rsplit("_", 1)[-1]
+    m = _ACCT_TIER_RE.match(rid)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+    m = _PRESET_TIER_RE.match(rid)
+    if m:
+        return m.group(1)
+    return rid  # independent source → its own group
+
+
 @dataclass
 class SourceRoute:
     route_id: str
@@ -16,7 +45,7 @@ class SourceRoute:
     platform: str
     priority: int = 1
     auth_profile_id: Optional[int] = None
-    auth_status: str = "none" # "none" | "matched" | "missing"
+    auth_status: str = "none" # "none" | "matched" | "missing" | "expired" (skipped) | "expired_anonymous"
     # Provenance tier (docs/source_tiering.md). Default CURATED (user opted-in:
     # direct URLs, tracked accounts, portfolio presets); keyword firehoses stamp
     # AGGREGATED. The normalizer refines CURATED→PRIMARY by the item's URL.
@@ -345,14 +374,29 @@ class SourceResolver:
             return routes
 
     def _apply_budget(self, routes: List[SourceRoute]) -> List[SourceRoute]:
-        """Cap the number of sources fetched per run (per-target budget). 0/None
-        = unlimited. Keeps lower-priority routes as fallback ordering intact."""
+        """Cap the number of SOURCES fetched per run (per-target budget). 0/None =
+        unlimited.
+
+        Two inversions fixed (engineering_baseline §3.2): the cap counted routes,
+        so one feed's fallback tiers used up to three slots; and it ranked by
+        priority alone, where keyword firehoses (AGGREGATED, priority 1) outrank
+        everything the user opted into — three keywords filled a cap of 8 and
+        every curated preset and suggested source was dropped first. Now a
+        source is its route group (fallbacks travel with it), opted-in sources
+        (PRIMARY/CURATED) come before aggregated ones, then priority; routes keep
+        their original order."""
         cap = self.policy.get("max_sources_per_run", 0) or 0
-        if cap and len(routes) > cap:
-            # Stable sort by priority so the cap keeps the best routes.
-            ordered = sorted(routes, key=lambda r: r.priority)
-            return ordered[:cap]
-        return routes
+        if not cap:
+            return routes
+        groups = {}
+        for i, r in enumerate(routes):
+            g = groups.setdefault(_route_group(r.route_id), {"rank": None, "first": i})
+            rank = (1 if r.tier == Tier.AGGREGATED else 0, r.priority)
+            g["rank"] = rank if g["rank"] is None else min(g["rank"], rank)
+        if len(groups) <= cap:
+            return routes
+        keep = {gid for gid, _ in sorted(groups.items(), key=lambda kv: (kv[1]["rank"], kv[1]["first"]))[:cap]}
+        return [r for r in routes if _route_group(r.route_id) in keep]
 
     def _enrich_routes_with_auth(self, routes: List[SourceRoute]):
         try:
@@ -364,7 +408,14 @@ class SourceResolver:
                 # Query all active AuthProfiles
                 profiles = session.exec(select(AuthProfile).where(AuthProfile.status == "Active")).all()
                 profile_map = {p.platform.lower(): p.id for p in profiles}
-                
+                # The target's own profile is used only while Active. An Expired
+                # one was still attached and every cycle walked the login wall
+                # again (engineering_baseline §3.3): a platform that needs a
+                # login is skipped until re-authorized ("expired"); any other
+                # page is fetched anonymously ("expired_anonymous").
+                own = session.get(AuthProfile, self.auth_profile_id) if self.auth_profile_id is not None else None
+                own_expired = own is not None and (own.status or "Active") != "Active"
+
                 for r in routes:
                     if r.requires_auth or r.adapter == "AgenticAdapter":
                         platform = r.platform.lower()
@@ -372,6 +423,13 @@ class SourceResolver:
                             r.auth_profile_id = profile_map[platform]
                             r.auth_status = "matched"
                             r.requires_auth = True
+                        elif own_expired:
+                            r.auth_profile_id = None
+                            if r.requires_auth or r.platform in ["twitter", "bilibili", "weibo"]:
+                                r.auth_status = "expired"
+                                r.requires_auth = True
+                            else:
+                                r.auth_status = "expired_anonymous"
                         elif self.auth_profile_id is not None:
                             r.auth_profile_id = self.auth_profile_id
                             r.auth_status = "matched"

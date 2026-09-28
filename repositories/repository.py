@@ -127,7 +127,7 @@ class DBRepository:
                 task.status = status
                 if status == "RUNNING":
                     task.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                elif status in ["COMPLETED", "FAILED"]:
+                elif status in ["COMPLETED", "FAILED", "SKIPPED"]:
                     task.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 if error:
                     task.error = error

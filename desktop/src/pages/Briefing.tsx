@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import DOMPurify from 'dompurify';
+import { sanitizeHtml } from '../components/sanitize';
 import { 
   Text, Paper, Group, Stack, Button, MultiSelect, Accordion, Loader, ScrollArea,
   useMantineColorScheme
@@ -154,7 +154,7 @@ export default function Briefing() {
                   <Accordion.Panel>
                     <Text 
                       size="sm" 
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(b.content)) }} 
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(parseMarkdown(b.content)) }} 
                     />
                   </Accordion.Panel>
                 </Accordion.Item>
