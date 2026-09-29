@@ -8,6 +8,7 @@ import client from '../api/client';
 import { useLanguage } from '../i18n/translations';
 import RawFeed from '../components/RawFeed';
 import { safeHref } from '../components/sourceDisplay';
+import { useAway, dismissAway, type AwayHighlight } from '../components/away';
 
 // P6 雷达视图收口 — the ONE main reading surface (愿景 41: "日用界面只有一个，
 // 雷达/线索视图就是'仪表盘'"). Before this, three surfaces showed similar
@@ -131,7 +132,7 @@ function EventRow({ th, isDark, lang, tipoff, trackerName }: { th: StoryThread; 
   const summary = (th.summary || '').trim();
   const longSummary = summary.length > 220;
   return (
-    <Box style={{ padding: '14px 0', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+    <Box id={`thread-${th.id}`} style={{ padding: '14px 0', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
       <Text
         component="a"
         href={safeHref(th.sources[0]?.url)}
@@ -415,6 +416,66 @@ function LeadsView({ leads, isDark, lang, trackerNames }: { leads: StoryThread[]
   );
 }
 
+// 醒来不漏: the short list of what happened while you were away (hidden window
+// or a sleeping machine), kept until you say you've seen it. It keeps filling
+// in for a few minutes after you return — the pipeline catches up on waking.
+function awayLabel(h: AwayHighlight, zh: boolean): { text: string; color: string } {
+  const r = h.reasons[0];
+  if (r === 'CONFIRMED_HIGH_ATTENTION') return { text: zh ? '高关注 · 已证实' : 'Watched · confirmed', color: 'teal' };
+  if (r === 'CORROBORATED_HIGH_ATTENTION') return { text: zh ? '高关注 · 多源' : 'Watched · corroborated', color: 'indigo' };
+  if (r === 'RESONANCE' || h.is_resonant) return { text: zh ? '共振' : 'Resonating', color: 'orange' };
+  return { text: zh ? '新证实' : 'Newly confirmed', color: 'teal' };
+}
+
+function AwayCard({ isDark, lang }: { isDark: boolean; lang: string }) {
+  const away = useAway();
+  const zh = lang === 'zh';
+  if (!away.since || away.highlights.length === 0) return null;
+  const since = new Date(away.since);
+  const at = since.toLocaleString(zh ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const locate = (id: number) => document.getElementById(`thread-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return (
+    <Box mb="md" p="md" style={{
+      borderRadius: 10,
+      border: `1px solid ${isDark ? 'rgba(99,102,241,0.35)' : 'rgba(79,70,229,0.25)'}`,
+      background: isDark ? 'rgba(99,102,241,0.08)' : 'rgba(79,70,229,0.04)',
+    }}>
+      <Group justify="space-between" align="baseline" mb={6}>
+        <Text size="sm" fw={700} className="title-text-color">
+          {zh ? `你离开期间（自 ${at}）· ${away.count} 条要点` : `While you were away (since ${at}) · ${away.count}`}
+        </Text>
+        <UnstyledButton onClick={dismissAway}>
+          <Text size="xs" c="indigo" fw={600}>{zh ? '知道了' : 'Got it'}</Text>
+        </UnstyledButton>
+      </Group>
+      <Stack gap={6}>
+        {away.highlights.map(h => {
+          const lab = awayLabel(h, zh);
+          return (
+            <Box key={h.thread_id}>
+              <Group gap={6} wrap="nowrap" align="baseline">
+                <Text size="xs" fw={700} c={lab.color} style={{ flexShrink: 0 }}>{lab.text}</Text>
+                <Text component="a" href={safeHref(h.url || undefined)} target="_blank" rel="noopener noreferrer"
+                      size="sm" fw={600} lineClamp={1} className="title-text-color" style={{ textDecoration: 'none' }}>
+                  {h.title || (zh ? '未命名线索' : 'Untitled')}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed">
+                {`${h.distinct_source_count} ${zh ? '家来源' : 'sources'} · ${h.targets.join(' · ')}`}
+                {' · '}
+                <Anchor size="xs" c="dimmed" onClick={() => locate(h.thread_id)}>{zh ? '在雷达中定位' : 'Find in radar'}</Anchor>
+              </Text>
+            </Box>
+          );
+        })}
+      </Stack>
+      {away.count > away.highlights.length && (
+        <Text size="xs" c="dimmed" mt={6}>{zh ? `另有 ${away.count - away.highlights.length} 条，按重要度只列前 ${away.highlights.length} 条` : `${away.count - away.highlights.length} more, most important first`}</Text>
+      )}
+    </Box>
+  );
+}
+
 export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }) {
   const { lang } = useLanguage();
   const { colorScheme } = useMantineColorScheme();
@@ -584,6 +645,8 @@ export default function Radar({ appMode }: { appMode: 'ai_fusion' | 'pure_rss' }
           </UnstyledButton>
         </Group>
       </Group>
+
+      <AwayCard isDark={isDark} lang={lang} />
 
       <Tabs value={tab} onChange={setTab} variant="default" mb="xs">
         <Tabs.List>

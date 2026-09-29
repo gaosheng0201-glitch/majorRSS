@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **公开分发站上线（onlyforbots.com）**：`site/` 拆为两类读者两页——介绍页 `/`（面向机器/开发者，含接入说明）+ 信息页 `/radar`（人类阅读的去噪线索流）+ `/llms.txt`（机器可读站点说明，只列现有 endpoint、规划中项归 planned）；渲染逻辑与视觉 token 隔离（`site/assets/`），只消费 `docs/publish_contract.md`（PublishedDigest v0.1）契约。部署到 Cloudflare Pages（Git 集成，push `main` 自动部署；apex/www 绑定 + HTTPS）。`docs/publish_contract.md`（契约 + 三阶段共享层演进）、`docs/official_feed_automation.md`（官方源自动化：无头实例、NAS Docker vs GitHub Actions、生成/分发端拆分）。
 
 #### Changed
+- **醒来不漏 + 发布不再并进旧线索（2026-09-28，Sonnet 5.5 发布后作者反馈"没有雷达推送"）**：实测三层原因——Mac 睡眠 15:04–19:10（DarkWake 时抓到了一手消息但无人归类）；「Sonnet 5.5 in GitHub Copilot」与 6 天前「Opus 5.5 … in GitHub Copilot」相似度 0.845，越过 0.80 免仲裁直接并入旧线索（AI Gateway 0.803、AWS 0.823 同理），发布没有产生新线索；10 个目标都未开高关注，只能等 9 家媒体共振才告警（19:56）。修复：免仲裁合并还须标题近乎相同（转载），同模板不同型号交给仲裁；调度任务合并补跑、醒后立即跑一轮；新增「你离开期间」——前端记录你真正在看的时刻，回来时（离开 ≥15 分钟，含睡眠）雷达页顶部列出离开期间的告警与新证实/共振事件（`GET /intelligence/away`），菜单栏图标旁显示条数（不依赖通知权限）。**不做**：替用户阻止睡眠（作者裁决，用户设备与权益）；全天候归 P8。
 - **收口（2026-09-28）**：第一类遗留逐项先对照代码核实再改，全部清零；其余定为「不做 / 下一期」写入 `docs/engineering_baseline.md` §3–§4。
   - **融合（§G）**：`services/pipeline_lock.py` 让语义任务与融合一次只有一个写线索者（实测手动「运行」的融合也会与定时融合并发重复计费，一并覆盖）；重融改为「旧摘要 + 新到成员」更新模式（原来每次重发最多 13 篇全文）；嵌入连续失败 3 次的文章本进程内搁置，db-status 新增 `pipeline_health`；删除死代码 `export_rss.py` 等；`/feed` 的 `raw_article_id` 改为真实文章 id；时区统一。
   - **成本（P1.2+）**：`services/llm_budget.py` 一个刹车管全部后台花费（融合、嵌入、事件判断、合并、告警、维护里的模型步），系统设置可改；每目标摘要日上限（目标开发者设置）；用户主动操作不受限。

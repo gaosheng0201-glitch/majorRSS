@@ -100,6 +100,8 @@ SELECT COUNT(*) FROM rawarticle WHERE url LIKE '%arxiv.org%' AND source_tier IN 
 | 「运行并追踪 / 试运行 / 立即检查」转圈或报错 | 前端轮询 `GET /api/tasks/{id}`；表 `taskrequest` 里 `job_type LIKE 'USER_%'`（status/error/payload.result）。重启会把进行中的用户任务收成 FAILED「Interrupted」 |
 | 文章抓到了但雷达里没有 | `GET /api/settings/db-status` 的 `pipeline_health`（两项都应为 0,非 0 设置页有橙色提示）；日志 `failed to embed 3x in a row; parked until next launch` = 该文章本进程内搁置 |
 | 某账号源每轮都 SKIPPED | trace 事件 error=`auth:expired` = 目标绑定的授权已过期,重新授权即恢复（公开页面会改走匿名抓取,不会撞登录墙） |
+| 打开电脑没看到离开期间的重要消息 | 雷达页顶部「你离开期间」卡片 = `GET /api/intelligence/away?since=`（告警 + 离开后新出现的已证实/共振事件,只含与目标相关的,最多 8 条）；前端 localStorage `radar_last_active_at`（最后一次窗口在前台且聚焦）/ `radar_away_since`（回来时冻结,点「知道了」清除）；离开 < 15 分钟不算离开；菜单栏图标旁数字 = 同一份列表的条数（Tauri 命令 `set_tray_badge`）。**不会**为此阻止睡眠——睡眠期间只能醒后补抓 |
+| 新型号发布被并进了上一代的老线索 | 相似度 ≥0.80 且标题近乎相同（转载）才免仲裁;模板相同型号不同 → 仲裁。日志里该文章若无 `Arbiter` 行且进了老线索,查 `dedup.is_near_duplicate(新标题, 线索标题)` |
 | 同一线索被摘要两次 / 摘要突然「重写」 | 不应再发生（`pipeline_lock.py`）；重融日志带 `update of previous summary` = 走的是「旧摘要 + 新成员」更新模式 |
 
 ## 8. 教训（别再踩）

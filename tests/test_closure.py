@@ -481,3 +481,47 @@ def test_confident_merge_needs_a_copied_headline_not_just_a_close_vector():
     with get_session() as s:
         assert s.get(RawArticle, copy_id).thread_id == new_tid
     assert not Arb.calls
+
+
+# ---- 醒来不漏: what you missed while away
+
+def test_away_highlights_list_alerts_and_new_events_for_your_targets_only():
+    from db.models import RadarAlert, StoryThread, ThreadTarget
+    from services.radar_digest import get_away_highlights
+    from services import thread_targets as tt
+
+    since = _now() - timedelta(hours=3)
+    with get_session() as s:
+        t = _tracker(s, "away-t")
+        launch = StoryThread(tracker_id=t.id, title="Away: model launched", lifecycle="CONFIRMED",
+                             distinct_source_count=1, first_seen_at=_now() - timedelta(hours=1), last_update_at=_now())
+        wave = StoryThread(tracker_id=t.id, title="Away: everyone reports it", lifecycle="CORROBORATED",
+                           distinct_source_count=9, is_resonant=True, resonance_score=4.0,
+                           first_seen_at=_now() - timedelta(days=2), last_update_at=_now())
+        nobody = StoryThread(tracker_id=t.id, title="Away: concerns no target", lifecycle="CONFIRMED",
+                             first_seen_at=_now() - timedelta(hours=1), last_update_at=_now())
+        vetoed = StoryThread(tracker_id=t.id, title="Away: name collision", lifecycle="CONFIRMED",
+                             first_seen_at=_now() - timedelta(hours=1), last_update_at=_now())
+        old = StoryThread(tracker_id=t.id, title="Away: before you left", lifecycle="CONFIRMED",
+                          first_seen_at=_now() - timedelta(days=3), last_update_at=_now())
+        for th in (launch, wave, nobody, vetoed, old):
+            s.add(th)
+        s.commit()
+        for th in (launch, wave, old):
+            tt.link(s, th.id, {t.id: "route"})
+        s.add(ThreadTarget(thread_id=vetoed.id, tracker_id=t.id, source="match", llm_verdict=False))
+        s.add(RadarAlert(thread_id=wave.id, tracker_id=t.id, reason="RESONANCE", title=wave.title,
+                         summary="s", distinct_source_count=9, lifecycle="CORROBORATED"))
+        s.commit()
+        ids = {"launch": launch.id, "wave": wave.id}
+        others = {nobody.id, vetoed.id, old.id}
+    try:
+        r = get_away_highlights(since.isoformat() + "Z")
+        got = [h["thread_id"] for h in r["highlights"]]
+        assert got[:2] == [ids["wave"], ids["launch"]]          # the alert first, then the new confirmation
+        assert not others & set(got)
+        assert r["highlights"][0]["reasons"] == ["RESONANCE"] and r["highlights"][0]["targets"] == ["away-t"]
+    finally:
+        with get_session() as s:
+            from sqlmodel import delete
+            s.exec(delete(RadarAlert).where(RadarAlert.thread_id == ids["wave"])); s.commit()

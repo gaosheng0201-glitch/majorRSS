@@ -12,7 +12,7 @@ Two views the dashboard consumes:
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlmodel import select, func
+from sqlmodel import select, func, or_
 
 from services.log_service import get_logger
 
@@ -107,3 +107,70 @@ def get_catchup(since_iso: Optional[str] = None, since_hours: int = 24) -> dict:
         "confirmed": len(confirmed),
         "threads": items,
     }
+
+
+# ---- 醒来不漏: what you missed while away (2026-09-28) ----------------------
+# The Mac slept 15:04–19:10 through the Sonnet 5.5 launch; the catch-up line
+# said "N threads advanced" and nothing more, and "since you last looked" was
+# the moment the page mounted — a tray app's page stays mounted for days. The
+# desktop now tracks when you were actually looking and asks for this short
+# list on return: alerts raised meanwhile, and NEW events that were confirmed
+# or resonated, for your targets only. Keeping the machine awake is not an
+# option we take (the user's device, the user's call); P8 is the always-on path.
+
+_REASON_RANK = {"CONFIRMED_HIGH_ATTENTION": 0, "CORROBORATED_HIGH_ATTENTION": 1, "RESONANCE": 2}
+AWAY_MAX_ITEMS = 8
+
+
+def get_away_highlights(since_iso: str, limit: int = AWAY_MAX_ITEMS) -> dict:
+    from db.database import get_session
+    from db.models import RadarAlert, RawArticle, StoryThread, Tracker
+    from services import thread_targets as tt
+
+    since = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
+    if since.tzinfo is not None:
+        since = since.astimezone(timezone.utc).replace(tzinfo=None)
+
+    with get_session() as s:
+        reasons = {}
+        for a in s.exec(select(RadarAlert).where(RadarAlert.created_at >= since)).all():
+            reasons.setdefault(a.thread_id, []).append(a.reason)
+        fresh = s.exec(select(StoryThread.id).where(
+            StoryThread.first_seen_at >= since,
+            or_(StoryThread.is_resonant == True, StoryThread.lifecycle == "CONFIRMED"),  # noqa: E712
+        )).all()
+        ids = set(reasons) | set(fresh)
+        if not ids:
+            return {"since": since.isoformat(), "count": 0, "highlights": []}
+        threads = {t.id: t for t in s.exec(select(StoryThread).where(StoryThread.id.in_(list(ids)))).all()}
+        rels = tt.rows_for(s, list(threads))
+        names = {t.id: t.name for t in s.exec(select(Tracker)).all()}
+        leads = dict(s.exec(select(RawArticle.thread_id, func.min(RawArticle.id))
+                            .where(RawArticle.thread_id.in_(list(threads)))
+                            .group_by(RawArticle.thread_id)).all())
+        urls = dict(s.exec(select(RawArticle.id, RawArticle.url)
+                           .where(RawArticle.id.in_(list(leads.values())))).all()) if leads else {}
+        items = []
+        for tid, th in threads.items():
+            concerned = [r.tracker_id for r in rels.get(tid, []) if r.llm_verdict is not False]
+            if not concerned:
+                continue            # nobody's news is not news you missed
+            rs = sorted(set(reasons.get(tid, [])), key=lambda r: _REASON_RANK.get(r, 9))
+            items.append({
+                "thread_id": tid,
+                "title": th.title,
+                "reasons": rs,
+                "lifecycle": th.lifecycle,
+                "is_resonant": bool(th.is_resonant),
+                "distinct_source_count": th.distinct_source_count,
+                "targets": sorted({names.get(i, "") for i in concerned} - {""}),
+                "first_seen_at": th.first_seen_at.isoformat() if th.first_seen_at else None,
+                "url": urls.get(leads.get(tid)),
+                "_rank": (min((_REASON_RANK.get(r, 9) for r in rs), default=9),
+                          0 if th.lifecycle == "CONFIRMED" else 1,
+                          -(th.resonance_score or 0), -(th.distinct_source_count or 0)),
+            })
+    items.sort(key=lambda i: i["_rank"])
+    for i in items:
+        i.pop("_rank")
+    return {"since": since.isoformat(), "count": len(items), "highlights": items[:limit]}

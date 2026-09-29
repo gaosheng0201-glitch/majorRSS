@@ -19,6 +19,7 @@ import Sources from './pages/Sources';
 import { useLanguage, type Language, LanguageProvider } from './i18n/translations';
 import TitleBar from './components/TitleBar';
 import client from './api/client';
+import { startAwayWatcher } from './components/away';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -339,6 +340,12 @@ function MainAppShell() {
       });
     }
   }, [isTauri]);
+
+  // 醒来不漏: track when the user is actually looking; on return, the radar shows
+  // what was missed and the menu-bar icon carries the count meanwhile.
+  useEffect(() => {
+    if (isBackendReady) startAwayWatcher(isTauri);
+  }, [isBackendReady, isTauri]);
 
   // R5 alert delivery: poll for thread-level alerts the backend hasn't pushed
   // yet, fire an OS notification with the "why", then mark delivered so each

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, func
 from typing import List
 import json
@@ -284,6 +284,18 @@ def get_catchup_endpoint(since: str = None, since_hours: int = 24):
     increments, not a pile of unread items."""
     from services.radar_digest import get_catchup
     return get_catchup(since_iso=since, since_hours=since_hours)
+
+
+@router.get("/away")
+def get_away_endpoint(since: str):
+    """醒来不漏: the short list of what you missed since `since` (the last time
+    the desktop saw you looking) — alerts raised meanwhile and new confirmed /
+    resonant events for your targets, most important first."""
+    from services.radar_digest import get_away_highlights
+    try:
+        return get_away_highlights(since)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="since must be an ISO timestamp")
 
 @router.get("/radar-alerts")
 def get_radar_alerts(limit: int = 50, unread_only: bool = False, session: Session = Depends(get_api_session)):

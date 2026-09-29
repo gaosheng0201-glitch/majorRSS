@@ -42,6 +42,23 @@ fn get_backend_startup_statuses(
   state.0.lock().map(|events| events.clone()).unwrap_or_default()
 }
 
+/// 醒来不漏: the number of things you missed while away, shown next to the
+/// menu-bar icon (macOS) and in its tooltip. Unlike an OS notification it needs
+/// no permission and is still there when you come back; 0 clears it.
+#[tauri::command]
+fn set_tray_badge(app: AppHandle, count: u32) {
+  if let Some(tray) = app.tray_by_id("main") {
+    let label = if count > 0 { Some(count.to_string()) } else { None };
+    let _ = tray.set_title(label.as_deref());
+    let tip = if count > 0 {
+      format!("MajorRSS — 离开期间 {} 条要点", count)
+    } else {
+      "MajorRSS is running in the background".to_string()
+    };
+    let _ = tray.set_tooltip(Some(tip.as_str()));
+  }
+}
+
 #[tauri::command]
 fn get_backend_runtime_snapshot() -> BackendRuntimeSnapshot {
   BackendRuntimeSnapshot {
@@ -253,6 +270,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       get_backend_startup_statuses,
       get_backend_runtime_snapshot,
+      set_tray_badge,
     ])
     .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
       if let Some(window) = app.get_webview_window("main") {
@@ -291,7 +309,7 @@ pub fn run() {
 
       // Build system tray icon
       let tray_icon = app.default_window_icon().cloned();
-      let mut tray_builder = TrayIconBuilder::new()
+      let mut tray_builder = TrayIconBuilder::with_id("main")
         .menu(&tray_menu)
         .tooltip("MajorRSS is running in the background")
         .show_menu_on_left_click(false);
