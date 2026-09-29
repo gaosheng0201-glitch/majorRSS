@@ -92,6 +92,16 @@ SELECT COUNT(*) FROM rawarticle WHERE url LIKE '%arxiv.org%' AND source_tier IN 
 
 `ps -o %cpu,rss,time -p $(pgrep -f backend-sidecar)` → `sample <pid> 5`（原生栈里 `scan_once_unicode`/`PyFloat_FromString` = 在解析向量 JSON,`cosine` 纯 Python 循环不会出现在原生栈但会占满 `_PyEval`）;日志 `~/.majorss/logs/majorss.log` 里 `semantic_clustering` 的 Running→executed 间隔 ≥5 分钟或出现 `maximum number of running instances` = 这一轮跑满了整个间隔,等于一直在跑。9/25 实测:3.3 万条嵌入 × 3072 维,每轮 ~5 分钟(全量解析嵌入求均值 ×2、每篇对 1.16 万线索纯 Python 余弦、合并轮 160 万对),常驻 100% CPU / 6 GB。现在:语料均值是增量累加(累加和持久化在 `<数据目录>/cache/corpus_mean.npz`,探针均值在训练时存为 `probe_mean.npy`,均可随时删除、下次自动重建)、线索质心按内容哈希缓存、近邻与全对用 numpy 矩阵,无新文章时合并轮直接跳过;热轮 ~1 s。定时任务跑在 macOS `utility` QoS(日维护 `background`,只用能效核),用户触发的任务保持默认;任务线程 CPU 超过间隔 20% 会记 `Job X used Ns CPU … (budget 20%)` 警告——看到它就是回归了。9/27 打包版实测:空转轮 1–2 s,有 9 篇新文章的一轮 69 s 墙钟(几乎全是 25 次仲裁调用的网络等待),维护后 5 分钟均值 8.8% CPU、空闲时 0%,RSS ~450–650 MB。正常的短时尖峰只有两类:启动后第一次有新文章时加载 30 天线索池(~6 s),以及每日维护(启动 15 分钟后首跑,~4.5 min,background QoS)。
 
+## 7.6 收口后新增机制的排查入口（2026-09-28）
+
+| 症状 | 看哪里 |
+|---|---|
+| 摘要/入库/告警突然停了 | 日志 `Daily LLM token budget exhausted (用量/上限): <阶段> paused until 00:00 UTC`（`services/llm_budget.py`,每阶段每天记一次）；单个目标停：`'<名>' reached its daily token cap` / `summary deferred`。上限在系统设置 → 模型配置（全局）与目标开发者设置（每目标） |
+| 「运行并追踪 / 试运行 / 立即检查」转圈或报错 | 前端轮询 `GET /api/tasks/{id}`；表 `taskrequest` 里 `job_type LIKE 'USER_%'`（status/error/payload.result）。重启会把进行中的用户任务收成 FAILED「Interrupted」 |
+| 文章抓到了但雷达里没有 | `GET /api/settings/db-status` 的 `pipeline_health`（两项都应为 0,非 0 设置页有橙色提示）；日志 `failed to embed 3x in a row; parked until next launch` = 该文章本进程内搁置 |
+| 某账号源每轮都 SKIPPED | trace 事件 error=`auth:expired` = 目标绑定的授权已过期,重新授权即恢复（公开页面会改走匿名抓取,不会撞登录墙） |
+| 同一线索被摘要两次 / 摘要突然「重写」 | 不应再发生（`pipeline_lock.py`）；重融日志带 `update of previous summary` = 走的是「旧摘要 + 新成员」更新模式 |
+
 ## 8. 教训（别再踩）
 
 - 对实库跑长事务脚本会与应用抢锁（9/9 丢了 95 条 token 记账）→ 逐条提交

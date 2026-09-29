@@ -5,6 +5,8 @@
 > 这份文档用于：作者亲自体验几天测试后，再决定继续哪部分。开新会话时从这里接上即可。
 > 7-21 之后的全部改造（P0–P2 路线图执行、B1–B6 供给侧、P4 前置管线修复、呈现层三修、P6 雷达收口与时间诚实）见 CHANGELOG.md 与 `docs/radar_quality_roadmap.md`；工程现状见 `docs/engineering_baseline.md`。测试 58 项。
 >
+> **2026-09-28 收口**：第一类遗留全部清零——融合互斥锁与真增量重融、全后台预算刹车 + 每目标摘要上限（系统设置 / 目标开发者设置可改）、简报接地性（推断标〔分析〕）、编辑目标不再抹掉意图规划与授权、运行/试运行改后台任务（`GET /tasks/{id}`）、过期授权不再撞登录墙、HTML 清洗统一、macOS 退出清理整棵进程树、依赖补全;测试 129 项。**不做 / 下一期**的清单与理由见 [engineering_baseline.md](engineering_baseline.md) §3–§4。
+>
 > **2026-09-27 状态增补**：后台功耗治理——语义任务每轮从 ~5 分钟（常驻 100% CPU）降到 ~1 s，调度任务改低 QoS + CPU 预算告警，测试 115 项。新约束「托盘常驻 = 静默的资源预算」见 engineering_baseline §1；发烫排查见 debugging_playbook §7.5。向量改二进制存储待裁决（baseline §3.2）。
 >
 > **2026-09-24 状态增补**：测试 110 项;迁移 0001–0024。8/26 以来的大块：目标即查询（线索无主、`threadtarget` 关系表）、消防栓层级与盖章不变量、别名路由/后继探测/涌现关键词/接地词汇刷新（目标词表自动生长）、事后合并（`merge_policy.py` 唯一阈值声明）、引用 vs 佐证恢复、TrendScan 并入 alert_engine、学出来的关系（每目标探针）。**排查从 [debugging_playbook.md](debugging_playbook.md) 起**。仍等作者：xAI key 或小号（X 通道）、P8/P9 设计合同审阅、P5 暂放。
@@ -79,14 +81,11 @@ pytest -q                                 # 58 项，~0.5s
 ## 已完成并提交（见 `git log`）
 R1–R6 后端全部（获取运行时/账号守卫/语义层/线索/告警/portfolio），经 16 个发现的对抗审查加固；前端雷达阅读页+追赶+重点过滤+高关注+账号保护面板+portfolio 预览+通知投递；Fernet 加密；README 重写；macOS bundle targets 修复 + 打包/签名指南。**2026-07-21 收尾**：R7 Phase 1 发布导出器（services/publish_service.py，合规门全过 → PublishedDigest v0.1 → 公开站接真实数据 + generated RSS，scheduler publish_digest 任务 + POST /settings/publish）；pytest 扩到 24 项（含发布合规门/语义流程）。详见 `docs/engineering_baseline.md`、`docs/publish_contract.md`（数据契约）、`docs/official_feed_automation.md`（官方源自动化三形态）。
 
-## 真正剩余（多数卡在作者侧）
-- **R7 Phase 2/3 共享层**：Supabase 登录（已接 MCP，可做）+ 多发布者签名 + 共享 token 索引（"先查再开火"）。契约 §8 定了三阶段演进，Phase 1 已通，Phase 2 是独立大特性（不是收尾项）
-- **官方源无人值守发布**：`official_feed_automation.md` 形态 B（GitHub Actions）/ C（VPS）——需作者选托管环境
-- **Tauri 签名更新插件实际接入**：需作者 `tauri signer generate` 生成密钥（步骤见 packaging_guide.md）
-- **macOS 零警告分发 / Windows 代码签名**：需 Apple 开发者账号（$99/年）/ Authenticode 证书——**其余打包已就绪**
-- **11 平台 auth 真账号实测**（见 B）
-- **页面 diff 并入统一 SourceItem**：蓝图故意延后到语义层稳定后
-- **真 OS Keychain**（当前 Fernet+0600 文件已是真加密）：需 keyring 依赖决策
+## 收口时的状态（2026-09-28）
+没有未完成的承诺项。收口时逐项定过性、写明理由的两张清单都在 [engineering_baseline.md](engineering_baseline.md)：
+- **§3.1 挂起的裁决（不做，除非作者重启）**：浏览器分发、P5 编辑价值门、向量二进制存储、授权真账号实测 / X 通道、改名 MajoSleuth + 域名、签名与分发、官方源无人值守托管、系统钥匙串。
+- **§4 下一期候选（有设计、无实现）**：P7a 订阅频道、P9 监控判读、P8 云端分体、P7b 共享索引、R7 Phase 2/3、情报溯源重设计、页面 diff 并入 SourceItem、P3.1 反馈闭环（最后做）。
+上面的「测试债」A–E 仍是只有作者能做的真机/真账号验证。
 
 ## 恢复工作的入口
-下次继续时：读 `docs/vision_and_blueprint.md`（愿景+架构）→ `docs/radar_quality_roadmap.md`（执行队列与裁决，当前位置：P6 完成，下一步 P4.0 意图探索）→ `docs/engineering_baseline.md`（工程现状与差距地图）。git 在 `main`（公开仓库；backend-bundle/.env/.enckey/config.dat 已 gitignore，严禁入库）。数据库测试一律 `DATABASE_URL` 指向副本。
+项目已收口。若重启：先读 [engineering_baseline.md](engineering_baseline.md)（现状 + §3 挂起裁决 + §4 下一期候选）→ 选定的那一项的设计合同（`cloud_split_design.md` / `monitor_diff_design.md` / `publish_contract.md` §8 / `investigator_redesign.md`）→ [radar_quality_roadmap.md](radar_quality_roadmap.md)（裁决史）。症状排查从 [debugging_playbook.md](debugging_playbook.md) 起。git 在 `main`（公开仓库；backend-bundle/.env/.enckey/config.dat 已 gitignore，严禁入库）。数据库测试一律 `DATABASE_URL` 指向副本。

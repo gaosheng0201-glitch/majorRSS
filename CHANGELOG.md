@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **公开分发站上线（onlyforbots.com）**：`site/` 拆为两类读者两页——介绍页 `/`（面向机器/开发者，含接入说明）+ 信息页 `/radar`（人类阅读的去噪线索流）+ `/llms.txt`（机器可读站点说明，只列现有 endpoint、规划中项归 planned）；渲染逻辑与视觉 token 隔离（`site/assets/`），只消费 `docs/publish_contract.md`（PublishedDigest v0.1）契约。部署到 Cloudflare Pages（Git 集成，push `main` 自动部署；apex/www 绑定 + HTTPS）。`docs/publish_contract.md`（契约 + 三阶段共享层演进）、`docs/official_feed_automation.md`（官方源自动化：无头实例、NAS Docker vs GitHub Actions、生成/分发端拆分）。
 
 #### Changed
+- **收口（2026-09-28）**：第一类遗留逐项先对照代码核实再改，全部清零；其余定为「不做 / 下一期」写入 `docs/engineering_baseline.md` §3–§4。
+  - **融合（§G）**：`services/pipeline_lock.py` 让语义任务与融合一次只有一个写线索者（实测手动「运行」的融合也会与定时融合并发重复计费，一并覆盖）；重融改为「旧摘要 + 新到成员」更新模式（原来每次重发最多 13 篇全文）；嵌入连续失败 3 次的文章本进程内搁置，db-status 新增 `pipeline_health`；删除死代码 `export_rss.py` 等；`/feed` 的 `raw_article_id` 改为真实文章 id；时区统一。
+  - **成本（P1.2+）**：`services/llm_budget.py` 一个刹车管全部后台花费（融合、嵌入、事件判断、合并、告警、维护里的模型步），系统设置可改；每目标摘要日上限（目标开发者设置）；用户主动操作不受限。
+  - **接地性（P2.2）**：简报不再是「播客主持人讲大背景」，只写摘要里有的事实，推断标〔分析〕；趋势扫描、实体尖峰、融合提示词同样禁止模型外部知识。
+  - **工程（§3.3）**：运行并追踪 / 试运行 / 立即检查监控改为后台任务（`GET /tasks/{id}` 轮询，按本次运行 id 取 trace）；纯 RSS 模式跳过的任务记 SKIPPED；过期授权不再每轮撞登录墙；编辑目标改为合并保存（此前会抹掉意图规划、源范围、学到的别名与授权账号）；源数量上限按逻辑源计数、精选先于聚合；HTML 清洗统一（保留 `target=_blank`，去掉 `<style>`/表单）；macOS 退出清理整棵进程树；依赖补全。测试 115 → 129。
+  - **真机验证（打包版）**：试运行作为后台任务提交即返回、轮询取回结果；退出后 sidecar / Playwright 驱动 / 3 个 Chromium 全部消失无孤儿；首轮语义任务（51 篇 + 107 次事件判断，网络等待为主）期间融合等锁、结束后照常融合，无重复融合无报错；之后语义每轮 ~1 s，空闲 CPU 0.1%。增量重融路径这几轮未触发（无线索出现实质增量），由测试覆盖。
 - **后台功耗治理（2026-09-27，作者反馈"后台运行 Mac 发烫"）**：实测 sidecar 常驻 100% CPU / 6 GB RSS，运行 35.8 h 累计 1374 CPU 分钟。先测量定位：`semantic_clustering` 一轮 ~5 分钟而间隔 5 分钟，首尾相接永不停歇——每轮成本随**库大小**而非新增量增长（3.37 万条 × 3072 维嵌入）：全量解析 2.3 GB 嵌入 JSON + 纯 Python 求语料均值（入库、合并各一遍，28 s×2）；每篇新文章对 1.16 万线索纯 Python 余弦（2.2 s/篇）；9/22 加入的合并遍对 48 h 内 1796 条线索两两比较（160 万对，~230 s，压垮间隔的那一根）；9/24 探针每轮全量解析 2.3 万质心（8 s）。功能行为不变：
   - `semantic.CentroidIndex`：去均值+归一化 float32 矩阵，近邻一次 mat-vec（11 ms/篇）、全对一次 mat-mat（0.3 s）；与纯 Python 参考实现在真实库上结果一致（测试钉住）。`semantic.parse_vector` 以 C 解析 JSON 向量。
   - 语料均值改为增量累加和（只解析新增行；行数/锚行变化自动全量重算），持久化到 `<数据目录>/cache/corpus_mean.npz`；探针均值在每日训练时计算并存为 `probe_mean.npy`（打分与训练同一空间）；线索质心按内容哈希缓存。缓存文件均可删除，下次自动重建。

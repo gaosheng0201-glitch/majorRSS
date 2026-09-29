@@ -1,6 +1,6 @@
 # MajorRSS 工程基准（Engineering Baseline）
 
-> 最后更新：2026-09-24
+> 最后更新：2026-09-28 · **项目于此日收口**：第一类遗留全部清零，其余在 §3 逐项写明「不做 / 下一期」及理由。
 >
 > **本文档是现行唯一的工程状态基准。**
 >
@@ -24,7 +24,7 @@
 - **入口捕获，消费期只施加权重**（source_tiering §2）：provenance（层级、账号来源）在入库时盖章，绝不在消费期从 URL 重新推导。
 - **托盘常驻 = 静默的资源预算**（2026-09-27 明文化）：本机只做"新增量 × 向量比对"这类毫秒级工作，重活在云端模型。因此：①每轮成本只随**新增**内容增长，绝不随库大小增长（全表读/全量解析/纯 Python 向量循环都是违例）；②没有新内容的一轮什么都不做；③调度任务跑在 macOS 低 QoS（`utility`，日维护 `background`），用户触发的任务保持默认；④任务线程 CPU 超过间隔 20% 即告警（`Job X used Ns CPU`）。9/22–9/27 违反①导致 sidecar 常驻 100% CPU / 6 GB（见 debugging_playbook §7.5）。
 
-## 2. 当前架构（as-is，2026-09-24）
+## 2. 当前架构（as-is，2026-09-28）
 
 ```text
 桌面端  desktop/          Tauri 2 (Rust) + React 19 + Mantine → 127.0.0.1:8765
@@ -32,6 +32,11 @@
 后端    backend/main.py   FastAPI + uvicorn；lifespan 启动调度器守护线程；启动预载 .env/config
 调度    scheduler.py      APScheduler 7 任务（poller/抓取/语义[含合并遍+实体尖峰]/融合/订阅diff/维护/心跳）
                           每个任务经 _job() 包装:设 macOS 线程 QoS + CPU 预算告警（20% 间隔）
+                          语义任务整轮持 THREAD_WRITE_LOCK,融合逐线索取锁（pipeline_lock.py:一次只有一个写线索者）
+用户运行 task_runner      "运行并追踪/试运行/立即检查监控"=后台任务(2 线程池,复用浏览器),端点回 {task_id},
+                          GET /tasks/{id} 轮询;POST /trackers/{id}/run 回排队任务 id;TaskRequest 有 SKIPPED
+预算    llm_budget        LLM_DAILY_TOKEN_BUDGET 管全部后台花费(融合/嵌入/仲裁/合并/告警/维护模型步),系统设置可改;
+                          每目标 fetch_policy.daily_token_budget 管该目标的摘要花费;用户主动操作不受限
 规划    portfolio_planner.plan_intent  一句话 → IntentPlan（分道/多语言别名/官方域名/集合/建议源）
         建议源 = 模型发现（P4.1 新手问题）+ 话题→登记库映射（_REGISTRY_LEXICON,两条路径都走）
         经 source_verifier 存在性校验（FxTwitter 验 handle、RSS/页面/subreddit 探活）后才可选
@@ -56,8 +61,9 @@
 监控    page_monitor/registry 类建议源 → Subscription 页面 diff（官方 newsroom listing 类漏网的唯一解）
 数据    SQLite（打包 ~/.majorss/，dev 在仓库根）；迁移 migrations/runner.py 0001–0024 幂等
 观测    PipelineRun/Event trace · 滚动日志 · /health 心跳 · Billing 按动作/目标/日历热力图
+        db-status.pipeline_health（未成线索/未嵌入计数,应为 0,非 0 时系统设置页提示）
 发布    publish_service → 合规门 → PublishedDigest → onlyforbots.com（CF Pages 自动部署）
-测试    tests/ 115 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
+测试    tests/ 129 项 pytest（语义/守卫/健康/politeness/provenance/呈现层/意图规划/建议源/全局线索/涌现源/故事线/发布合规）
 ```
 
 关键机制的单一事实源（改动前先读对应文件头注释）：
@@ -87,29 +93,25 @@
 
 ## 3. 差距地图（当前仍存在的）
 
-### 3.1 需作者裁决（挂起中）
+> 2026-09-28 收口：原 §3.3「功能与工程」与 P2.2 / P1.2+ / §G 遗留已全部清零（提交 6cde29d · 8c8ffee · a866539，逐项先对照代码核实再改）。下面只剩**有意不做**或**下一期**的事，每条写明理由，免得被当成欠账。
+
+### 3.1 收口时挂起的裁决（不做，除非作者重启）
 - **浏览器分发**：测试期不带（现依赖机器上的 `playwright install`），正式发布要带。三档已量化：全带 525M / 只带 headless_shell 189M（抓取即用，授权时按需下载完整版）/ 全按需。见路线图。
-- **P5 编辑价值门**：负样本原型方案已验证否决（AUC 增益 +0.005）;现有替代路线=用 validity 标签在探针机器上训"编辑价值"探针（与 relation_model 同构）。作者暂放。
-- **授权态端到端**：链路已验证到登录弹窗（2026-08-05），cookie 抓取一段等作者小号。AUTH_PLATFORMS 11 平台的指示器仍是未经真实账号验证的假设。
+- **P5 编辑价值门**：负样本原型方案已验证否决（AUC 增益 +0.005）;替代路线=用 validity 标签在探针机器上训"编辑价值"探针（与 relation_model 同构）。作者暂放。
+- **向量改二进制存储**（`articleembedding.vector` / `storythread.centroid` 为 JSON 文本,占 3.8 GB 库大半）:稳态已不解析（增量+缓存+持久化）,剩启动首轮 30 天线索池 ~6 s 与每日探针训练 ~11 s。改 float32 BLOB 可降到 1 s 内、库 → ~1.3 GB,但需迁移且旧版本读不了新库。
+- **授权态端到端 / X 通道**：链路已验证到登录弹窗（2026-08-05），cookie 段等作者小号;AUTH_PLATFORMS 11 平台指示器仍是未经真账号验证的假设。无账号 X 路径=Grok relay（等 xAI key）;twitter-cli（B7）同样等小号+代理实跑。
+- **改名 MajoSleuth + 域名**：等名字最终锁定后统一改一轮（仓库名、`~/.majorss`、`MAJORSS_DATA_DIR`、包名）;公开发布前买 majosleuth.com。
+- **签名与分发**：Tauri updater 签名密钥（`tauri signer generate`）、Apple 开发者账号（零警告分发）、Windows Authenticode——其余打包已就绪（macOS 只打 .app）。
+- **官方源无人值守发布**：`official_feed_automation.md` 形态 B（GitHub Actions）/ C（VPS）二选一。
+- **系统钥匙串**：当前 Fernet + 0600 文件（真加密）;换 Keychain 需引入 keyring 依赖。
 
-### 3.2 结构性（记录不排期，见路线图同名节）
-- **学出来的关系只在 AI 四目标启用**（标签 ≥20/侧才训;渐冻症/大谷等仍靠匹配器地板,几天后自动启用）;探针否决=折叠可核对,纠错入口归 P3.1。
-- **线索分裂**：入库仍宁拆勿错并;事后合并遍（`thread_merge.py`,≥0.70 相似对逐对问仲裁）在下一轮语义任务里把同事件线索并回——2026-09-22 起,分裂只在两轮之间短暂存在。
-- **仲裁语义**：same-event 仍严格（拆分率 91% 部分是诚实的）；"同一故事线"已作为第三答案落地为认亲而非合并（2026-09-03），过度合并风险因此不存在；仍可能同故事线被判 different（漏认亲,只影响可见性）。
-- **容量余量薄**：稳态进入≈消化≈16 条/分钟，无余量；再加探测目标 pending 将单调增长。是容量上限不是泄漏。
-- **优先级倒挂**：`max_sources_per_run` 封顶时 keyword 源(priority=1)压过精选源(priority=5)。
-- **向量以 JSON 文本存储**（`articleembedding.vector` / `storythread.centroid`,每条 3072 维 ≈69 KB,占 3.8 GB 库的绝大部分）:稳态已不再解析它们（增量+缓存）,但全量解析仍发生在三处——缓存失效/首次启动（语料均值 ~25 s,之后持久化）、每次启动首轮的 30 天线索池（~6 s）、每日探针训练（~11 s,background QoS）。改为 float32 BLOB 可把这些降到 1 s 内、库降到 ~1.3 GB,但需迁移且旧版本不可读新格式——待裁决。
-- **慢滴积累跨过 25% 增量阈值**时最后一滴获"进展"标记——按裁决语义诚实，真故事线级进展识别归仲裁语义工作。
-
-### 3.3 功能与工程（可穿插）
-- `POST /trackers/{id}/run` 无 task id；`run-trace`/试运行仍在 HTTP 请求内同步抓取（前端已放宽超时，后端异步化未做）。
-- pure_rss 模式下 PROCESS/TREND 任务跳过却标 COMPLETED（任务日志失真）。
-- `tracker_type/tier/cookie_string` 旧语义仍是主模型；`source_intent/fetch_policy` 迁移未完成；HYBRID 的 urls 固定走 RSS parser。
-- 前端 `dangerouslySetInnerHTML` 已过 DOMPurify（RawFeed/Dashboard/Briefing 主要路径），未全量审计。
-- macOS 密钥为 Fernet + 0600 文件（真加密，非 Keychain）；lib.rs 进程树清理在 macOS 是 no-op（Win 迁移遗留）。
-- requirements.txt 不含 fastapi/uvicorn/pyinstaller（.venv 实际有，重建环境会踩）。
-- Auth：Expired profile 的授权路由仍会被尝试；后台低频活体巡检未做。
-- ~~提炼卡片的「摘要引用来源 vs 重复佐证来源」区分退化~~（2026-09-22 恢复：`cited_article_ids` + 卡片两组）。
+### 3.2 结构性（记录不排期）
+- **学出来的关系只在 AI 四目标启用**（标签 ≥20/侧才训;渐冻症/大谷等仍靠匹配器地板,攒够标签自动启用）;探针否决=折叠可核对,纠错入口归 P3.1。
+- **线索分裂**：入库仍宁拆勿错并;事后合并遍在下一轮语义任务里并回——分裂只在两轮之间短暂存在。
+- **仲裁语义**：same-event 严格（拆分率高部分是诚实的）;可能同故事线被判 different（漏认亲,只影响可见性）。
+- **容量余量薄**：稳态进入≈消化≈16 条/分钟;再加探测目标 pending 将单调增长。是容量上限不是泄漏。
+- **慢滴积累跨过 25% 增量阈值**时最后一滴获"进展"标记——按裁决语义诚实。
+- **有意保留的小边界**：每目标上限只计摘要（嵌入/仲裁是共享的入库成本,归全局预算）;`tracker_type`/`tier`/`cookie_string` 列保留不删（路由从不读;SQLite 删列需重建表）;`/trackers/test-route` 与 `/{id}/test-route` 两个无前端调用的接口仍同步执行;嵌入连续失败 3 次的文章本次进程内搁置、重启后再试;保留期/体积清理会让被删线索的旧成员失去线索（已嵌入不会重聚,按保留期语义正确）。
 
 ## 4. 路线图位置
 
@@ -123,9 +125,12 @@ R1–R7 Phase 1 全部完成（2026-07 上旬）；之后执行队列以 [radar_
 ✅ P4.0a/b（意图探索 schema+分道+路由派生,2026-08-20）
 ✅ 跨目标可见性（2026-08-26）· P4.0c 建议源+存在性校验 · 线索全局化 · P4.1 · P4.2（2026-09-01）
 ✅ 目标即查询（09-17）· 消防栓层级/盖章不变量（09-06~07）· 别名路由+涌现关键词+接地词汇刷新（09-18~22）· 事后合并+合并策略（09-22）· 引用 vs 佐证恢复（09-22）· TrendScan 并入告警 · 学出来的关系（09-24）
-▶ 下一步：P8 云端分体 / P9 监控判读（设计合同待审：cloud_split_design.md / monitor_diff_design.md）→ P7a/b → P3.1(最后)；P5 暂放（验证已否决原方案,替代路线记于路线图）
+✅ 后台功耗治理（09-27）· 收口：§G 遗留 / P2.2 接地性 / P1.2+ 预算 / 工程 §3.3 全部清零（09-28）
+■ 已收口（2026-09-28）。下一期候选（有设计、无实现,均不在当前承诺内）：
+   P7a 订阅频道（纯透传,工作量极低）· P9 监控 diff 判读（monitor_diff_design.md）· P8 云端分体（cloud_split_design.md）
+   · P7b 先查共享索引 · R7 Phase 2/3 共享层（Supabase 登录/多发布者）· 情报溯源重设计（investigator_redesign.md）
+   · 页面 diff 并入统一 SourceItem · P3.1 反馈闭环（铁律:最后做）
 ⚠ 快讯通道离线:nitter.net 已 410;无账号唯一结构路径=Grok relay(等作者 xAI key),一手路径=授权 agentic(等小号)
-   随时可插：P2.2 简报接地性
 ```
 
 ## 5. 开发速查
@@ -142,7 +147,7 @@ cd desktop && npx tauri dev
 cd desktop && npm run tauri:build
 # 产物 desktop/src-tauri/target/release/bundle/macos/MajorRSS.app（macOS 只打 .app；要 dmg 用 npx tauri build --bundles app,dmg）
 
-# 测试（115 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
+# 测试（129 项）。数据库相关测试必须显式 DATABASE_URL 指向副本，严禁碰 ~/.majorss/major_rss.db
 pytest -q
 DATABASE_URL="sqlite:////tmp/copy.db" python -c "from migrations.runner import run_migrations; run_migrations()"
 
