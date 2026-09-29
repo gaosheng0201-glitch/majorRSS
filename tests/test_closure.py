@@ -427,3 +427,57 @@ def test_source_cap_counts_sources_and_prefers_opted_in_ones():
     assert {"rss_feed_0", "rss_alternate_0", "preset_openai_news", "sugg_rss_0"} <= set(kept)
     assert sum(1 for k in kept if k.startswith(("gnews_", "hn_"))) == 1
     assert kept == [x.route_id for x in routes if x.route_id in kept]    # order kept
+
+
+# ---- 2026-09-28 Sonnet 5.5: a templated launch for a different product is not "the same event"
+
+def test_confident_merge_needs_a_copied_headline_not_just_a_close_vector():
+    from sqlmodel import select
+    from db.models import RawArticle, StoryThread
+    from services import semantic_ingest as si
+
+    V = [0.3, 0.1, 0.9, 0.2, 0.4, 0.7, 0.5]          # 7-dim: no other test's vectors share the pool
+
+    class Emb:
+        name = "fallback"                             # raw space: identical vectors → cosine 1.0
+        def embed(self, texts):
+            return [list(V) for _ in texts]
+
+    class Arb:
+        name = "stub"; supports_generation = True
+        calls = []
+        def generate(self, prompt, **kw):
+            Arb.calls.append(prompt)
+            return ("event" if "Reuters" in prompt else "different"), {}
+
+    with get_session() as s:
+        t = _tracker(s, "launch-t")
+        near = [x + (0.05 if i == 0 else 0.0) for i, x in enumerate(V)]   # cosine ≈ 0.99 to V
+        old = StoryThread(tracker_id=t.id, title="Claude Opus 5.5 now available on AI Gateway",
+                          centroid=json.dumps(near), member_count=1, distinct_source_count=1,
+                          first_seen_at=_now() - timedelta(days=6), last_update_at=_now())
+        s.add(old); s.commit(); s.refresh(old)
+        launch = RawArticle(tracker_id=t.id, title="Claude Sonnet 5.5 now available on AI Gateway",
+                            url="https://gw.example/sonnet", content="x", source_tier="curated")
+        s.add(launch); s.commit(); s.refresh(launch)
+        old_id, launch_id = old.id, launch.id
+
+    si.run_semantic_ingest(limit=500, embedder=Emb(), arbiter=Arb())
+    with get_session() as s:
+        a = s.get(RawArticle, launch_id)
+        assert a.thread_id is not None and a.thread_id != old_id     # its own thread
+        assert any("Sonnet 5.5" in p for p in Arb.calls)             # the arbiter was asked
+
+    # a syndicated copy of the same headline still merges without a call
+    Arb.calls.clear()
+    with get_session() as s:
+        new_tid = s.get(RawArticle, launch_id).thread_id
+        copy = RawArticle(tracker_id=s.exec(select(StoryThread.tracker_id).where(StoryThread.id == new_tid)).one(),
+                          title="Claude Sonnet 5.5 now available on AI Gateway", url="https://mirror.example/s",
+                          content="x", source_tier="aggregated")
+        s.add(copy); s.commit(); s.refresh(copy)
+        copy_id = copy.id
+    si.run_semantic_ingest(limit=500, embedder=Emb(), arbiter=Arb())
+    with get_session() as s:
+        assert s.get(RawArticle, copy_id).thread_id == new_tid
+    assert not Arb.calls

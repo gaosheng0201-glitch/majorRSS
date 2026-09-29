@@ -23,6 +23,7 @@ from services.provenance import (
     real_publisher,
 )
 from services.lifecycle import lifecycle_for
+from services.dedup import is_near_duplicate
 from services.target_profile import TargetProfile
 
 logger = get_logger("semantic")
@@ -518,8 +519,17 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
             refresh_sid = None
             if cands:
                 best_tid, best_sim = cands[0]
-                if best_sim >= sm.THREAD_HIGH_CONFIDENCE:
-                    # Near-identical: merged on embedding confidence alone.
+                if best_sim >= sm.THREAD_HIGH_CONFIDENCE and (
+                        arbiter is None or is_near_duplicate(article.title or "",
+                                                             session.get(StoryThread, best_tid).title or "")):
+                    # Near-identical: merged on embedding confidence alone —
+                    # only when the headline is a copy too (syndication). A
+                    # templated announcement for a different product scores
+                    # just as high: "Claude Sonnet 5.5 in GitHub Copilot" was
+                    # 0.845 from "Claude Opus 5.5 is now available in GitHub
+                    # Copilot" and joined that 6-day-old thread unasked, so the
+                    # launch (2026-09-28) raised no thread and no alert. Same
+                    # template, different model → the arbiter decides.
                     # Counted so the share of unexamined merges stays visible.
                     tid = best_tid
                     arb_skipped_confident += 1
@@ -630,7 +640,6 @@ def run_semantic_ingest(limit: int = 100, embedder=None, arbiter=None) -> dict:
                 # so syndication can't manufacture resonance/CORROBORATED (audit
                 # 2026-07-23: "resonance comes from aggregator reposts of the
                 # same pitch"). Reuses the P0.5 near-dup machinery.
-                from services.dedup import is_near_duplicate
                 families = []   # list of representative titles
                 for (_u, t) in pairs:
                     if not any(is_near_duplicate(t, rep) for rep in families):

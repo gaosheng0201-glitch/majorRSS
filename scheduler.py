@@ -289,7 +289,13 @@ def start_scheduler(block: bool = True):
         run_migrations()
 
         now = datetime.now(timezone.utc)
-        scheduler = BackgroundScheduler()
+        # A laptop sleeps: every 5-minute job "was missed" through the night
+        # (default grace 1 s) and on waking each job waited up to a full
+        # interval. 2026-09-28: the Mac slept 15:04–19:10 through the Sonnet 5.5
+        # launch; scraping caught items during a DarkWake at 16:33 but nothing
+        # clustered them until 19:19. Now a missed run is made up once, right
+        # after waking (coalesce: one catch-up, not one per missed tick).
+        scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "misfire_grace_time": None})
         # next_run_time=now → jobs fire once at startup instead of waiting a
         # full interval; desktop sessions are often shorter than 30 minutes.
         scheduler.add_job(_job(process_task_requests, "task_poller", QOS_DEFAULT), 'interval', seconds=30, next_run_time=now,
